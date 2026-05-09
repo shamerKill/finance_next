@@ -53,8 +53,13 @@ func (h *Handler) Handle(c echo.Context) error {
 			_ = conn.Close(websocket.StatusNormalClosure, "")
 			return nil
 		}
+		// Phase 3 generalised the subscribe message to support multiple
+		// topic kinds. Backwards compat: when `topic` is absent and
+		// `accountId` is present, default to TopicAccount + accountId.
 		var msg struct {
 			Type      string `json:"type"`
+			Topic     string `json:"topic"`
+			ID        string `json:"id"`
 			AccountID string `json:"accountId"`
 		}
 		if err := json.Unmarshal(data, &msg); err != nil {
@@ -64,17 +69,34 @@ func (h *Handler) Handle(c echo.Context) error {
 			})
 			continue
 		}
+		topicKind := TopicKind(msg.Topic)
+		topicID := msg.ID
+		if topicKind == "" && msg.AccountID != "" {
+			topicKind = TopicAccount
+			topicID = msg.AccountID
+		}
 		switch msg.Type {
 		case "subscribe":
-			if err := h.hub.Subscribe(ctx, sessionID, msg.AccountID); err != nil {
+			if topicKind == "" || topicID == "" {
 				_ = sink.SendJSON(ctx, map[string]any{
-					"type":      "error",
-					"accountId": msg.AccountID,
-					"error":     err.Error(),
+					"type":  "error",
+					"error": "subscribe requires topic + id (or accountId)",
+				})
+				continue
+			}
+			if err := h.hub.Subscribe(ctx, sessionID, topicKind, topicID); err != nil {
+				_ = sink.SendJSON(ctx, map[string]any{
+					"type":  "error",
+					"topic": string(topicKind),
+					"id":    topicID,
+					"error": err.Error(),
 				})
 			}
 		case "unsubscribe":
-			h.hub.Unsubscribe(sessionID, msg.AccountID)
+			if topicKind == "" || topicID == "" {
+				continue
+			}
+			h.hub.Unsubscribe(sessionID, topicKind, topicID)
 		case "ping":
 			_ = sink.SendJSON(ctx, map[string]any{"type": "pong"})
 		default:

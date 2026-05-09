@@ -78,3 +78,69 @@ export type TypePosition = {
   liquidationPrice: string;
   marginType: string;
 };
+
+// ---------- Backtests (phase 3) ----------
+
+// Mirrors quantpb.v1.BacktestState integer codes; keep both forms so the
+// UI can render either label or compare against the wire value.
+export const BacktestState = {
+  Pending: 1,
+  Running: 2,
+  Completed: 3,
+  Failed: 4,
+} as const;
+export type BacktestStateValue = (typeof BacktestState)[keyof typeof BacktestState];
+
+export type TypeBacktestTrade = {
+  entryTs: string;
+  exitTs: string;
+  entryPrice: number;
+  exitPrice: number;
+  size: number;
+  pnl: number;
+  returnPct: number;
+  nAdds: number;
+  exitReason: string;
+};
+
+export type TypeBacktest = {
+  runId: string;
+  strategyId: string;
+  kind: string;
+  params: Record<string, unknown>;
+  request: Record<string, unknown>;
+  state: BacktestStateValue;
+  progress: number;
+  metrics: Record<string, number>;
+  trades: TypeBacktestTrade[];
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  error: string;
+};
+
+export type TypeCreateBacktest = {
+  strategyId: string;
+  kind?: string;
+  params?: Record<string, unknown>;
+  symbol: string;
+  exchange: string;
+  timeframe: "1m" | "5m" | "1h" | "1d";
+  start: string;
+  end: string;
+  initialCapital?: number;
+  commissionRate?: number;
+  slippageBps?: number;
+};
+
+export type TypeBacktestHandle = {
+  runId: string;
+  enqueuedAt: string;
+};
+
+export type TypeEquityPoint = {
+  time: string;
+  equity: number;
+  drawdown: number;
+  position: number;
+};

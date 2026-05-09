@@ -24,6 +24,7 @@ import redis.asyncio as aioredis  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 
 from quant.config import get_settings  # noqa: E402
+from quant.data import mongo as mongo_data  # noqa: E402
 from quant.data import timescale  # noqa: E402
 from quant.grpc_server import serve as serve_grpc  # noqa: E402
 
@@ -37,14 +38,42 @@ async def lifespan(app: FastAPI):
     # at startup, not on the first request.
     await timescale.init_pool(settings.timescale_dsn)
     redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
-    grpc_server = await serve_grpc(port=settings.grpc_port, redis_client=redis_client)
+
+    # Mongo for Phase 3 backtest head docs. Optional in dev — if absent,
+    # the RunBacktest RPC returns FAILED_PRECONDITION.
+    mongo_uri = os.getenv("MONGODB_URI", "")
+    mongo_db = None
+    if mongo_uri:
+        mongo_db = mongo_data.init_client(mongo_uri)
+
+    # Phase 3: enqueue Arq jobs from the gRPC RPC. We open a redis-backed
+    # Arq pool when ARQ_REDIS_URL is set; otherwise the gRPC server runs
+    # backtests inline (single-process dev path).
+    arq_pool = None
+    arq_url = os.getenv("ARQ_REDIS_URL", "")
+    if arq_url:
+        from arq import create_pool
+        from arq.connections import RedisSettings
+
+        arq_pool = await create_pool(RedisSettings.from_dsn(arq_url))
+
+    grpc_server = await serve_grpc(
+        port=settings.grpc_port,
+        redis_client=redis_client,
+        mongo_db=mongo_db,
+        arq_pool=arq_pool,
+    )
 
     app.state.redis = redis_client
     app.state.grpc_server = grpc_server
+    app.state.arq_pool = arq_pool
     try:
         yield
     finally:
         await grpc_server.stop(grace=2.0)
+        if arq_pool is not None:
+            await arq_pool.aclose()
+        await mongo_data.close()
         await redis_client.aclose()
         await timescale.close_pool()
 

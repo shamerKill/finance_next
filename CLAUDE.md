@@ -42,6 +42,8 @@ finance_next/
 │   │   │   ├── accounts/new/page.tsx # 添加账户表单
 │   │   │   ├── accounts/[id]/        # 账户详情 + 实时事件流
 │   │   │   ├── api-list/             # 策略列表（async server component）
+│   │   │   ├── markets/              # OHLCV chart (lightweight-charts)
+│   │   │   ├── backtests/            # Phase 3：列表/新建/详情（含 equity 图 + 实时进度 WS）
 │   │   │   └── option/page.tsx       # 期权策略表单页
 │   │   └── list/                     # 占位，功能未实现
 │   ├── data/
@@ -59,12 +61,12 @@ finance_next/
 │       ├── crypto/                   # AES-256-GCM + 信封加密（golden vector 测试）
 │       ├── domain/                   # Option / Account / DTO 类型
 │       ├── exchange/                 # 抽象 ReadOnlyClient + binance/ adapter
-│       ├── ws/                       # 单进程 WS hub + Echo /ws handler
-│       ├── store/{mongo,timescale}/  # mongo (options/accounts) + timescale (ohlcv 读)
+│       ├── ws/                       # 单进程 WS hub（topic 模型：account / backtest）+ Redis Streams 消费
+│       ├── store/{mongo,timescale}/  # mongo (options/accounts/backtest_results) + timescale (ohlcv 读 + equity_curve 读)
 │       ├── quantclient/              # gRPC client → Python quant worker
 │       └── http/
 │           ├── router.go             # Echo 路由 + middleware
-│           └── handlers/             # option.go + account.go + market.go
+│           └── handlers/             # option.go + account.go + market.go + backtest.go
 ├── quant/                            # Phase 2 Python 量化 worker（uv 管理）
 │   ├── pyproject.toml                # uv-managed deps (fastapi/grpcio/ccxt/akshare/asyncpg/arq)
 │   ├── Dockerfile                    # uv:python3.12-bookworm-slim
@@ -72,9 +74,10 @@ finance_next/
 │   │   ├── main.py                   # FastAPI healthz + grpc.aio bootstrap
 │   │   ├── grpc_server.py            # QuantServicer (impls quant.v1.Quant)
 │   │   ├── ratelimit.py              # async TokenBucket + 每交易所 registry
-│   │   ├── data/{ccxt_source,akshare_source,timescale,symbols}.py
-│   │   ├── workers/{ingest,settings}.py  # Arq 任务 + WorkerSettings
-│   │   └── events/redis_stream.py    # OhlcvIngested 发布
+│   │   ├── data/{ccxt_source,akshare_source,timescale,symbols,mongo}.py
+│   │   ├── strategies/{base,grid_dca}.py  # Phase 3：抽象策略 + 信号→portfolio 模拟器（带 shift(1) 防 look-ahead）
+│   │   ├── workers/{ingest,backtest,settings}.py  # Arq 任务 + WorkerSettings
+│   │   └── events/redis_stream.py    # OhlcvIngested + BacktestProgress/Completed 发布
 │   └── tests/                        # 离线运行：respx + fakeredis + 模块替换
 ├── shared-proto/                     # protobuf 单一来源（Go + Python 生成代码已检入）
 │   ├── quantpb/v1/quant.proto        # gRPC 服务（IngestNow Phase 2 落地）
@@ -156,6 +159,19 @@ docker compose -f infra/docker-compose.yml up --build
 | GET    | `/api/v1/market/ohlcv`   | 直读 Timescale；query：exchange/symbol/timeframe/start/end；上限 100k 根 |
 | POST   | `/api/v1/market/ingest`  | 调 Quant gRPC 触发 OHLCV 回填；header `X-Admin-Key` 鉴权；`ADMIN_KEY` 未配置时 404 |
 
+**Backtest 资源**（`gateway/internal/http/handlers/backtest.go`，phase 3）
+| 方法     | 路径                                | 说明                                                                         |
+| ------ | --------------------------------- | -------------------------------------------------------------------------- |
+| POST   | `/api/v1/backtests`               | 调 Quant.RunBacktest gRPC，202 Accepted 返回 `{runId, enqueuedAt}`             |
+| GET    | `/api/v1/backtests`               | 列表（最新优先）；可选 `?strategyId=`/`?limit=`                                       |
+| GET    | `/api/v1/backtests/:id`           | 头 doc（含 metrics + trades + 状态 1=PENDING/2=RUNNING/3=COMPLETED/4=FAILED）   |
+| GET    | `/api/v1/backtests/:id/equity`    | 直读 Timescale `equity_curve`，上限 50k 点                                       |
+| GET    | `/api/v1/backtests/:id/trades`    | 直返 head doc 中的 trades 数组                                                   |
+
+WS（phase 3 扩展 topic 模型）：
+- 现有 `{type:"subscribe", accountId:"..."}` 仍兼容（默认 topic=`account`）。
+- 新格式 `{type:"subscribe", topic:"backtest", id:"<runId>"}`，gateway 订阅 Redis Streams `event.backtest.progress` / `event.backtest.completed`，按 runId 过滤后扇出。
+
 **Option 字段**（以 `CreateOptionDto` 为准，`client/data/type.d.ts` 与之对应）
 - `name`（3-8 字符，唯一）
 - `positionLevel`（杠杆，1-125）
@@ -191,8 +207,14 @@ component，直接在服务端调用 `getOptions()`。`option/page.tsx` 仅有�
     `quant:50051`）；为空时 `/api/v1/market/ingest` 返回 503
   - `ADMIN_KEY` — `/api/v1/market/ingest` 的静态鉴权 key；**为空时整个端点返回
     404**（藏起来）；非空时调用方需带 `X-Admin-Key` header
-  - `REDIS_URL` — `redis://[:pwd@]host:port[/db]`；预留给 Phase 4 订单引擎和
-    Phase 6 事件流
+  - `REDIS_URL` — `redis://[:pwd@]host:port[/db]`；Phase 3 起 gateway 用其消费
+    `event.backtest.progress` / `event.backtest.completed` 流转给 WS hub；
+    Phase 4 订单引擎、Phase 6 事件流继续用同一 Redis 实例
+  - `MONGODB_URI`（quant 端 Phase 3 新增）— Python worker 写 `backtest_results`
+    head 文档；为空时 `Quant.RunBacktest` 返回 `FAILED_PRECONDITION`
+  - `ARQ_REDIS_URL`（quant 端 Phase 3 新增，可选）— 配置后 gRPC `RunBacktest`
+    走 Arq 后台队列；未配置则在 grpc.aio 同进程内 `asyncio.ensure_future` 跑回测
+    （单机 dev 友好，生产应启 `arq quant.workers.settings.WorkerSettings`）
 - **凭证加密**：`gateway/internal/crypto/crypto.go` 提供 AES-256-GCM 封装；
   `option` handler 在 create / update 时透明加密 `userApiKey` 与
   `userSecretKey`，密文格式 `base64(iv).base64(tag).base64(ciphertext)`，
@@ -231,7 +253,19 @@ component，直接在服务端调用 `getOptions()`。`option/page.tsx` 仅有�
       - 创建账户时 `ProbePermissions` 探权限，`canWithdraw=true` 直接 4xx 拒绝
       - `gateway/internal/ws/` 单进程 hub + `/ws` Echo 端点（phase 7 多副本时再分布式化）
       - `client/app/(dashboard)/accounts/` 列表/创建/详情；`ws-client.ts` 指数退避重连
+- [x] **Phase 3**：回测引擎 + UI
+      - `quantpb/v1` 落地 `RunBacktest` / `GetBacktestStatus` / `StreamBacktestProgress`（参数走
+        `google.protobuf.Struct`）；`eventspb/v1` 加 `BacktestProgress` / `BacktestCompleted`
+      - `quant/strategies/{base,grid_dca}.py`：抽象策略 + 信号→portfolio 模拟器；
+        **shift(1) 防 look-ahead 写死并 assert**（详见 `base.py:run_backtest` 注释）
+      - `quant/workers/backtest.py`：Arq task；写 Mongo `backtest_results` head + Timescale
+        `equity_curve`；按 10% 节流发 `event.backtest.progress`，结束发 `event.backtest.completed`
+      - gateway `internal/store/mongo/backtest_repo.go` + `internal/store/timescale/equity.go` +
+        `internal/http/handlers/backtest.go`；WS hub 扩展为 (topic, id) 模型，新增
+        `internal/ws/redis_backtest.go` 消费 Redis Streams 扇出
+      - `client/app/(dashboard)/backtests/{page,new,[id]}.tsx`：列表 + 表单 + 详情（lightweight-charts
+        equity 曲线 + trade 表 + `useBacktestStream` 实时进度）
 - [ ] 期权配置表单接通 POST 提交
 - [ ] `client/app/list/` 实现
-- [ ] **Phase 3+**：回测引擎 / 实盘执行 / 多交易所 / AI 优化（详见
+- [ ] **Phase 4+**：实盘执行 / 多交易所 / AI 优化（详见
       `/root/.claude/plans/vectorized-waddling-hoare.md`）

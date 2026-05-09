@@ -38,3 +38,33 @@ message StrategyUpserted {
   // Strategy kind discriminator (e.g. "grid_dca").
   string kind = 3;
 }
+
+// BacktestProgress is emitted by the Python quant worker during a backtest
+// run, every ~10% of bars processed (or every 100 bars, whichever is more
+// frequent). Consumed by the gateway WS hub and forwarded to subscribed
+// browser sessions.
+message BacktestProgress {
+  string run_id = 1;
+  // 0..1 progress fraction.
+  double progress = 2;
+  // Tail of the equity curve (most recent ~50 points). The full curve lives
+  // in TimescaleDB; this is only for live UI updates.
+  repeated double recent_equity = 3;
+  // Mirror of quantpb.v1.BacktestState (kept as int to avoid cross-package
+  // proto imports between event and rpc packages).
+  int32 state = 4;
+}
+
+// BacktestCompleted is emitted by the Python quant worker when a backtest
+// reaches a terminal state (COMPLETED or FAILED). Consumers can use this to
+// trigger downstream actions (e.g. AI recommendation re-evaluation).
+message BacktestCompleted {
+  string run_id = 1;
+  string strategy_id = 2;
+  // Final metrics; keys mirror BacktestStatus.metrics.
+  map<string, double> metrics = 3;
+  // Mirror of quantpb.v1.BacktestState (3 = COMPLETED, 4 = FAILED).
+  int32 state = 4;
+  string error_message = 5;
+  google.protobuf.Timestamp finished_at = 6;
+}

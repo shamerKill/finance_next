@@ -4,11 +4,11 @@
 // This file is the SINGLE source of truth for the inter-service RPCs; both
 // languages consume generated stubs (committed under shared-proto/gen/).
 //
-// Phase 2 fully wires up `IngestNow`. Other RPCs are placeholders defined
-// here with minimal field-sets so later phases (3 backtest, 6 optimization,
-// 4 signal evaluation) can flesh out request/response shapes without breaking
-// wire compatibility — adding fields to a `message` is a forwards-compatible
-// change in protobuf as long as field numbers are stable.
+// Phase 2 fully wired up `IngestNow`. Phase 3 fleshes out the backtest RPCs:
+//   - RunBacktest enqueues an Arq task and returns a handle synchronously.
+//   - GetBacktestStatus reads the head doc from Mongo (state + metrics).
+//   - StreamBacktestProgress is a server-streaming RPC backed by Redis Streams.
+// Phase 4 (EvaluateSignal) and Phase 6 (StartOptimization) remain placeholders.
 
 syntax = "proto3";
 
@@ -17,6 +17,7 @@ package quantpb.v1;
 option go_package = "github.com/finance_next/shared-proto/gen/go/quantpb/v1;quantv1";
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
 
 // Quant is the gRPC contract exposed by the Python worker.
 service Quant {
@@ -25,6 +26,10 @@ service Quant {
 
   // Phase 3: poll a backtest run's progress / result summary.
   rpc GetBacktestStatus(GetBacktestStatusRequest) returns (BacktestStatus);
+
+  // Phase 3: server-streaming live progress; one BacktestProgress per update.
+  // Stream terminates when the run reaches a terminal state.
+  rpc StreamBacktestProgress(GetBacktestStatusRequest) returns (stream BacktestProgress);
 
   // Phase 6: launch an Optuna study.
   rpc StartOptimization(OptimizationRequest) returns (StudyHandle);
@@ -67,42 +72,70 @@ message IngestAck {
   google.protobuf.Timestamp to_ts = 4;
 }
 
-// ---- Phase 3 placeholders (RunBacktest / GetBacktestStatus) ----------------
+// ---- Phase 3 (RunBacktest / GetBacktestStatus / StreamBacktestProgress) ----
 
 message BacktestRequest {
-  string strategy_id = 1;        // Mongo strategies._id (string form)
-  string exchange = 2;
-  string symbol = 3;
-  string timeframe = 4;
-  google.protobuf.Timestamp start = 5;
-  google.protobuf.Timestamp end = 6;
-  // params is a free-form JSON blob bound to the strategy schema; serialized
-  // here to avoid re-defining every strategy's schema in proto.
-  string params_json = 7;
+  // Mongo strategies._id (string form). Used to label results & for joins.
+  string strategy_id = 1;
+  // Strategy implementation discriminator (Phase 3 supports "grid_dca").
+  string kind = 2;
+  // Strategy-specific parameters as a structured JSON value. Keeping this
+  // typed (Struct) instead of a raw string lets gateway pass-through stay
+  // schema-light while still having a forwards-compatible wire format.
+  google.protobuf.Struct params = 3;
+  string symbol = 4;
+  string exchange = 5;
+  string timeframe = 6;
+  google.protobuf.Timestamp start = 7;
+  google.protobuf.Timestamp end = 8;
+  double initial_capital = 9;
+  // Per-fill commission rate (e.g. 0.0004 for Binance taker). The Python
+  // engine treats 0 as "use default = 0.0004".
+  double commission_rate = 10;
+  // Slippage in basis points (1 bp = 0.0001). Default is 1 (= 0.01%).
+  double slippage_bps = 11;
 }
 
 message BacktestHandle {
   string run_id = 1;
+  google.protobuf.Timestamp enqueued_at = 2;
 }
 
 message GetBacktestStatusRequest {
   string run_id = 1;
 }
 
+enum BacktestState {
+  BACKTEST_STATE_UNSPECIFIED = 0;
+  PENDING = 1;
+  RUNNING = 2;
+  COMPLETED = 3;
+  FAILED = 4;
+}
+
 message BacktestStatus {
   string run_id = 1;
-  enum State {
-    STATE_UNSPECIFIED = 0;
-    PENDING = 1;
-    RUNNING = 2;
-    SUCCEEDED = 3;
-    FAILED = 4;
-  }
-  State state = 2;
+  BacktestState state = 2;
   // 0..1 progress fraction; only meaningful while RUNNING.
   double progress = 3;
+  // Final / latest metrics. Keys: sharpe, sortino, max_dd, cagr, win_rate,
+  // n_trades, total_return.
+  map<string, double> metrics = 4;
   // Free-form error message when state == FAILED.
-  string error = 4;
+  string error_message = 5;
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp finished_at = 7;
+}
+
+// Streaming payload — one message per progress update.
+message BacktestProgress {
+  string run_id = 1;
+  double progress = 2;
+  // Tail of the equity curve so the UI can update charts without re-fetching
+  // the full series. Stream consumers can append to a ring buffer.
+  repeated double recent_equity = 3;
+  BacktestState state = 4;
+  string error_message = 5;
 }
 
 // ---- Phase 6 placeholders (StartOptimization) ------------------------------

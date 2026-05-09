@@ -132,3 +132,78 @@ async def query_range(
             _QUERY_RANGE_SQL, exchange, symbol, timeframe, start, end, limit
         )
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: backtest support
+# ---------------------------------------------------------------------------
+
+
+async def fetch_ohlcv(
+    exchange: str,
+    symbol: str,
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    *,
+    limit: int = 1_000_000,
+) -> Any:
+    """Return OHLCV rows in ``[start, end)`` as a pandas DataFrame.
+
+    The DataFrame is indexed by tz-aware UTC timestamps. Imported lazily
+    so importing this module is cheap when only writes are needed.
+    Annotation is ``Any`` so this module imports cleanly even when
+    pandas isn't on the import path (e.g. minimal worker images).
+    """
+    import pandas as pd  # local import — pandas pulls a chunk on import
+
+    rows = await query_range(exchange, symbol, timeframe, start, end, limit=limit)
+    if not rows:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    df = pd.DataFrame(rows)
+    df = df.set_index(pd.DatetimeIndex(df["ts"], name="ts"))
+    return df[["open", "high", "low", "close", "volume"]]
+
+
+_INSERT_EQUITY_SQL = """
+INSERT INTO equity_curve (run_id, ts, equity, drawdown, position)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (run_id, ts) DO NOTHING
+"""
+
+
+async def insert_equity_curve(
+    run_id: str,
+    rows: Iterable[tuple[datetime, float, float, float]],
+) -> int:
+    """Bulk-insert equity_curve rows. Each row is (ts, equity, drawdown, position).
+
+    Uses asyncpg's executemany; we don't ``COPY`` because the row volume is
+    typically small (≤ 100k for a normal backtest) and ``ON CONFLICT`` is
+    not available in COPY paths without staging tables.
+    """
+    materialised = [(run_id, ts, eq, dd, pos) for (ts, eq, dd, pos) in rows]
+    if not materialised:
+        return 0
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.executemany(_INSERT_EQUITY_SQL, materialised)
+    return len(materialised)
+
+
+_QUERY_EQUITY_SQL = """
+SELECT ts, equity, drawdown, position
+FROM equity_curve
+WHERE run_id = $1
+ORDER BY ts ASC
+LIMIT $2
+"""
+
+
+async def query_equity_curve(run_id: str, *, limit: int = 50_000) -> list[dict[str, Any]]:
+    """Return the equity curve for a backtest run, ordered by ts ascending."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(_QUERY_EQUITY_SQL, run_id, limit)
+    return [dict(r) for r in rows]

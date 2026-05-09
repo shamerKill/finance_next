@@ -3,24 +3,39 @@
 import { useEffect, useState } from "react";
 import { wsUrl } from "./api-client";
 
-// AccountEvent is the envelope the gateway hub pushes for each upstream event.
-export type AccountEvent = {
-  type: "account.event" | "account.upstream_closed" | "error" | "pong" | string;
+// Phase 3 generalised the gateway's WS hub to a (topic, id) subscription
+// model. The browser can subscribe to:
+//   - { topic: "account", id: <accountId> }   → account user-data events
+//   - { topic: "backtest", id: <runId> }      → live backtest progress
+//
+// The gateway preserves the legacy account envelope shape ({type:
+// "account.event", accountId, payload}) so existing consumers continue to
+// work. New backtest envelopes use {type, topic, id, payload}.
+
+export type WsTopic = "account" | "backtest";
+
+export type WsEvent = {
+  // Examples: "account.event", "account.upstream_closed", "backtest.progress",
+  // "backtest.completed", "backtest.upstream_closed", "pong", "error"
+  type: string;
+  topic?: WsTopic;
+  id?: string;
+  // Legacy field retained for account envelopes.
   accountId?: string;
   payload?: unknown;
   error?: string;
 };
 
-type Listener = (event: AccountEvent) => void;
+type Listener = (event: WsEvent) => void;
 
-// AccountStreamClient is a single WebSocket connection multiplexed across many
-// subscribers. Reconnect uses exponential backoff capped at 30s. The hub on
-// the gateway side already de-duplicates per-account upstreams so we only need
-// one socket per browser tab.
-class AccountStreamClient {
+// Stable map key for topic+id pairs.
+const tk = (topic: WsTopic, id: string) => `${topic}:${id}`;
+
+class HubClient {
   private ws: WebSocket | null = null;
   private listeners = new Map<string, Set<Listener>>();
-  private subscribed = new Set<string>();
+  private subscribed = new Set<string>(); // topic-key strings
+  private subscribedMeta = new Map<string, { topic: WsTopic; id: string }>();
   private backoff = 500;
   private readonly maxBackoff = 30_000;
   private closing = false;
@@ -31,25 +46,40 @@ class AccountStreamClient {
 
     this.ws.addEventListener("open", () => {
       this.backoff = 500;
-      // Re-issue all known subscriptions on reconnect.
-      for (const accountId of this.subscribed) {
-        this.send({ type: "subscribe", accountId });
+      // Re-issue subscriptions on reconnect.
+      for (const key of this.subscribed) {
+        const meta = this.subscribedMeta.get(key);
+        if (meta) this.send({ type: "subscribe", topic: meta.topic, id: meta.id });
       }
     });
 
     this.ws.addEventListener("message", (ev) => {
-      let parsed: AccountEvent | null = null;
+      let parsed: WsEvent | null = null;
       try {
-        parsed = JSON.parse(ev.data) as AccountEvent;
+        parsed = JSON.parse(ev.data) as WsEvent;
       } catch {
         return;
       }
       if (!parsed) return;
-      const accountId = parsed.accountId ?? "";
-      const set = this.listeners.get(accountId);
-      if (set) {
-        for (const fn of set) fn(parsed);
+
+      // Route the event to the right (topic, id) listener set. Legacy
+      // account envelopes don't carry a `topic` field; infer from accountId.
+      let key: string | null = null;
+      if (parsed.topic && parsed.id) {
+        key = tk(parsed.topic, parsed.id);
+      } else if (parsed.accountId) {
+        key = tk("account", parsed.accountId);
       }
+
+      if (!key) {
+        // Untargeted (e.g. global "pong"). Broadcast to all listeners.
+        for (const set of this.listeners.values()) {
+          for (const fn of set) fn(parsed);
+        }
+        return;
+      }
+      const set = this.listeners.get(key);
+      if (set) for (const fn of set) fn(parsed);
     });
 
     const reconnect = () => {
@@ -61,8 +91,11 @@ class AccountStreamClient {
     };
     this.ws.addEventListener("close", reconnect);
     this.ws.addEventListener("error", () => {
-      // Some browsers fire "error" before "close"; close handler will reconnect.
-      try { this.ws?.close(); } catch { /* ignore */ }
+      try {
+        this.ws?.close();
+      } catch {
+        /* ignore */
+      }
     });
   }
 
@@ -72,61 +105,66 @@ class AccountStreamClient {
     }
   }
 
-  subscribe(accountId: string, listener: Listener): () => void {
+  subscribe(topic: WsTopic, id: string, listener: Listener): () => void {
     if (!this.ws) this.connect();
-    let set = this.listeners.get(accountId);
+    const key = tk(topic, id);
+    let set = this.listeners.get(key);
     if (!set) {
       set = new Set();
-      this.listeners.set(accountId, set);
+      this.listeners.set(key, set);
     }
     set.add(listener);
 
-    if (!this.subscribed.has(accountId)) {
-      this.subscribed.add(accountId);
-      this.send({ type: "subscribe", accountId });
+    if (!this.subscribed.has(key)) {
+      this.subscribed.add(key);
+      this.subscribedMeta.set(key, { topic, id });
+      this.send({ type: "subscribe", topic, id });
     }
 
     return () => {
-      const cur = this.listeners.get(accountId);
+      const cur = this.listeners.get(key);
       if (!cur) return;
       cur.delete(listener);
       if (cur.size === 0) {
-        this.listeners.delete(accountId);
-        this.subscribed.delete(accountId);
-        this.send({ type: "unsubscribe", accountId });
+        this.listeners.delete(key);
+        this.subscribed.delete(key);
+        this.subscribedMeta.delete(key);
+        this.send({ type: "unsubscribe", topic, id });
       }
     };
   }
 
   shutdown() {
     this.closing = true;
-    try { this.ws?.close(); } catch { /* ignore */ }
+    try {
+      this.ws?.close();
+    } catch {
+      /* ignore */
+    }
   }
 }
 
-// Module-level singleton; React hooks below share it across the page.
-let singleton: AccountStreamClient | null = null;
+let singleton: HubClient | null = null;
 function getClient() {
-  if (!singleton) singleton = new AccountStreamClient();
+  if (!singleton) singleton = new HubClient();
   return singleton;
 }
 
-// useAccountStream subscribes to events for one account. It tolerates
-// SSR/hydration by only opening the socket inside an effect.
-//
-// `bufferSize` controls how many recent events are kept in the returned log;
-// callers needing only the last event can read events[0].
+// ---- Public hooks ---------------------------------------------------------
+
+// Backwards-compat alias. AccountEvent matches the phase-1 type.
+export type AccountEvent = WsEvent;
+
 export function useAccountStream(
   accountId: string | null | undefined,
   bufferSize = 25,
 ) {
-  const [events, setEvents] = useState<AccountEvent[]>([]);
+  const [events, setEvents] = useState<WsEvent[]>([]);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     if (!accountId) return;
-    const client = getClient();
-    const off = client.subscribe(accountId, (ev) => {
+    const off = getClient().subscribe("account", accountId, (ev) => {
       if (ev.type === "account.event") setConnected(true);
       if (ev.type === "account.upstream_closed") setConnected(false);
       setEvents((prev) => [ev, ...prev].slice(0, bufferSize));
@@ -138,4 +176,44 @@ export function useAccountStream(
   }, [accountId, bufferSize]);
 
   return { events, last: events[0] ?? null, connected };
+}
+
+// Phase 3: subscribe to live backtest progress for a single run.
+//
+// Returned shape:
+//   - events: ring buffer of recent envelopes
+//   - last: most recent envelope
+//   - progress: 0..1 derived from the latest progress event
+//   - state: latest BacktestState int (1..4) reported by the worker
+//   - completed: true once a backtest.completed envelope has arrived
+export function useBacktestStream(
+  runId: string | null | undefined,
+  bufferSize = 25,
+) {
+  // The hook is intended to be used in a component keyed by runId
+  // (e.g. <LiveProgress key={runId} runId={runId} />) so changing the
+  // runId remounts the component and gives us fresh state without an
+  // imperative reset inside the effect.
+  const [events, setEvents] = useState<WsEvent[]>([]);
+  const [progress, setProgress] = useState(0);
+  const [state, setState] = useState<number | null>(null);
+  const [completed, setCompleted] = useState(false);
+
+  useEffect(() => {
+    if (!runId) return;
+    const off = getClient().subscribe("backtest", runId, (ev) => {
+      const payload = (ev.payload ?? {}) as Record<string, unknown>;
+      if (typeof payload["progress"] === "number")
+        setProgress(payload["progress"] as number);
+      if (typeof payload["state"] === "number")
+        setState(payload["state"] as number);
+      if (ev.type === "backtest.completed") setCompleted(true);
+      setEvents((prev) => [ev, ...prev].slice(0, bufferSize));
+    });
+    return () => {
+      off();
+    };
+  }, [runId, bufferSize]);
+
+  return { events, last: events[0] ?? null, progress, state, completed };
 }

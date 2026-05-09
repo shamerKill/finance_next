@@ -5,7 +5,11 @@ description = "finance_next Python quant worker — OHLCV ingest, backtests, opt
 requires-python = ">=3.12"
 readme = "README.md"
 
-# Phase 2 deps. Heavier libs (vectorbt, optuna, anthropic) land in later phases.
+# Phase 2 deps + Phase 3 (motor for backtest head docs). Heavier libs
+# (optuna, anthropic) land in later phases. We keep an in-house signals
+# simulator instead of pulling vectorbt — vectorbt brings numba + tables +
+# plotly, none of which we need; the simulator in strategies/base.py is
+# ~80 LoC and exact for our grid_dca semantics.
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
@@ -22,6 +26,8 @@ dependencies = [
     "pydantic-settings>=2.5",
     "httpx>=0.27",
     "structlog>=24.4",
+    # Phase 3: Mongo client for backtest head docs.
+    "motor>=3.5",
 ]
 
 [project.optional-dependencies]

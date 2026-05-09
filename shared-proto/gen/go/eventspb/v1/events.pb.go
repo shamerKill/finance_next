@@ -191,6 +191,172 @@ func (x *StrategyUpserted) GetKind() string {
 	return ""
 }
 
+// BacktestProgress is emitted by the Python quant worker during a backtest
+// run, every ~10% of bars processed (or every 100 bars, whichever is more
+// frequent). Consumed by the gateway WS hub and forwarded to subscribed
+// browser sessions.
+type BacktestProgress struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	RunId string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	// 0..1 progress fraction.
+	Progress float64 `protobuf:"fixed64,2,opt,name=progress,proto3" json:"progress,omitempty"`
+	// Tail of the equity curve (most recent ~50 points). The full curve lives
+	// in TimescaleDB; this is only for live UI updates.
+	RecentEquity []float64 `protobuf:"fixed64,3,rep,packed,name=recent_equity,json=recentEquity,proto3" json:"recent_equity,omitempty"`
+	// Mirror of quantpb.v1.BacktestState (kept as int to avoid cross-package
+	// proto imports between event and rpc packages).
+	State         int32 `protobuf:"varint,4,opt,name=state,proto3" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BacktestProgress) Reset() {
+	*x = BacktestProgress{}
+	mi := &file_eventspb_v1_events_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BacktestProgress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BacktestProgress) ProtoMessage() {}
+
+func (x *BacktestProgress) ProtoReflect() protoreflect.Message {
+	mi := &file_eventspb_v1_events_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BacktestProgress.ProtoReflect.Descriptor instead.
+func (*BacktestProgress) Descriptor() ([]byte, []int) {
+	return file_eventspb_v1_events_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *BacktestProgress) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+func (x *BacktestProgress) GetProgress() float64 {
+	if x != nil {
+		return x.Progress
+	}
+	return 0
+}
+
+func (x *BacktestProgress) GetRecentEquity() []float64 {
+	if x != nil {
+		return x.RecentEquity
+	}
+	return nil
+}
+
+func (x *BacktestProgress) GetState() int32 {
+	if x != nil {
+		return x.State
+	}
+	return 0
+}
+
+// BacktestCompleted is emitted by the Python quant worker when a backtest
+// reaches a terminal state (COMPLETED or FAILED). Consumers can use this to
+// trigger downstream actions (e.g. AI recommendation re-evaluation).
+type BacktestCompleted struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	RunId      string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	StrategyId string                 `protobuf:"bytes,2,opt,name=strategy_id,json=strategyId,proto3" json:"strategy_id,omitempty"`
+	// Final metrics; keys mirror BacktestStatus.metrics.
+	Metrics map[string]float64 `protobuf:"bytes,3,rep,name=metrics,proto3" json:"metrics,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"fixed64,2,opt,name=value"`
+	// Mirror of quantpb.v1.BacktestState (3 = COMPLETED, 4 = FAILED).
+	State         int32                  `protobuf:"varint,4,opt,name=state,proto3" json:"state,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	FinishedAt    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BacktestCompleted) Reset() {
+	*x = BacktestCompleted{}
+	mi := &file_eventspb_v1_events_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BacktestCompleted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BacktestCompleted) ProtoMessage() {}
+
+func (x *BacktestCompleted) ProtoReflect() protoreflect.Message {
+	mi := &file_eventspb_v1_events_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BacktestCompleted.ProtoReflect.Descriptor instead.
+func (*BacktestCompleted) Descriptor() ([]byte, []int) {
+	return file_eventspb_v1_events_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *BacktestCompleted) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+func (x *BacktestCompleted) GetStrategyId() string {
+	if x != nil {
+		return x.StrategyId
+	}
+	return ""
+}
+
+func (x *BacktestCompleted) GetMetrics() map[string]float64 {
+	if x != nil {
+		return x.Metrics
+	}
+	return nil
+}
+
+func (x *BacktestCompleted) GetState() int32 {
+	if x != nil {
+		return x.State
+	}
+	return 0
+}
+
+func (x *BacktestCompleted) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *BacktestCompleted) GetFinishedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FinishedAt
+	}
+	return nil
+}
+
 var File_eventspb_v1_events_proto protoreflect.FileDescriptor
 
 const file_eventspb_v1_events_proto_rawDesc = "" +
@@ -208,7 +374,24 @@ const file_eventspb_v1_events_proto_rawDesc = "" +
 	"\vstrategy_id\x18\x01 \x01(\tR\n" +
 	"strategyId\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x03R\aversion\x12\x12\n" +
-	"\x04kind\x18\x03 \x01(\tR\x04kindBBZ@github.com/finance_next/shared-proto/gen/go/eventspb/v1;eventsv1b\x06proto3"
+	"\x04kind\x18\x03 \x01(\tR\x04kind\"\x80\x01\n" +
+	"\x10BacktestProgress\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1a\n" +
+	"\bprogress\x18\x02 \x01(\x01R\bprogress\x12#\n" +
+	"\rrecent_equity\x18\x03 \x03(\x01R\frecentEquity\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\x05R\x05state\"\xc6\x02\n" +
+	"\x11BacktestCompleted\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1f\n" +
+	"\vstrategy_id\x18\x02 \x01(\tR\n" +
+	"strategyId\x12E\n" +
+	"\ametrics\x18\x03 \x03(\v2+.eventspb.v1.BacktestCompleted.MetricsEntryR\ametrics\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\x05R\x05state\x12#\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\x12;\n" +
+	"\vfinished_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"finishedAt\x1a:\n" +
+	"\fMetricsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01BBZ@github.com/finance_next/shared-proto/gen/go/eventspb/v1;eventsv1b\x06proto3"
 
 var (
 	file_eventspb_v1_events_proto_rawDescOnce sync.Once
@@ -222,20 +405,25 @@ func file_eventspb_v1_events_proto_rawDescGZIP() []byte {
 	return file_eventspb_v1_events_proto_rawDescData
 }
 
-var file_eventspb_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_eventspb_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_eventspb_v1_events_proto_goTypes = []any{
 	(*OhlcvIngested)(nil),         // 0: eventspb.v1.OhlcvIngested
 	(*StrategyUpserted)(nil),      // 1: eventspb.v1.StrategyUpserted
-	(*timestamppb.Timestamp)(nil), // 2: google.protobuf.Timestamp
+	(*BacktestProgress)(nil),      // 2: eventspb.v1.BacktestProgress
+	(*BacktestCompleted)(nil),     // 3: eventspb.v1.BacktestCompleted
+	nil,                           // 4: eventspb.v1.BacktestCompleted.MetricsEntry
+	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
 }
 var file_eventspb_v1_events_proto_depIdxs = []int32{
-	2, // 0: eventspb.v1.OhlcvIngested.from_ts:type_name -> google.protobuf.Timestamp
-	2, // 1: eventspb.v1.OhlcvIngested.to_ts:type_name -> google.protobuf.Timestamp
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	5, // 0: eventspb.v1.OhlcvIngested.from_ts:type_name -> google.protobuf.Timestamp
+	5, // 1: eventspb.v1.OhlcvIngested.to_ts:type_name -> google.protobuf.Timestamp
+	4, // 2: eventspb.v1.BacktestCompleted.metrics:type_name -> eventspb.v1.BacktestCompleted.MetricsEntry
+	5, // 3: eventspb.v1.BacktestCompleted.finished_at:type_name -> google.protobuf.Timestamp
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_eventspb_v1_events_proto_init() }
@@ -249,7 +437,7 @@ func file_eventspb_v1_events_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eventspb_v1_events_proto_rawDesc), len(file_eventspb_v1_events_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

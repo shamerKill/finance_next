@@ -23,9 +23,10 @@ _sym_db = _symbol_database.Default()
 
 
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
+from google.protobuf import struct_pb2 as google_dot_protobuf_dot_struct__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16quantpb/v1/quant.proto\x12\nquantpb.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x98\x01\n\rIngestRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x11\n\ttimeframe\x18\x03 \x01(\t\x12)\n\x05start\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\'\n\x03\x65nd\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\x8a\x01\n\tIngestAck\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x15\n\rbars_ingested\x18\x02 \x01(\x03\x12+\n\x07\x66rom_ts\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12)\n\x05to_ts\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\xc4\x01\n\x0f\x42\x61\x63ktestRequest\x12\x13\n\x0bstrategy_id\x18\x01 \x01(\t\x12\x10\n\x08\x65xchange\x18\x02 \x01(\t\x12\x0e\n\x06symbol\x18\x03 \x01(\t\x12\x11\n\ttimeframe\x18\x04 \x01(\t\x12)\n\x05start\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\'\n\x03\x65nd\x18\x06 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x13\n\x0bparams_json\x18\x07 \x01(\t\" \n\x0e\x42\x61\x63ktestHandle\x12\x0e\n\x06run_id\x18\x01 \x01(\t\"*\n\x18GetBacktestStatusRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\"\xc7\x01\n\x0e\x42\x61\x63ktestStatus\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12/\n\x05state\x18\x02 \x01(\x0e\x32 .quantpb.v1.BacktestStatus.State\x12\x10\n\x08progress\x18\x03 \x01(\x01\x12\r\n\x05\x65rror\x18\x04 \x01(\t\"S\n\x05State\x12\x15\n\x11STATE_UNSPECIFIED\x10\x00\x12\x0b\n\x07PENDING\x10\x01\x12\x0b\n\x07RUNNING\x10\x02\x12\r\n\tSUCCEEDED\x10\x03\x12\n\n\x06\x46\x41ILED\x10\x04\"\xce\x01\n\x13OptimizationRequest\x12\x13\n\x0bstrategy_id\x18\x01 \x01(\t\x12\x10\n\x08\x65xchange\x18\x02 \x01(\t\x12\x0e\n\x06symbol\x18\x03 \x01(\t\x12\x11\n\ttimeframe\x18\x04 \x01(\t\x12)\n\x05start\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\'\n\x03\x65nd\x18\x06 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x19\n\x11study_config_json\x18\x07 \x01(\t\"\x1f\n\x0bStudyHandle\x12\x10\n\x08study_id\x18\x01 \x01(\t\"\x83\x01\n\x0f\x45valuateRequest\x12\x13\n\x0bstrategy_id\x18\x01 \x01(\t\x12\x10\n\x08\x65xchange\x18\x02 \x01(\t\x12\x0e\n\x06symbol\x18\x03 \x01(\t\x12\x11\n\ttimeframe\x18\x04 \x01(\t\x12&\n\x02ts\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\xc9\x01\n\x0eSignalDecision\x12\x31\n\x06\x61\x63tion\x18\x01 \x01(\x0e\x32!.quantpb.v1.SignalDecision.Action\x12\x0c\n\x04size\x18\x02 \x01(\x01\x12\x0e\n\x06reason\x18\x03 \x01(\t\"f\n\x06\x41\x63tion\x12\x16\n\x12\x41\x43TION_UNSPECIFIED\x10\x00\x12\x08\n\x04HOLD\x10\x01\x12\r\n\tOPEN_LONG\x10\x02\x12\x0e\n\nOPEN_SHORT\x10\x03\x12\t\n\x05\x43LOSE\x10\x04\x12\x10\n\x0c\x41\x44\x44_POSITION\x10\x05\x32\xff\x02\n\x05Quant\x12\x46\n\x0bRunBacktest\x12\x1b.quantpb.v1.BacktestRequest\x1a\x1a.quantpb.v1.BacktestHandle\x12U\n\x11GetBacktestStatus\x12$.quantpb.v1.GetBacktestStatusRequest\x1a\x1a.quantpb.v1.BacktestStatus\x12M\n\x11StartOptimization\x12\x1f.quantpb.v1.OptimizationRequest\x1a\x17.quantpb.v1.StudyHandle\x12=\n\tIngestNow\x12\x19.quantpb.v1.IngestRequest\x1a\x15.quantpb.v1.IngestAck\x12I\n\x0e\x45valuateSignal\x12\x1b.quantpb.v1.EvaluateRequest\x1a\x1a.quantpb.v1.SignalDecisionB@Z>github.com/finance_next/shared-proto/gen/go/quantpb/v1;quantv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16quantpb/v1/quant.proto\x12\nquantpb.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/protobuf/struct.proto\"\x98\x01\n\rIngestRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x11\n\ttimeframe\x18\x03 \x01(\t\x12)\n\x05start\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\'\n\x03\x65nd\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\x8a\x01\n\tIngestAck\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x15\n\rbars_ingested\x18\x02 \x01(\x03\x12+\n\x07\x66rom_ts\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12)\n\x05to_ts\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\xae\x02\n\x0f\x42\x61\x63ktestRequest\x12\x13\n\x0bstrategy_id\x18\x01 \x01(\t\x12\x0c\n\x04kind\x18\x02 \x01(\t\x12\'\n\x06params\x18\x03 \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x0e\n\x06symbol\x18\x04 \x01(\t\x12\x10\n\x08\x65xchange\x18\x05 \x01(\t\x12\x11\n\ttimeframe\x18\x06 \x01(\t\x12)\n\x05start\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\'\n\x03\x65nd\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x17\n\x0finitial_capital\x18\t \x01(\x01\x12\x17\n\x0f\x63ommission_rate\x18\n \x01(\x01\x12\x14\n\x0cslippage_bps\x18\x0b \x01(\x01\"Q\n\x0e\x42\x61\x63ktestHandle\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12/\n\x0b\x65nqueued_at\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"*\n\x18GetBacktestStatusRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\"\xbe\x02\n\x0e\x42\x61\x63ktestStatus\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12(\n\x05state\x18\x02 \x01(\x0e\x32\x19.quantpb.v1.BacktestState\x12\x10\n\x08progress\x18\x03 \x01(\x01\x12\x38\n\x07metrics\x18\x04 \x03(\x0b\x32\'.quantpb.v1.BacktestStatus.MetricsEntry\x12\x15\n\rerror_message\x18\x05 \x01(\t\x12.\n\nstarted_at\x18\x06 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12/\n\x0b\x66inished_at\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x1a.\n\x0cMetricsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\"\x8c\x01\n\x10\x42\x61\x63ktestProgress\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x10\n\x08progress\x18\x02 \x01(\x01\x12\x15\n\rrecent_equity\x18\x03 \x03(\x01\x12(\n\x05state\x18\x04 \x01(\x0e\x32\x19.quantpb.v1.BacktestState\x12\x15\n\rerror_message\x18\x05 \x01(\t\"\xce\x01\n\x13OptimizationRequest\x12\x13\n\x0bstrategy_id\x18\x01 \x01(\t\x12\x10\n\x08\x65xchange\x18\x02 \x01(\t\x12\x0e\n\x06symbol\x18\x03 \x01(\t\x12\x11\n\ttimeframe\x18\x04 \x01(\t\x12)\n\x05start\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\'\n\x03\x65nd\x18\x06 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x19\n\x11study_config_json\x18\x07 \x01(\t\"\x1f\n\x0bStudyHandle\x12\x10\n\x08study_id\x18\x01 \x01(\t\"\x83\x01\n\x0f\x45valuateRequest\x12\x13\n\x0bstrategy_id\x18\x01 \x01(\t\x12\x10\n\x08\x65xchange\x18\x02 \x01(\t\x12\x0e\n\x06symbol\x18\x03 \x01(\t\x12\x11\n\ttimeframe\x18\x04 \x01(\t\x12&\n\x02ts\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\xc9\x01\n\x0eSignalDecision\x12\x31\n\x06\x61\x63tion\x18\x01 \x01(\x0e\x32!.quantpb.v1.SignalDecision.Action\x12\x0c\n\x04size\x18\x02 \x01(\x01\x12\x0e\n\x06reason\x18\x03 \x01(\t\"f\n\x06\x41\x63tion\x12\x16\n\x12\x41\x43TION_UNSPECIFIED\x10\x00\x12\x08\n\x04HOLD\x10\x01\x12\r\n\tOPEN_LONG\x10\x02\x12\x0e\n\nOPEN_SHORT\x10\x03\x12\t\n\x05\x43LOSE\x10\x04\x12\x10\n\x0c\x41\x44\x44_POSITION\x10\x05*d\n\rBacktestState\x12\x1e\n\x1a\x42\x41\x43KTEST_STATE_UNSPECIFIED\x10\x00\x12\x0b\n\x07PENDING\x10\x01\x12\x0b\n\x07RUNNING\x10\x02\x12\r\n\tCOMPLETED\x10\x03\x12\n\n\x06\x46\x41ILED\x10\x04\x32\xdf\x03\n\x05Quant\x12\x46\n\x0bRunBacktest\x12\x1b.quantpb.v1.BacktestRequest\x1a\x1a.quantpb.v1.BacktestHandle\x12U\n\x11GetBacktestStatus\x12$.quantpb.v1.GetBacktestStatusRequest\x1a\x1a.quantpb.v1.BacktestStatus\x12^\n\x16StreamBacktestProgress\x12$.quantpb.v1.GetBacktestStatusRequest\x1a\x1c.quantpb.v1.BacktestProgress0\x01\x12M\n\x11StartOptimization\x12\x1f.quantpb.v1.OptimizationRequest\x1a\x17.quantpb.v1.StudyHandle\x12=\n\tIngestNow\x12\x19.quantpb.v1.IngestRequest\x1a\x15.quantpb.v1.IngestAck\x12I\n\x0e\x45valuateSignal\x12\x1b.quantpb.v1.EvaluateRequest\x1a\x1a.quantpb.v1.SignalDecisionB@Z>github.com/finance_next/shared-proto/gen/go/quantpb/v1;quantv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,30 +34,36 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'quantpb.v1.quant_pb2', _glo
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z>github.com/finance_next/shared-proto/gen/go/quantpb/v1;quantv1'
-  _globals['_INGESTREQUEST']._serialized_start=72
-  _globals['_INGESTREQUEST']._serialized_end=224
-  _globals['_INGESTACK']._serialized_start=227
-  _globals['_INGESTACK']._serialized_end=365
-  _globals['_BACKTESTREQUEST']._serialized_start=368
-  _globals['_BACKTESTREQUEST']._serialized_end=564
-  _globals['_BACKTESTHANDLE']._serialized_start=566
-  _globals['_BACKTESTHANDLE']._serialized_end=598
-  _globals['_GETBACKTESTSTATUSREQUEST']._serialized_start=600
-  _globals['_GETBACKTESTSTATUSREQUEST']._serialized_end=642
-  _globals['_BACKTESTSTATUS']._serialized_start=645
-  _globals['_BACKTESTSTATUS']._serialized_end=844
-  _globals['_BACKTESTSTATUS_STATE']._serialized_start=761
-  _globals['_BACKTESTSTATUS_STATE']._serialized_end=844
-  _globals['_OPTIMIZATIONREQUEST']._serialized_start=847
-  _globals['_OPTIMIZATIONREQUEST']._serialized_end=1053
-  _globals['_STUDYHANDLE']._serialized_start=1055
-  _globals['_STUDYHANDLE']._serialized_end=1086
-  _globals['_EVALUATEREQUEST']._serialized_start=1089
-  _globals['_EVALUATEREQUEST']._serialized_end=1220
-  _globals['_SIGNALDECISION']._serialized_start=1223
-  _globals['_SIGNALDECISION']._serialized_end=1424
-  _globals['_SIGNALDECISION_ACTION']._serialized_start=1322
-  _globals['_SIGNALDECISION_ACTION']._serialized_end=1424
-  _globals['_QUANT']._serialized_start=1427
-  _globals['_QUANT']._serialized_end=1810
+  _globals['_BACKTESTSTATUS_METRICSENTRY']._loaded_options = None
+  _globals['_BACKTESTSTATUS_METRICSENTRY']._serialized_options = b'8\001'
+  _globals['_BACKTESTSTATE']._serialized_start=1873
+  _globals['_BACKTESTSTATE']._serialized_end=1973
+  _globals['_INGESTREQUEST']._serialized_start=102
+  _globals['_INGESTREQUEST']._serialized_end=254
+  _globals['_INGESTACK']._serialized_start=257
+  _globals['_INGESTACK']._serialized_end=395
+  _globals['_BACKTESTREQUEST']._serialized_start=398
+  _globals['_BACKTESTREQUEST']._serialized_end=700
+  _globals['_BACKTESTHANDLE']._serialized_start=702
+  _globals['_BACKTESTHANDLE']._serialized_end=783
+  _globals['_GETBACKTESTSTATUSREQUEST']._serialized_start=785
+  _globals['_GETBACKTESTSTATUSREQUEST']._serialized_end=827
+  _globals['_BACKTESTSTATUS']._serialized_start=830
+  _globals['_BACKTESTSTATUS']._serialized_end=1148
+  _globals['_BACKTESTSTATUS_METRICSENTRY']._serialized_start=1102
+  _globals['_BACKTESTSTATUS_METRICSENTRY']._serialized_end=1148
+  _globals['_BACKTESTPROGRESS']._serialized_start=1151
+  _globals['_BACKTESTPROGRESS']._serialized_end=1291
+  _globals['_OPTIMIZATIONREQUEST']._serialized_start=1294
+  _globals['_OPTIMIZATIONREQUEST']._serialized_end=1500
+  _globals['_STUDYHANDLE']._serialized_start=1502
+  _globals['_STUDYHANDLE']._serialized_end=1533
+  _globals['_EVALUATEREQUEST']._serialized_start=1536
+  _globals['_EVALUATEREQUEST']._serialized_end=1667
+  _globals['_SIGNALDECISION']._serialized_start=1670
+  _globals['_SIGNALDECISION']._serialized_end=1871
+  _globals['_SIGNALDECISION_ACTION']._serialized_start=1769
+  _globals['_SIGNALDECISION_ACTION']._serialized_end=1871
+  _globals['_QUANT']._serialized_start=1976
+  _globals['_QUANT']._serialized_end=2455
 # @@protoc_insertion_point(module_scope)

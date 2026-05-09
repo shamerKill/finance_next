@@ -1,13 +1,28 @@
 import datetime
 
 from google.protobuf import timestamp_pb2 as _timestamp_pb2
+from google.protobuf import struct_pb2 as _struct_pb2
+from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Mapping as _Mapping
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
 from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
+
+class BacktestState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    BACKTEST_STATE_UNSPECIFIED: _ClassVar[BacktestState]
+    PENDING: _ClassVar[BacktestState]
+    RUNNING: _ClassVar[BacktestState]
+    COMPLETED: _ClassVar[BacktestState]
+    FAILED: _ClassVar[BacktestState]
+BACKTEST_STATE_UNSPECIFIED: BacktestState
+PENDING: BacktestState
+RUNNING: BacktestState
+COMPLETED: BacktestState
+FAILED: BacktestState
 
 class IngestRequest(_message.Message):
     __slots__ = ("exchange", "symbol", "timeframe", "start", "end")
@@ -36,28 +51,38 @@ class IngestAck(_message.Message):
     def __init__(self, run_id: _Optional[str] = ..., bars_ingested: _Optional[int] = ..., from_ts: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., to_ts: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class BacktestRequest(_message.Message):
-    __slots__ = ("strategy_id", "exchange", "symbol", "timeframe", "start", "end", "params_json")
+    __slots__ = ("strategy_id", "kind", "params", "symbol", "exchange", "timeframe", "start", "end", "initial_capital", "commission_rate", "slippage_bps")
     STRATEGY_ID_FIELD_NUMBER: _ClassVar[int]
-    EXCHANGE_FIELD_NUMBER: _ClassVar[int]
+    KIND_FIELD_NUMBER: _ClassVar[int]
+    PARAMS_FIELD_NUMBER: _ClassVar[int]
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
+    EXCHANGE_FIELD_NUMBER: _ClassVar[int]
     TIMEFRAME_FIELD_NUMBER: _ClassVar[int]
     START_FIELD_NUMBER: _ClassVar[int]
     END_FIELD_NUMBER: _ClassVar[int]
-    PARAMS_JSON_FIELD_NUMBER: _ClassVar[int]
+    INITIAL_CAPITAL_FIELD_NUMBER: _ClassVar[int]
+    COMMISSION_RATE_FIELD_NUMBER: _ClassVar[int]
+    SLIPPAGE_BPS_FIELD_NUMBER: _ClassVar[int]
     strategy_id: str
-    exchange: str
+    kind: str
+    params: _struct_pb2.Struct
     symbol: str
+    exchange: str
     timeframe: str
     start: _timestamp_pb2.Timestamp
     end: _timestamp_pb2.Timestamp
-    params_json: str
-    def __init__(self, strategy_id: _Optional[str] = ..., exchange: _Optional[str] = ..., symbol: _Optional[str] = ..., timeframe: _Optional[str] = ..., start: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., end: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., params_json: _Optional[str] = ...) -> None: ...
+    initial_capital: float
+    commission_rate: float
+    slippage_bps: float
+    def __init__(self, strategy_id: _Optional[str] = ..., kind: _Optional[str] = ..., params: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ..., symbol: _Optional[str] = ..., exchange: _Optional[str] = ..., timeframe: _Optional[str] = ..., start: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., end: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., initial_capital: _Optional[float] = ..., commission_rate: _Optional[float] = ..., slippage_bps: _Optional[float] = ...) -> None: ...
 
 class BacktestHandle(_message.Message):
-    __slots__ = ("run_id",)
+    __slots__ = ("run_id", "enqueued_at")
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    ENQUEUED_AT_FIELD_NUMBER: _ClassVar[int]
     run_id: str
-    def __init__(self, run_id: _Optional[str] = ...) -> None: ...
+    enqueued_at: _timestamp_pb2.Timestamp
+    def __init__(self, run_id: _Optional[str] = ..., enqueued_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class GetBacktestStatusRequest(_message.Message):
     __slots__ = ("run_id",)
@@ -66,28 +91,43 @@ class GetBacktestStatusRequest(_message.Message):
     def __init__(self, run_id: _Optional[str] = ...) -> None: ...
 
 class BacktestStatus(_message.Message):
-    __slots__ = ("run_id", "state", "progress", "error")
-    class State(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
-        __slots__ = ()
-        STATE_UNSPECIFIED: _ClassVar[BacktestStatus.State]
-        PENDING: _ClassVar[BacktestStatus.State]
-        RUNNING: _ClassVar[BacktestStatus.State]
-        SUCCEEDED: _ClassVar[BacktestStatus.State]
-        FAILED: _ClassVar[BacktestStatus.State]
-    STATE_UNSPECIFIED: BacktestStatus.State
-    PENDING: BacktestStatus.State
-    RUNNING: BacktestStatus.State
-    SUCCEEDED: BacktestStatus.State
-    FAILED: BacktestStatus.State
+    __slots__ = ("run_id", "state", "progress", "metrics", "error_message", "started_at", "finished_at")
+    class MetricsEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: float
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[float] = ...) -> None: ...
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     STATE_FIELD_NUMBER: _ClassVar[int]
     PROGRESS_FIELD_NUMBER: _ClassVar[int]
-    ERROR_FIELD_NUMBER: _ClassVar[int]
+    METRICS_FIELD_NUMBER: _ClassVar[int]
+    ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    STARTED_AT_FIELD_NUMBER: _ClassVar[int]
+    FINISHED_AT_FIELD_NUMBER: _ClassVar[int]
     run_id: str
-    state: BacktestStatus.State
+    state: BacktestState
     progress: float
-    error: str
-    def __init__(self, run_id: _Optional[str] = ..., state: _Optional[_Union[BacktestStatus.State, str]] = ..., progress: _Optional[float] = ..., error: _Optional[str] = ...) -> None: ...
+    metrics: _containers.ScalarMap[str, float]
+    error_message: str
+    started_at: _timestamp_pb2.Timestamp
+    finished_at: _timestamp_pb2.Timestamp
+    def __init__(self, run_id: _Optional[str] = ..., state: _Optional[_Union[BacktestState, str]] = ..., progress: _Optional[float] = ..., metrics: _Optional[_Mapping[str, float]] = ..., error_message: _Optional[str] = ..., started_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., finished_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+
+class BacktestProgress(_message.Message):
+    __slots__ = ("run_id", "progress", "recent_equity", "state", "error_message")
+    RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    PROGRESS_FIELD_NUMBER: _ClassVar[int]
+    RECENT_EQUITY_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    run_id: str
+    progress: float
+    recent_equity: _containers.RepeatedScalarFieldContainer[float]
+    state: BacktestState
+    error_message: str
+    def __init__(self, run_id: _Optional[str] = ..., progress: _Optional[float] = ..., recent_equity: _Optional[_Iterable[float]] = ..., state: _Optional[_Union[BacktestState, str]] = ..., error_message: _Optional[str] = ...) -> None: ...
 
 class OptimizationRequest(_message.Message):
     __slots__ = ("strategy_id", "exchange", "symbol", "timeframe", "start", "end", "study_config_json")

@@ -15,10 +15,16 @@ import (
 )
 
 // Client is the minimal surface the gateway uses. We DO NOT re-export the
-// full QuantClient interface — only the methods Phase 2 actually calls.
+// full QuantClient interface — only the methods phases 2 + 3 actually call.
 // More methods get added as later phases need them.
 type Client interface {
 	IngestNow(ctx context.Context, req *quantv1.IngestRequest) (*quantv1.IngestAck, error)
+
+	// Phase 3 — backtest RPCs.
+	RunBacktest(ctx context.Context, req *quantv1.BacktestRequest) (*quantv1.BacktestHandle, error)
+	GetBacktestStatus(ctx context.Context, req *quantv1.GetBacktestStatusRequest) (*quantv1.BacktestStatus, error)
+	StreamBacktestProgress(ctx context.Context, req *quantv1.GetBacktestStatusRequest) (quantv1.Quant_StreamBacktestProgressClient, error)
+
 	Close() error
 }
 
@@ -57,6 +63,27 @@ func (c *grpcClient) IngestNow(
 	req *quantv1.IngestRequest,
 ) (*quantv1.IngestAck, error) {
 	return c.stub.IngestNow(ctx, req)
+}
+
+func (c *grpcClient) RunBacktest(
+	ctx context.Context,
+	req *quantv1.BacktestRequest,
+) (*quantv1.BacktestHandle, error) {
+	return c.stub.RunBacktest(ctx, req)
+}
+
+func (c *grpcClient) GetBacktestStatus(
+	ctx context.Context,
+	req *quantv1.GetBacktestStatusRequest,
+) (*quantv1.BacktestStatus, error) {
+	return c.stub.GetBacktestStatus(ctx, req)
+}
+
+func (c *grpcClient) StreamBacktestProgress(
+	ctx context.Context,
+	req *quantv1.GetBacktestStatusRequest,
+) (quantv1.Quant_StreamBacktestProgressClient, error) {
+	return c.stub.StreamBacktestProgress(ctx, req)
 }
 
 func (c *grpcClient) Close() error {
@@ -101,6 +128,39 @@ func (l *LazyClient) IngestNow(
 		return nil, err
 	}
 	return c.IngestNow(ctx, req)
+}
+
+func (l *LazyClient) RunBacktest(
+	ctx context.Context,
+	req *quantv1.BacktestRequest,
+) (*quantv1.BacktestHandle, error) {
+	c, err := l.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.RunBacktest(ctx, req)
+}
+
+func (l *LazyClient) GetBacktestStatus(
+	ctx context.Context,
+	req *quantv1.GetBacktestStatusRequest,
+) (*quantv1.BacktestStatus, error) {
+	c, err := l.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.GetBacktestStatus(ctx, req)
+}
+
+func (l *LazyClient) StreamBacktestProgress(
+	ctx context.Context,
+	req *quantv1.GetBacktestStatusRequest,
+) (quantv1.Quant_StreamBacktestProgressClient, error) {
+	c, err := l.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.StreamBacktestProgress(ctx, req)
 }
 
 func (l *LazyClient) Close() error {

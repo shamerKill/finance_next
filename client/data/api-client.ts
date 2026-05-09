@@ -1,4 +1,15 @@
-import { TypeAccount, TypeBalance, TypeCreateAccount, TypeOption, TypePosition } from "./type";
+import {
+  TypeAccount,
+  TypeBacktest,
+  TypeBacktestHandle,
+  TypeBacktestTrade,
+  TypeBalance,
+  TypeCreateAccount,
+  TypeCreateBacktest,
+  TypeEquityPoint,
+  TypeOption,
+  TypePosition,
+} from "./type";
 
 // Base URL is env-driven so the client can talk to the Go gateway in dev
 // (default :3001) or to a deployed gateway via NEXT_PUBLIC_API_URL in prod.
@@ -97,6 +108,50 @@ export const getOhlcv = async (
     cache: "no-store",
   });
   return jsonOrThrow<TypeOhlcvBar[]>(res);
+};
+
+// ---------- Backtests (phase 3) ----------
+
+export const listBacktests = async (
+  strategyId?: string,
+): Promise<TypeBacktest[]> => {
+  const qs = strategyId ? `?strategyId=${encodeURIComponent(strategyId)}` : "";
+  const res = await fetch(parseUrl(`v1/backtests${qs}`), { cache: "no-store" });
+  return jsonOrThrow<TypeBacktest[]>(res);
+};
+
+export const getBacktest = async (id: string): Promise<TypeBacktest> => {
+  const res = await fetch(parseUrl(`v1/backtests/${id}`), { cache: "no-store" });
+  return jsonOrThrow<TypeBacktest>(res);
+};
+
+export const createBacktest = async (
+  input: TypeCreateBacktest,
+): Promise<TypeBacktestHandle> => {
+  const res = await fetch(parseUrl("v1/backtests"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return jsonOrThrow<TypeBacktestHandle>(res);
+};
+
+export const getEquityCurve = async (
+  id: string,
+  limit = 50_000,
+): Promise<TypeEquityPoint[]> => {
+  const res = await fetch(
+    parseUrl(`v1/backtests/${id}/equity?limit=${limit}`),
+    { cache: "no-store" },
+  );
+  return jsonOrThrow<TypeEquityPoint[]>(res);
+};
+
+export const getTrades = async (id: string): Promise<TypeBacktestTrade[]> => {
+  const res = await fetch(parseUrl(`v1/backtests/${id}/trades`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeBacktestTrade[]>(res);
 };
 
 // wsUrl returns the gateway's /ws endpoint, derived from the API base URL by

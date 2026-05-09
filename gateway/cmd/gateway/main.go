@@ -20,6 +20,7 @@ import (
 	"github.com/finance_next/gateway/internal/quantclient"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	tsstore "github.com/finance_next/gateway/internal/store/timescale"
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
@@ -71,6 +72,10 @@ func main() {
 	if err := acctRepo.EnsureIndexes(connectCtx); err != nil {
 		logger.Warn("ensure account indexes failed", "err", err)
 	}
+	bktRepo := mongostore.NewBacktestRepo(db)
+	if err := bktRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure backtest indexes failed", "err", err)
+	}
 
 	envelope := crypto.NewEnvelope(cryptoSvc)
 
@@ -97,14 +102,28 @@ func main() {
 		logger.Info("quant grpc client configured (lazy)", "addr", cfg.QuantGRPCAddr)
 	}
 
+	// ---- Phase 3 wiring: Redis client for WS backtest fan-out ----
+	var redisClient *redis.Client
+	if cfg.RedisURL != "" {
+		opt, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			logger.Warn("redis URL parse failed; backtest WS disabled", "err", err)
+		} else {
+			redisClient = redis.NewClient(opt)
+			logger.Info("redis client configured", "addr", opt.Addr)
+		}
+	}
+
 	e := gwhttp.NewRouter(gwhttp.Deps{
-		OptionRepo:  optRepo,
-		AccountRepo: acctRepo,
-		Crypto:      cryptoSvc,
-		Envelope:    envelope,
-		Timescale:   tsStore,
-		Quant:       quantCli,
-		AdminKey:    cfg.AdminKey,
+		OptionRepo:   optRepo,
+		AccountRepo:  acctRepo,
+		BacktestRepo: bktRepo,
+		Crypto:       cryptoSvc,
+		Envelope:     envelope,
+		Timescale:    tsStore,
+		Quant:        quantCli,
+		AdminKey:     cfg.AdminKey,
+		Redis:        redisClient,
 	})
 
 	addr := ":" + cfg.Port
@@ -134,6 +153,11 @@ func main() {
 	if quantCli != nil {
 		if err := quantCli.Close(); err != nil {
 			logger.Error("quant grpc close error", "err", err)
+		}
+	}
+	if redisClient != nil {
+		if err := redisClient.Close(); err != nil {
+			logger.Error("redis close error", "err", err)
 		}
 	}
 	if tsPool != nil {

@@ -20,6 +20,12 @@ type fakeQuant struct {
 	lastReq  *quantv1.IngestRequest
 	response *quantv1.IngestAck
 	err      error
+
+	// Phase 3 extension knobs.
+	backtestCalls   int
+	backtestRequest *quantv1.BacktestRequest
+	backtestHandle  *quantv1.BacktestHandle
+	backtestErr     error
 }
 
 func (f *fakeQuant) IngestNow(_ context.Context, req *quantv1.IngestRequest) (*quantv1.IngestAck, error) {
@@ -29,6 +35,26 @@ func (f *fakeQuant) IngestNow(_ context.Context, req *quantv1.IngestRequest) (*q
 		return nil, f.err
 	}
 	return f.response, nil
+}
+
+func (f *fakeQuant) RunBacktest(_ context.Context, req *quantv1.BacktestRequest) (*quantv1.BacktestHandle, error) {
+	f.backtestCalls++
+	f.backtestRequest = req
+	if f.backtestErr != nil {
+		return nil, f.backtestErr
+	}
+	if f.backtestHandle != nil {
+		return f.backtestHandle, nil
+	}
+	return &quantv1.BacktestHandle{RunId: "test-run", EnqueuedAt: timestamppb.Now()}, nil
+}
+
+func (f *fakeQuant) GetBacktestStatus(_ context.Context, _ *quantv1.GetBacktestStatusRequest) (*quantv1.BacktestStatus, error) {
+	return nil, nil
+}
+
+func (f *fakeQuant) StreamBacktestProgress(_ context.Context, _ *quantv1.GetBacktestStatusRequest) (quantv1.Quant_StreamBacktestProgressClient, error) {
+	return nil, nil
 }
 
 func (f *fakeQuant) Close() error { return nil }

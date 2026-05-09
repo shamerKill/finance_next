@@ -10,15 +10,17 @@ import (
 	"github.com/finance_next/gateway/internal/ws"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/redis/go-redis/v9"
 )
 
 // Deps bundles the wiring the router needs. Grouping keeps the constructor
 // signature stable as we add handlers in later phases.
 type Deps struct {
-	OptionRepo  *mongostore.OptionRepo
-	AccountRepo *mongostore.AccountRepo
-	Crypto      *crypto.Service
-	Envelope    *crypto.EnvelopeService
+	OptionRepo   *mongostore.OptionRepo
+	AccountRepo  *mongostore.AccountRepo
+	BacktestRepo *mongostore.BacktestRepo
+	Crypto       *crypto.Service
+	Envelope     *crypto.EnvelopeService
 
 	// Phase 2 additions: timescale read access + quant grpc client.
 	// Both are optional in dev — when nil, the market endpoints
@@ -26,6 +28,11 @@ type Deps struct {
 	Timescale *timescale.Store
 	Quant     quantclient.Client
 	AdminKey  string
+
+	// Phase 3: Redis client for the WS hub's backtest progress fan-out.
+	// Optional — when nil, browsers can still POST a backtest and poll
+	// status; only live progress streaming is unavailable.
+	Redis *redis.Client
 }
 
 // NewRouter wires up middleware, the /api/v1 group, /ws, and resource handlers.
@@ -59,7 +66,17 @@ func NewRouter(d Deps) *echo.Echo {
 	// returns 503 when its dependencies aren't configured.
 	handlers.NewMarketHandler(d.Timescale, d.Quant, d.AdminKey).Register(v1)
 
-	hub := ws.NewHub(accountHandler.UpstreamFactoryFor(), nil)
+	// Backtest endpoints (Phase 3). Each dep nil → handler returns 503.
+	handlers.NewBacktestHandler(d.BacktestRepo, d.Timescale, d.Quant).Register(v1)
+
+	// WS hub: account upstreams (phase 1) + Redis-backed backtest progress
+	// fan-out (phase 3). The generic factory is nil when no Redis client
+	// is configured; backtest subscriptions then fail with a clear error.
+	var genericFactory ws.GenericUpstreamFactory
+	if d.Redis != nil {
+		genericFactory = ws.NewRedisBacktestUpstreamFactory(d.Redis, nil)
+	}
+	hub := ws.NewHubFull(accountHandler.UpstreamFactoryFor(), genericFactory, nil)
 	wsHandler := ws.NewHandler(hub, nil)
 	e.GET("/ws", wsHandler.Handle)
 

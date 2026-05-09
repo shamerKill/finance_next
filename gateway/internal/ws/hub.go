@@ -1,16 +1,21 @@
 // Package ws is the gateway-side WebSocket hub.
 //
-// Architecture (single-process, phase 1):
+// Architecture (single-process, phase 1+3):
 //
-//	Browser --(WSS /ws)--> Hub --(per-account upstream)--> Binance user-data
+//	Browser --(WSS /ws)--> Hub --+--> Per-account upstream (Binance user-data)
+//	                              \--> Per-topic event source (Redis Stream
+//	                                   for backtest progress, etc.)
 //
-// Each browser session subscribes to one or more accountIds. The hub lazily
-// starts an upstream user-data goroutine the first time anyone subscribes to a
-// given account, and stops it when the last subscriber goes away.
+// Topic model (Phase 3 generalisation): each subscription is keyed by
+// (kind, id). The Hub keeps the per-key upstream count + tears down
+// idle upstreams. Two upstream factories are wired:
 //
-// Phase 7 will revisit this for multi-replica gateway deployments — the
-// Hub.Subscribe / Unsubscribe surface stays, but the upstream lifecycle moves
-// behind a leader-elected executor and Redis Streams fans out to replicas.
+//   - AccountUpstreamFactory: produces an exchange.UserDataStream.
+//     Lifecycle remains identical to phase 1.
+//   - GenericUpstreamFactory: produces a generic event channel
+//     (used for backtest progress fan-out from Redis Streams).
+//
+// Phase 7 will revisit this for multi-replica gateway deployments.
 package ws
 
 import (
@@ -24,75 +29,115 @@ import (
 	"github.com/finance_next/gateway/internal/exchange"
 )
 
-// UpstreamFactory builds an upstream stream for a given accountId. The hub
-// calls it the first time an account is subscribed; the gateway wires this to
-// account.Repo + binance.NewClient at construction time.
-type UpstreamFactory func(ctx context.Context, accountID string) (exchange.UserDataStream, error)
+// TopicKind discriminates subscription types.
+type TopicKind string
 
-// SessionSink is the side of a session the hub pushes into. The HTTP layer
-// adapts the websocket connection to this interface; tests use a fake.
+const (
+	// TopicAccount: Binance user-data fan-out (phase 1).
+	TopicAccount TopicKind = "account"
+	// TopicBacktest: backtest progress events (phase 3).
+	TopicBacktest TopicKind = "backtest"
+)
+
+// topicKey is the hub-internal map key.
+type topicKey struct {
+	Kind TopicKind
+	ID   string
+}
+
+// AccountUpstreamFactory builds an exchange user-data stream for an
+// accountId. Same shape as in Phase 1.
+type AccountUpstreamFactory func(ctx context.Context, accountID string) (exchange.UserDataStream, error)
+
+// GenericEvent is the payload emitted by a non-account upstream. The Kind
+// is set by the factory and propagates into the WS envelope.
+type GenericEvent struct {
+	Type    string          // e.g. "backtest.progress" or "backtest.completed"
+	Payload json.RawMessage // already-encoded JSON; the hub forwards verbatim
+}
+
+// GenericUpstream is a topic-scoped event source. Implementations must
+// drain Events() until Stop() (or the context ends), and Stop() must
+// close the channel to signal end-of-stream.
+type GenericUpstream interface {
+	Events() <-chan GenericEvent
+	Stop()
+}
+
+// GenericUpstreamFactory builds a GenericUpstream for one (kind, id) pair.
+// Phase 3 wires this for TopicBacktest backed by Redis Streams.
+type GenericUpstreamFactory func(ctx context.Context, kind TopicKind, id string) (GenericUpstream, error)
+
+// SessionSink is the side of a session the hub pushes into.
 type SessionSink interface {
-	// SendJSON serialises v and writes a single message. Must be safe for
-	// concurrent calls from the hub.
 	SendJSON(ctx context.Context, v any) error
 }
 
-// session tracks one browser connection.
 type session struct {
 	id        string
 	sink      SessionSink
-	subs      map[string]struct{} // account ids
+	subs      map[topicKey]struct{}
 	closeOnce sync.Once
 }
 
-// upstream tracks one shared per-account upstream connection plus the set of
-// session ids subscribed to it.
+// upstream tracks one shared per-topic event source plus subscribers.
+// Exactly one of `acctStream` / `generic` is non-nil (chosen by Kind).
 type upstream struct {
-	stream  exchange.UserDataStream
-	cancel  context.CancelFunc
-	subs    map[string]struct{} // session ids
-	stopped bool
+	kind       TopicKind
+	id         string
+	acctStream exchange.UserDataStream
+	generic    GenericUpstream
+	cancel     context.CancelFunc
+	subs       map[string]struct{}
+	stopped    bool
 }
 
-// Hub multiplexes per-account upstreams to per-session subscribers.
-//
-// All mutations go through the single mu — the throughput target is human
-// scale (a few accounts × a handful of dashboards), not HFT.
+// Hub multiplexes per-topic upstreams to per-session subscribers.
 type Hub struct {
 	mu       sync.Mutex
 	sessions map[string]*session
-	upstream map[string]*upstream
-	factory  UpstreamFactory
-	log      *slog.Logger
+	upstream map[topicKey]*upstream
+
+	acctFactory    AccountUpstreamFactory
+	genericFactory GenericUpstreamFactory
+
+	log *slog.Logger
 }
 
-// NewHub returns a fresh Hub.
-func NewHub(factory UpstreamFactory, log *slog.Logger) *Hub {
+// NewHub returns a fresh Hub with the legacy account-only factory wired.
+// Equivalent to Phase 1's ws.NewHub.
+func NewHub(factory AccountUpstreamFactory, log *slog.Logger) *Hub {
+	return NewHubFull(factory, nil, log)
+}
+
+// NewHubFull returns a Hub with both an account-upstream factory and an
+// optional generic-topic factory. Pass `nil` for genericFactory if you
+// only need account fan-out.
+func NewHubFull(acctF AccountUpstreamFactory, genF GenericUpstreamFactory, log *slog.Logger) *Hub {
 	if log == nil {
 		log = slog.Default()
 	}
 	return &Hub{
-		sessions: map[string]*session{},
-		upstream: map[string]*upstream{},
-		factory:  factory,
-		log:      log,
+		sessions:       map[string]*session{},
+		upstream:       map[topicKey]*upstream{},
+		acctFactory:    acctF,
+		genericFactory: genF,
+		log:            log,
 	}
 }
 
-// Register adds a new browser session. Returns the registered session id; the
-// caller is expected to call Unregister when the WS closes.
+// Register adds a new browser session.
 func (h *Hub) Register(id string, sink SessionSink) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.sessions[id] = &session{
 		id:   id,
 		sink: sink,
-		subs: map[string]struct{}{},
+		subs: map[topicKey]struct{}{},
 	}
 }
 
-// Unregister removes a session and decrements every account it was subscribed
-// to, stopping idle upstreams.
+// Unregister removes a session and decrements every topic it was subscribed to.
 func (h *Hub) Unregister(id string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -100,68 +145,104 @@ func (h *Hub) Unregister(id string) {
 	if !ok {
 		return
 	}
-	for accountID := range s.subs {
-		h.detachLocked(id, accountID)
+	for tk := range s.subs {
+		h.detachLocked(id, tk)
 	}
 	delete(h.sessions, id)
 }
 
-// Subscribe binds a session id to an accountId, starting the upstream if this
-// is the first subscriber. Safe to call repeatedly with the same pair.
-func (h *Hub) Subscribe(ctx context.Context, sessionID, accountID string) error {
+// Subscribe binds a session to a (kind, id) topic. Convenience wrappers
+// SubscribeAccount / SubscribeBacktest exist for the common cases.
+func (h *Hub) Subscribe(ctx context.Context, sessionID string, kind TopicKind, id string) error {
+	tk := topicKey{Kind: kind, ID: id}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s, ok := h.sessions[sessionID]
 	if !ok {
 		return errors.New("ws: unknown session")
 	}
-	if _, already := s.subs[accountID]; already {
+	if _, already := s.subs[tk]; already {
 		return nil
 	}
 
-	up, ok := h.upstream[accountID]
+	up, ok := h.upstream[tk]
 	if !ok {
-		// Start a fresh upstream. We pass a hub-owned ctx so the upstream
-		// outlives the request that triggered this subscribe call.
-		ctx, cancel := context.WithCancel(context.Background())
-		stream, err := h.factory(ctx, accountID)
+		newCtx, cancel := context.WithCancel(context.Background())
+		var (
+			acctStream exchange.UserDataStream
+			generic    GenericUpstream
+			err        error
+		)
+		switch kind {
+		case TopicAccount:
+			if h.acctFactory == nil {
+				cancel()
+				return errors.New("ws: account upstream factory not configured")
+			}
+			acctStream, err = h.acctFactory(newCtx, id)
+		case TopicBacktest:
+			if h.genericFactory == nil {
+				cancel()
+				return errors.New("ws: generic upstream factory not configured")
+			}
+			generic, err = h.genericFactory(newCtx, kind, id)
+		default:
+			cancel()
+			return fmt.Errorf("ws: unknown topic kind %q", kind)
+		}
 		if err != nil {
 			cancel()
 			return fmt.Errorf("ws: start upstream: %w", err)
 		}
 		up = &upstream{
-			stream: stream,
-			cancel: cancel,
-			subs:   map[string]struct{}{},
+			kind:       kind,
+			id:         id,
+			acctStream: acctStream,
+			generic:    generic,
+			cancel:     cancel,
+			subs:       map[string]struct{}{},
 		}
-		h.upstream[accountID] = up
-		go h.fanOut(accountID, up)
+		h.upstream[tk] = up
+		go h.fanOut(tk, up)
 	}
 	up.subs[sessionID] = struct{}{}
-	s.subs[accountID] = struct{}{}
+	s.subs[tk] = struct{}{}
 	return nil
 }
 
-// Unsubscribe is the inverse of Subscribe. Stops the upstream when the last
-// subscriber leaves.
-func (h *Hub) Unsubscribe(sessionID, accountID string) {
+// SubscribeAccount is the Phase 1 entry point retained for backwards-compat.
+func (h *Hub) SubscribeAccount(ctx context.Context, sessionID, accountID string) error {
+	return h.Subscribe(ctx, sessionID, TopicAccount, accountID)
+}
+
+// SubscribeBacktest binds a session to a backtest run id.
+func (h *Hub) SubscribeBacktest(ctx context.Context, sessionID, runID string) error {
+	return h.Subscribe(ctx, sessionID, TopicBacktest, runID)
+}
+
+// Unsubscribe is the inverse of Subscribe.
+func (h *Hub) Unsubscribe(sessionID string, kind TopicKind, id string) {
+	tk := topicKey{Kind: kind, ID: id}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s, ok := h.sessions[sessionID]
 	if !ok {
 		return
 	}
-	if _, has := s.subs[accountID]; !has {
+	if _, has := s.subs[tk]; !has {
 		return
 	}
-	delete(s.subs, accountID)
-	h.detachLocked(sessionID, accountID)
+	delete(s.subs, tk)
+	h.detachLocked(sessionID, tk)
 }
 
-// detachLocked removes sessionID from accountID's upstream and stops the
-// upstream when empty. Caller must hold h.mu.
-func (h *Hub) detachLocked(sessionID, accountID string) {
-	up, ok := h.upstream[accountID]
+// UnsubscribeAccount is a Phase 1 backwards-compat shim.
+func (h *Hub) UnsubscribeAccount(sessionID, accountID string) {
+	h.Unsubscribe(sessionID, TopicAccount, accountID)
+}
+
+func (h *Hub) detachLocked(sessionID string, tk topicKey) {
+	up, ok := h.upstream[tk]
 	if !ok {
 		return
 	}
@@ -169,57 +250,88 @@ func (h *Hub) detachLocked(sessionID, accountID string) {
 	if len(up.subs) == 0 {
 		up.stopped = true
 		up.cancel()
-		_ = up.stream.Close()
-		delete(h.upstream, accountID)
+		if up.acctStream != nil {
+			_ = up.acctStream.Close()
+		}
+		if up.generic != nil {
+			up.generic.Stop()
+		}
+		delete(h.upstream, tk)
 	}
 }
 
-// fanOut consumes events from one upstream and delivers them to every
-// currently-subscribed session as `account.event` envelopes.
-func (h *Hub) fanOut(accountID string, up *upstream) {
+// fanOut dispatches one upstream's events to the right deliver method.
+func (h *Hub) fanOut(tk topicKey, up *upstream) {
+	if up.acctStream != nil {
+		h.fanOutAccount(tk, up)
+		return
+	}
+	if up.generic != nil {
+		h.fanOutGeneric(tk, up)
+		return
+	}
+}
+
+func (h *Hub) fanOutAccount(tk topicKey, up *upstream) {
 	for {
 		select {
-		case ev, ok := <-up.stream.Events():
+		case ev, ok := <-up.acctStream.Events():
 			if !ok {
-				h.handleUpstreamEnd(accountID, up, nil)
+				h.handleUpstreamEnd(tk, up, nil)
 				return
 			}
-			h.deliver(accountID, ev.Payload)
-		case err, ok := <-up.stream.Errs():
+			h.deliverAccount(tk.ID, ev.Payload)
+		case err, ok := <-up.acctStream.Errs():
 			if !ok {
 				return
 			}
-			h.handleUpstreamEnd(accountID, up, err)
+			h.handleUpstreamEnd(tk, up, err)
 			return
 		}
 	}
 }
 
-// handleUpstreamEnd notifies subscribers and reaps the upstream record. Phase
-// 1 does *not* auto-reconnect server-side; the browser detects the dropped
-// `account.event` flow and re-subscribes (its WS client owns reconnect logic).
-func (h *Hub) handleUpstreamEnd(accountID string, up *upstream, cause error) {
+func (h *Hub) fanOutGeneric(tk topicKey, up *upstream) {
+	for ev := range up.generic.Events() {
+		h.deliverGeneric(tk, ev)
+	}
+	// Channel closed → upstream is done. Notify subscribers and reap.
+	h.handleUpstreamEnd(tk, up, nil)
+}
+
+func (h *Hub) handleUpstreamEnd(tk topicKey, up *upstream, cause error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if up.stopped {
 		return
 	}
 	up.stopped = true
+	notifType := "account.upstream_closed"
+	idField := "accountId"
+	if tk.Kind == TopicBacktest {
+		notifType = "backtest.upstream_closed"
+		idField = "runId"
+	}
 	for sessionID := range up.subs {
 		s, ok := h.sessions[sessionID]
 		if !ok {
 			continue
 		}
 		_ = s.sink.SendJSON(context.Background(), map[string]any{
-			"type":      "account.upstream_closed",
-			"accountId": accountID,
-			"error":     errString(cause),
+			"type":  notifType,
+			idField: tk.ID,
+			"error": errString(cause),
 		})
-		delete(s.subs, accountID)
+		delete(s.subs, tk)
 	}
-	delete(h.upstream, accountID)
+	delete(h.upstream, tk)
 	up.cancel()
-	_ = up.stream.Close()
+	if up.acctStream != nil {
+		_ = up.acctStream.Close()
+	}
+	if up.generic != nil {
+		up.generic.Stop()
+	}
 }
 
 func errString(err error) string {
@@ -229,29 +341,16 @@ func errString(err error) string {
 	return err.Error()
 }
 
-// deliver writes one event to every current subscriber. We snapshot the
-// session set under the lock then release before writing.
-func (h *Hub) deliver(accountID string, payload []byte) {
+// deliverAccount writes one account event to every current subscriber.
+// Envelope mirrors phase 1 exactly so the existing browser client doesn't
+// need to change.
+func (h *Hub) deliverAccount(accountID string, payload []byte) {
 	type envelope struct {
 		Type      string          `json:"type"`
 		AccountID string          `json:"accountId"`
 		Payload   json.RawMessage `json:"payload"`
 	}
-
-	h.mu.Lock()
-	up, ok := h.upstream[accountID]
-	if !ok {
-		h.mu.Unlock()
-		return
-	}
-	sinks := make([]SessionSink, 0, len(up.subs))
-	for sid := range up.subs {
-		if s, ok := h.sessions[sid]; ok {
-			sinks = append(sinks, s.sink)
-		}
-	}
-	h.mu.Unlock()
-
+	sinks := h.snapshotSinks(topicKey{Kind: TopicAccount, ID: accountID})
 	env := envelope{
 		Type:      "account.event",
 		AccountID: accountID,
@@ -259,28 +358,76 @@ func (h *Hub) deliver(accountID string, payload []byte) {
 	}
 	for _, sink := range sinks {
 		if err := sink.SendJSON(context.Background(), env); err != nil {
-			h.log.Warn("ws deliver failed", "accountId", accountID, "err", err)
+			h.log.Warn("ws deliver failed", "kind", "account", "id", accountID, "err", err)
 		}
 	}
 }
 
-// HasUpstream reports whether the hub holds a live upstream for accountID.
-// Exposed for tests.
-func (h *Hub) HasUpstream(accountID string) bool {
+// deliverGeneric writes one non-account event to subscribers. The
+// envelope shape is intentionally minimal; the type field carries the
+// concrete event kind so the client can demultiplex.
+func (h *Hub) deliverGeneric(tk topicKey, ev GenericEvent) {
+	type envelope struct {
+		Type    string          `json:"type"`
+		Topic   string          `json:"topic"`
+		ID      string          `json:"id"`
+		Payload json.RawMessage `json:"payload,omitempty"`
+	}
+	sinks := h.snapshotSinks(tk)
+	env := envelope{
+		Type:    ev.Type,
+		Topic:   string(tk.Kind),
+		ID:      tk.ID,
+		Payload: ev.Payload,
+	}
+	for _, sink := range sinks {
+		if err := sink.SendJSON(context.Background(), env); err != nil {
+			h.log.Warn("ws deliver failed", "kind", string(tk.Kind), "id", tk.ID, "err", err)
+		}
+	}
+}
+
+func (h *Hub) snapshotSinks(tk topicKey) []SessionSink {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	_, ok := h.upstream[accountID]
+	up, ok := h.upstream[tk]
+	if !ok {
+		return nil
+	}
+	out := make([]SessionSink, 0, len(up.subs))
+	for sid := range up.subs {
+		if s, ok := h.sessions[sid]; ok {
+			out = append(out, s.sink)
+		}
+	}
+	return out
+}
+
+// HasUpstream reports whether the hub holds a live upstream for (kind, id).
+func (h *Hub) HasUpstream(kind TopicKind, id string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	_, ok := h.upstream[topicKey{Kind: kind, ID: id}]
 	return ok
 }
 
-// SubscriberCount returns how many sessions are subscribed to accountID.
-// Exposed for tests.
-func (h *Hub) SubscriberCount(accountID string) int {
+// HasUpstreamAccount is a phase-1 backwards-compat shim used by tests.
+func (h *Hub) HasUpstreamAccount(accountID string) bool {
+	return h.HasUpstream(TopicAccount, accountID)
+}
+
+// SubscriberCount returns how many sessions are subscribed to (kind, id).
+func (h *Hub) SubscriberCount(kind TopicKind, id string) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	up, ok := h.upstream[accountID]
+	up, ok := h.upstream[topicKey{Kind: kind, ID: id}]
 	if !ok {
 		return 0
 	}
 	return len(up.subs)
+}
+
+// SubscriberCountAccount is a phase-1 backwards-compat shim used by tests.
+func (h *Hub) SubscriberCountAccount(accountID string) int {
+	return h.SubscriberCount(TopicAccount, accountID)
 }

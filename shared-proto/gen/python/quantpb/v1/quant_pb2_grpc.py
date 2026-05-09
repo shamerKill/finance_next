@@ -45,6 +45,11 @@ class QuantStub(object):
                 request_serializer=quantpb_dot_v1_dot_quant__pb2.GetBacktestStatusRequest.SerializeToString,
                 response_deserializer=quantpb_dot_v1_dot_quant__pb2.BacktestStatus.FromString,
                 _registered_method=True)
+        self.StreamBacktestProgress = channel.unary_stream(
+                '/quantpb.v1.Quant/StreamBacktestProgress',
+                request_serializer=quantpb_dot_v1_dot_quant__pb2.GetBacktestStatusRequest.SerializeToString,
+                response_deserializer=quantpb_dot_v1_dot_quant__pb2.BacktestProgress.FromString,
+                _registered_method=True)
         self.StartOptimization = channel.unary_unary(
                 '/quantpb.v1.Quant/StartOptimization',
                 request_serializer=quantpb_dot_v1_dot_quant__pb2.OptimizationRequest.SerializeToString,
@@ -75,6 +80,14 @@ class QuantServicer(object):
 
     def GetBacktestStatus(self, request, context):
         """Phase 3: poll a backtest run's progress / result summary.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def StreamBacktestProgress(self, request, context):
+        """Phase 3: server-streaming live progress; one BacktestProgress per update.
+        Stream terminates when the run reaches a terminal state.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -115,6 +128,11 @@ def add_QuantServicer_to_server(servicer, server):
                     servicer.GetBacktestStatus,
                     request_deserializer=quantpb_dot_v1_dot_quant__pb2.GetBacktestStatusRequest.FromString,
                     response_serializer=quantpb_dot_v1_dot_quant__pb2.BacktestStatus.SerializeToString,
+            ),
+            'StreamBacktestProgress': grpc.unary_stream_rpc_method_handler(
+                    servicer.StreamBacktestProgress,
+                    request_deserializer=quantpb_dot_v1_dot_quant__pb2.GetBacktestStatusRequest.FromString,
+                    response_serializer=quantpb_dot_v1_dot_quant__pb2.BacktestProgress.SerializeToString,
             ),
             'StartOptimization': grpc.unary_unary_rpc_method_handler(
                     servicer.StartOptimization,
@@ -187,6 +205,33 @@ class Quant(object):
             '/quantpb.v1.Quant/GetBacktestStatus',
             quantpb_dot_v1_dot_quant__pb2.GetBacktestStatusRequest.SerializeToString,
             quantpb_dot_v1_dot_quant__pb2.BacktestStatus.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StreamBacktestProgress(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/quantpb.v1.Quant/StreamBacktestProgress',
+            quantpb_dot_v1_dot_quant__pb2.GetBacktestStatusRequest.SerializeToString,
+            quantpb_dot_v1_dot_quant__pb2.BacktestProgress.FromString,
             options,
             channel_credentials,
             insecure,

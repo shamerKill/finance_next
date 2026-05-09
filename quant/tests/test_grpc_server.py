@@ -74,6 +74,10 @@ async def test_ingest_now_round_trip(patched_ingest, fake_redis) -> None:
 
 
 async def test_unimplemented_rpcs_surface_unimplemented_status(patched_ingest) -> None:
+    """Phase 4 (EvaluateSignal) and Phase 6 (StartOptimization) are still
+    placeholders. Phase 3 wired up RunBacktest; that path is covered by
+    test_grpc_backtest.py.
+    """
     server = grpc.aio.server()
     servicer = grpc_server.QuantServicer(redis_client=None)
     quant_pb2_grpc.add_QuantServicer_to_server(servicer, server)
@@ -84,7 +88,12 @@ async def test_unimplemented_rpcs_surface_unimplemented_status(patched_ingest) -
         async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
             stub = quant_pb2_grpc.QuantStub(channel)
             with pytest.raises(grpc.aio.AioRpcError) as ex:
-                await stub.RunBacktest(quant_pb2.BacktestRequest(strategy_id="x"))
+                await stub.EvaluateSignal(quant_pb2.EvaluateRequest(strategy_id="x"))
+            assert ex.value.code() == grpc.StatusCode.UNIMPLEMENTED
+            with pytest.raises(grpc.aio.AioRpcError) as ex:
+                await stub.StartOptimization(
+                    quant_pb2.OptimizationRequest(strategy_id="x")
+                )
             assert ex.value.code() == grpc.StatusCode.UNIMPLEMENTED
     finally:
         await server.stop(grace=0.0)

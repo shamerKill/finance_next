@@ -107,21 +107,21 @@ func TestSubscribeStartsUpstreamLazily(t *testing.T) {
 	sink := &fakeSink{}
 	hub.Register("sess1", sink)
 
-	if hub.HasUpstream("acct-A") {
+	if hub.HasUpstreamAccount("acct-A") {
 		t.Fatal("expected no upstream before subscribe")
 	}
-	if err := hub.Subscribe(context.Background(), "sess1", "acct-A"); err != nil {
+	if err := hub.SubscribeAccount(context.Background(), "sess1", "acct-A"); err != nil {
 		t.Fatalf("Subscribe: %v", err)
 	}
 	if factoryCalls != 1 {
 		t.Errorf("expected 1 factory call, got %d", factoryCalls)
 	}
-	if !hub.HasUpstream("acct-A") {
+	if !hub.HasUpstreamAccount("acct-A") {
 		t.Fatal("expected upstream to be live after subscribe")
 	}
 
 	// Subscribing again should be idempotent and not start a second upstream.
-	if err := hub.Subscribe(context.Background(), "sess1", "acct-A"); err != nil {
+	if err := hub.SubscribeAccount(context.Background(), "sess1", "acct-A"); err != nil {
 		t.Fatalf("Subscribe (re): %v", err)
 	}
 	if factoryCalls != 1 {
@@ -139,10 +139,10 @@ func TestFanOutDeliversToSubscribedSessions(t *testing.T) {
 	hub.Register("A", sinkA)
 	hub.Register("B", sinkB)
 	hub.Register("C", sinkC)
-	if err := hub.Subscribe(context.Background(), "A", "acct-1"); err != nil {
+	if err := hub.SubscribeAccount(context.Background(), "A", "acct-1"); err != nil {
 		t.Fatalf("subscribe A: %v", err)
 	}
-	if err := hub.Subscribe(context.Background(), "B", "acct-1"); err != nil {
+	if err := hub.SubscribeAccount(context.Background(), "B", "acct-1"); err != nil {
 		t.Fatalf("subscribe B: %v", err)
 	}
 	// C does NOT subscribe to acct-1.
@@ -170,23 +170,23 @@ func TestUnsubscribeStopsUpstreamWhenLastLeaves(t *testing.T) {
 	}, nil)
 	hub.Register("A", &fakeSink{})
 	hub.Register("B", &fakeSink{})
-	if err := hub.Subscribe(context.Background(), "A", "acct-1"); err != nil {
+	if err := hub.SubscribeAccount(context.Background(), "A", "acct-1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := hub.Subscribe(context.Background(), "B", "acct-1"); err != nil {
+	if err := hub.SubscribeAccount(context.Background(), "B", "acct-1"); err != nil {
 		t.Fatal(err)
 	}
 
-	hub.Unsubscribe("A", "acct-1")
-	if !hub.HasUpstream("acct-1") {
+	hub.UnsubscribeAccount("A", "acct-1")
+	if !hub.HasUpstreamAccount("acct-1") {
 		t.Fatal("upstream should still be live (B is subscribed)")
 	}
-	if hub.SubscriberCount("acct-1") != 1 {
-		t.Errorf("expected 1 subscriber, got %d", hub.SubscriberCount("acct-1"))
+	if hub.SubscriberCountAccount("acct-1") != 1 {
+		t.Errorf("expected 1 subscriber, got %d", hub.SubscriberCountAccount("acct-1"))
 	}
 
-	hub.Unsubscribe("B", "acct-1")
-	if hub.HasUpstream("acct-1") {
+	hub.UnsubscribeAccount("B", "acct-1")
+	if hub.HasUpstreamAccount("acct-1") {
 		t.Fatal("upstream should be torn down after last unsubscribe")
 	}
 	if !stream.wasClosed() {
@@ -201,14 +201,14 @@ func TestUnregisterDetachesAllSubs(t *testing.T) {
 		return streams[accountID], nil
 	}, nil)
 	hub.Register("A", &fakeSink{})
-	if err := hub.Subscribe(context.Background(), "A", "acct-1"); err != nil {
+	if err := hub.SubscribeAccount(context.Background(), "A", "acct-1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := hub.Subscribe(context.Background(), "A", "acct-2"); err != nil {
+	if err := hub.SubscribeAccount(context.Background(), "A", "acct-2"); err != nil {
 		t.Fatal(err)
 	}
 	hub.Unregister("A")
-	if hub.HasUpstream("acct-1") || hub.HasUpstream("acct-2") {
+	if hub.HasUpstreamAccount("acct-1") || hub.HasUpstreamAccount("acct-2") {
 		t.Fatal("unregister should tear down all subscribed upstreams")
 	}
 }
@@ -220,7 +220,7 @@ func TestUpstreamErrorNotifiesSubscribers(t *testing.T) {
 	}, nil)
 	sink := &fakeSink{}
 	hub.Register("S", sink)
-	if err := hub.Subscribe(context.Background(), "S", "acct-1"); err != nil {
+	if err := hub.SubscribeAccount(context.Background(), "S", "acct-1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -237,7 +237,7 @@ func TestUpstreamErrorNotifiesSubscribers(t *testing.T) {
 		return false
 	}, "upstream_closed envelope")
 
-	if hub.HasUpstream("acct-1") {
+	if hub.HasUpstreamAccount("acct-1") {
 		t.Fatal("upstream should be reaped after error")
 	}
 }
@@ -247,7 +247,7 @@ func TestSubscribeUnknownSession(t *testing.T) {
 		t.Fatal("factory should not be called for unknown session")
 		return nil, nil
 	}, nil)
-	if err := hub.Subscribe(context.Background(), "ghost", "acct"); err == nil {
+	if err := hub.SubscribeAccount(context.Background(), "ghost", "acct"); err == nil {
 		t.Fatal("expected error for unknown session id")
 	}
 }

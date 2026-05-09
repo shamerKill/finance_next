@@ -2,8 +2,13 @@
 package http
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/finance_next/gateway/internal/crypto"
 	"github.com/finance_next/gateway/internal/http/handlers"
+	auditmw "github.com/finance_next/gateway/internal/http/middleware"
+	"github.com/finance_next/gateway/internal/observability"
 	"github.com/finance_next/gateway/internal/orderengine"
 	"github.com/finance_next/gateway/internal/quantclient"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
@@ -24,6 +29,8 @@ type Deps struct {
 	ExchangeMetaRepo    *mongostore.ExchangeMetaRepo
 	RecommendationRepo  *mongostore.RecommendationRepo
 	OptimizationRunRepo *mongostore.OptimizationRunRepo
+	SystemRepo          *mongostore.SystemRepo
+	AuditRepo           *mongostore.AuditRepo
 	Crypto              *crypto.Service
 	Envelope            *crypto.EnvelopeService
 
@@ -43,6 +50,11 @@ type Deps struct {
 	// when nil, the new endpoints return 503 / 404. The cmd wires it
 	// alongside the workers + reconcile loop.
 	OrderEngine *orderengine.Engine
+
+	// Phase 7: audit middleware + observability registry. Both optional;
+	// when nil the corresponding feature is silently disabled.
+	AuditMiddleware *auditmw.Middleware
+	Metrics         *observability.Registry
 }
 
 // NewRouter wires up middleware, the /api/v1 group, /ws, and resource handlers.
@@ -65,8 +77,85 @@ func NewRouter(d Deps) *echo.Echo {
 		AllowHeaders: []string{"Content-Type", "Authorization"},
 	}))
 
+	// Phase 7 observability: register every metric the Grafana dashboards
+	// reference so /metrics produces a stable, scrape-friendly surface
+	// (zero-valued series are still emitted; PromQL's increase()/rate()
+	// degrade gracefully on absent series but referencing dashboards
+	// users find empty panels confusing). HTTP latency histogram is
+	// mounted before any resource handler so it covers every route.
+	if d.Metrics != nil {
+		hist := d.Metrics.Histogram(observability.HistogramOpts{
+			Name: "gateway_http_request_duration_seconds",
+			Help: "HTTP request duration distribution.",
+		})
+		// Mongo op latency — populated when store/mongo wraps queries
+		// with this histogram. Pre-registered so the metric exists at
+		// /metrics scrape time even before any traffic.
+		_ = d.Metrics.Histogram(observability.HistogramOpts{
+			Name:    "gateway_mongo_op_duration_seconds",
+			Help:    "MongoDB operation duration distribution.",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
+		})
+		// Order engine queue depth — sampled by a cheap polling goroutine
+		// (ordereng.QueueDepth() not yet implemented; gauge stays at 0
+		// until populated by Phase 8 wiring).
+		_ = d.Metrics.Gauge(observability.GaugeOpts{
+			Name: "gateway_order_engine_queue_depth",
+			Help: "Order engine pending command queue depth.",
+		})
+		// Audit drop counter — periodically synced from the audit
+		// middleware's atomic counter via a small ticker so the metric
+		// reflects the live drop rate.
+		auditDropped := d.Metrics.Counter(observability.CounterOpts{
+			Name: "gateway_audit_dropped_total",
+			Help: "Audit entries dropped due to buffer overflow.",
+		})
+		// Exchange API error counter — registered per-venue. Adapters
+		// increment on error response. Pre-registering all three
+		// keeps PromQL `sum by(exchange)` non-empty even at idle.
+		for _, ex := range []string{"binance", "okx", "bybit"} {
+			_ = d.Metrics.Counter(observability.CounterOpts{
+				Name:   "gateway_exchange_api_errors_total",
+				Help:   "Exchange REST/WS API errors by venue.",
+				Labels: map[string]string{"exchange": ex},
+			})
+		}
+		// Sync the audit drop counter from middleware periodically. We
+		// can't reuse the Counter directly because the middleware uses
+		// its own atomic — instead we re-emit the delta on each tick.
+		if d.AuditMiddleware != nil {
+			go func() {
+				var last uint64
+				t := time.NewTicker(5 * time.Second)
+				defer t.Stop()
+				for range t.C {
+					cur := d.AuditMiddleware.DropCount()
+					if cur > last {
+						auditDropped.Add(cur - last)
+						last = cur
+					}
+				}
+			}()
+		}
+		e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+			return func(c echo.Context) error {
+				start := time.Now()
+				err := next(c)
+				hist.Observe(time.Since(start).Seconds())
+				return err
+			}
+		})
+	}
+
 	api := e.Group("/api")
 	v1 := api.Group("/v1")
+
+	// Phase 7 audit middleware. Mounted on the v1 group so every API
+	// mutation is captured; /healthz and /metrics are not under v1 and
+	// therefore intentionally not audited.
+	if d.AuditMiddleware != nil {
+		v1.Use(d.AuditMiddleware.Middleware())
+	}
 
 	handlers.NewOptionHandler(d.OptionRepo, d.Crypto).Register(v1)
 	accountHandler := handlers.NewAccountHandler(d.AccountRepo, d.Envelope, nil)
@@ -97,6 +186,10 @@ func NewRouter(d Deps) *echo.Echo {
 	handlers.NewRecommendationHandler(d.RecommendationRepo, d.OptionRepo, d.Redis).Register(v1)
 	handlers.NewOptimizationHandler(d.OptimizationRunRepo, d.Quant).Register(v1)
 
+	// Phase 7 admin endpoints: kill switch + portfolio limits + audit
+	// viewer. Hidden when AdminKey is unset (404).
+	handlers.NewAdminHandler(d.SystemRepo, d.AuditRepo, d.AdminKey).Register(v1)
+
 	// WS hub: account upstreams (phase 1) + Redis-backed backtest progress
 	// fan-out (phase 3) + Redis-backed strategy order events (phase 4) +
 	// optimization study progress (phase 6).
@@ -119,6 +212,18 @@ func NewRouter(d Deps) *echo.Echo {
 	e.GET("/healthz", func(c echo.Context) error {
 		return c.JSON(200, map[string]string{"status": "ok"})
 	})
+
+	// Phase 7 /metrics endpoint. Bound to localhost in production via
+	// the reverse proxy / Ingress; here we keep it open so docker-compose
+	// scrape jobs work. Operators are expected to firewall it. The body
+	// uses Prometheus text exposition format 0.0.4.
+	if d.Metrics != nil {
+		e.GET("/metrics", func(c echo.Context) error {
+			c.Response().Header().Set(echo.HeaderContentType, "text/plain; version=0.0.4; charset=utf-8")
+			c.Response().WriteHeader(http.StatusOK)
+			return d.Metrics.WriteText(c.Response().Writer)
+		})
+	}
 
 	return e
 }

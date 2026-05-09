@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: finance-next
+resources:
+  - namespace.yaml
+  - mongo.yaml
+  - redis.yaml
+  - timescale.yaml
+  - gateway.yaml
+  - quant.yaml
+  - ingress.yaml
+  - hpa-gateway.yaml
+# secrets.example.yaml is intentionally NOT listed — replace with your
+# own secret manifest (out of band) before applying.

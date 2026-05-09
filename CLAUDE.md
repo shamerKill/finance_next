@@ -69,12 +69,14 @@ finance_next/
 │       │   ├── symbol/               # canonical "BTC/USDT:USDT" 归一化（idempotent property tests）
 │       │   └── meta/                 # 启动时 exchange_meta 刷新 job（>24h staleness）
 │       ├── ws/                       # 单进程 WS hub（topic 模型：account / backtest / strategy）+ Redis Streams 消费
-│       ├── orderengine/              # Phase 4：Redis stream 消费 + 风控闸 + 30s reconcile loop + mainnet token gate（venue-aware factory）
-│       ├── store/{mongo,timescale}/  # mongo (options/accounts/backtest_results/order_log/exchange_meta) + timescale (ohlcv 读 + equity_curve 读)
+│       ├── orderengine/              # Phase 4：Redis stream 消费 + 风控闸 + 30s reconcile loop + mainnet token gate（venue-aware factory）；Phase 7 在风控闸前加 portfolio kill switch + 跨策略 cap
+│       ├── observability/            # Phase 7：进程内 Prometheus 计数器/直方图 + tracer 接口（默认 stdout/noop）
+│       ├── store/{mongo,timescale}/  # mongo (options/accounts/backtest_results/order_log/exchange_meta/system_state/portfolio_limits/audit) + timescale (ohlcv 读 + equity_curve 读)
 │       ├── quantclient/              # gRPC client → Python quant worker
 │       └── http/
-│           ├── router.go             # Echo 路由 + middleware
-│           └── handlers/             # option.go + account.go + market.go + backtest.go + strategy.go + exchange_meta.go + portfolio.go + recommendation.go + optimization.go (Phase 6)
+│           ├── router.go             # Echo 路由 + middleware（Phase 7：HTTP 直方图 + audit 中间件 + /metrics endpoint）
+│           ├── middleware/audit.go   # Phase 7 异步 audit middleware（缓冲通道 + 敏感字段脱敏 + 溢出计数）
+│           └── handlers/             # option.go + account.go + market.go + backtest.go + strategy.go + exchange_meta.go + portfolio.go + recommendation.go + optimization.go + admin.go (Phase 7：halt/resume/system-state/portfolio-limits/audit)
 ├── quant/                            # Phase 2 Python 量化 worker（uv 管理）
 │   ├── pyproject.toml                # uv-managed deps (fastapi/grpcio/ccxt/akshare/asyncpg/arq)
 │   ├── Dockerfile                    # uv:python3.12-bookworm-slim
@@ -96,7 +98,11 @@ finance_next/
 │   └── gen/{go,python}/              # 检入的生成代码
 ├── infra/
 │   ├── docker-compose.yml            # mongo / redis / timescale / gateway / quant
-│   └── timescale/{001_init,002_hypertables}.sql  # 扩展 + 表 + 连续聚合
+│   ├── timescale/{001_init,002_hypertables}.sql  # 扩展 + 表 + 连续聚合
+│   ├── grafana/dashboards/{gateway,quant}.json    # Phase 7：committed Grafana JSON exports
+│   ├── k8s/                          # Phase 7：Deployments / StatefulSets / Ingress / HPA / kustomization.yaml（finance-next-secrets 仅占位 example）
+│   └── scripts/                      # Phase 7：backup-{mongo,timescale}.sh + restore-* + README（commit-only，**不会自动跑**）
+├── .github/workflows/ci.yml          # Phase 7：Go vet/test/build + ruff + pytest + yarn lint/build
 └── go.work                           # 仓库根 Go workspace（gateway + shared-proto）
 ```
 
@@ -194,6 +200,16 @@ docker compose -f infra/docker-compose.yml up --build
 | GET    | `/api/v1/exchange/meta`         | `exchange_meta` 列表；`?exchange=&symbol=` 过滤；symbol 为空时返回该 exchange 全部              |
 | GET    | `/api/v1/portfolio/summary`     | 跨账户余额汇总：`{totalUsd, perExchange[], perAsset (top 10)[], notes[]}`，USD 估值走 Timescale 最近 close（`<asset>USDT`）|
 
+**Admin (Phase 7)** — 全部需 `X-Admin-Key`；`ADMIN_KEY` 未配置时整组返回 404
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/v1/admin/halt`             | `{reason}`；写 `system_state.tradingHalted=true`，**order engine 在风控闸之前先读这个标志**，halted 时所有 submit 都拒绝 `ErrTradingHalted` |
+| POST | `/api/v1/admin/resume`           | 清空 halt 状态 |
+| GET  | `/api/v1/admin/system-state`     | 当前 halt + reason；UI dashboard layout 红条 banner 轮询此接口 |
+| PUT  | `/api/v1/admin/portfolio-limits` | `{maxOpenNotionalUsd, maxOpenPositionsCount, maxDailyLossUsd}`；0 = no cap；engine 在 per-strategy gate 之后再做跨策略检查 |
+| GET  | `/api/v1/admin/portfolio-limits` | 读当前 limits |
+| GET  | `/api/v1/admin/audit`            | `audit` 列表；可选 `?actor=&resourceType=&since=&limit=`；分页上限 1000 |
+
 **AI Recommendations + Optimization**（`gateway/internal/http/handlers/recommendation.go` + `optimization.go`，phase 6）
 | 方法     | 路径                                                | 说明                                                                                          |
 | ------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -289,6 +305,21 @@ canWithdraw=true，解析失败 fail-closed）。
     构造时根据 `Live.Mode` 把 `futures.BaseURL` pin 到
     `https://testnet.binancefuture.com`（mainnet 需要 env+token gate 同时开
     启才会 pin 到 `https://fapi.binance.com`）。
+  - **Phase 7 新增 env**：
+    - `RATELIMIT_BACKEND` (quant，default `memory`) — 设为 `redis` 时 quant
+      的 token-bucket 走 Redis（共享 Lua 脚本：`HMGET → refill → check → HMSET`，
+      过期 5 分钟），多副本部署必须切到 `redis`
+    - `OTEL_EXPORTER_OTLP_ENDPOINT` (gateway + quant) — 留空则 trace 走 stdout
+      （**默认 stdout 以避免意外的数据外发**），设值后切 OTLP；`/metrics` 端点
+      永远开放（建议反向代理仅暴露内网/允许 prometheus IP）
+    - `KEK_PROVIDER` (gateway，default `env`) — `env` / `aws-kms` / `gcp-kms`；
+      非 env 选项当前为 stub，运行时返回 `ErrKEKNotConfigured`，整合 SDK
+      请扩展 `gateway/internal/crypto/kek.go`
+    - `AWS_KMS_KEY_ID` / `AWS_REGION` / `GCP_KMS_KEY_NAME` — KMS 路径专用，
+      env 路径为空可
+    - **Audit 保留期**：`audit` 集合 TTL 索引基于 `expiresAt` 字段，
+      默认 7 年（`gateway/internal/store/mongo/audit_repo.go::DefaultAuditRetention`）；
+      自动 prune 由 Mongo TTL monitor 处理（默认 60 秒扫一次，文档过期后真正删）
 - **凭证加密**：`gateway/internal/crypto/crypto.go` 提供 AES-256-GCM 封装；
   `option` handler 在 create / update 时透明加密 `userApiKey` 与
   `userSecretKey`，密文格式 `base64(iv).base64(tag).base64(ciphertext)`，
@@ -324,6 +355,30 @@ canWithdraw=true，解析失败 fail-closed）。
   `event.strategy.upserted`）。预算闸 fail-closed：`AI_MAX_USD_PER_STUDY` /
   `AI_MAX_USD_PER_DAY` 任一耗尽，`BudgetGate.try_charge` 返回 false 且
   optimizer 写 `OPT_BUDGET_EXCEEDED` 状态。
+- **Kill switch（Phase 7，硬要求）**：`POST /api/v1/admin/halt` 写
+  `system_state.tradingHalted=true`，`orderengine.processCommand` 在 *任何*
+  per-strategy 风控闸 / 加密 / 交易所调用 *之前* 读这一标志，halted 时直接
+  返回 `ErrTradingHalted` 并发 `event.order.rejected`。`SystemRepo` 是
+  接口注入，存储错误 fail-closed（拿不到状态 = 拒）。`POST /api/v1/admin/resume`
+  清旗。
+- **Audit log（Phase 7）**：`gateway/internal/http/middleware/audit.go` 在
+  `/api/v1/` 上以 Echo middleware 形式挂载，捕获所有非 GET 请求；payload
+  做 JSON 字段递归 scrub（任何包含 `apikey`/`secretkey`/`secret`/`passphrase`/
+  `ciphertext`/`password`/`token` 的 key 替换为 `[redacted]`）。请求体
+  上限 64 KiB；非 JSON body 直接替换为占位标注。写盘走异步缓冲通道
+  （默认 1024 容量），溢出计数 + 日志 + drop。`/healthz`、`/metrics`、`/ws`
+  豁免。**Phase 7 把 `apiKey` / `secretKey` / `passphrase` / `*Ciphertext`
+  从所有 audit payload 中剥除是硬约束**；`audit_test.go` 的脱敏断言保护
+  这一点。
+- **KMS 切换流程（Phase 7）**：`crypto.KEKProvider` 接口三方实现：
+  `EnvKEKProvider`（默认，沿用 NestJS golden vector byte-equal）/
+  `AWSKMSKEKProvider` / `GCPKMSKEKProvider`（后两个是 stub，运行时返回
+  `ErrKEKNotConfigured`）。切换路径：(1) 设 `KEK_PROVIDER=aws-kms`
+  + `AWS_KMS_KEY_ID` + `AWS_REGION`；(2) 在 `kek.go` 把 stub 实现替换为
+  AWS SDK `kms.Encrypt/Decrypt` 调用（注释里有完整 call shape）；
+  (3) 滚动重启 — 已有 DEK ciphertext 仍由 env KEK 解密直到通过 admin
+  rotate 工具搬到新 KEK；新写的 DEK 走新 provider。`EnvelopeService` 拿
+  provider 而非 master key，所以切 KMS 不动 envelope 调用方。
 
 ## 9. 当前进度 / TODO
 
@@ -423,7 +478,25 @@ canWithdraw=true，解析失败 fail-closed）。
       - UI `(dashboard)/recommendations/{page,[id]/page,actions}.tsx` 列表/diff/
         approve；strategy 详情 "Tune now" 按钮 + `useOptimizationStream` live cost
         meter；`api-client.ts` + `type.d.ts` 加齐 6 个新接口
+- [x] **Phase 7**：加固
+      - portfolio kill switch（`system_state` 集合 + `/admin/halt|resume|system-state`
+        + UI 红条 banner + engine 在风控闸前先检查）
+      - 跨策略 portfolio 限额（`portfolio_limits` 集合 + `/admin/portfolio-limits`
+        + engine `SumOpenNotionalForUser` / `SumRealisedPnlSinceForUser` aggregate）
+      - append-only `audit` 集合（TTL 7 年默认）+ Echo middleware（异步
+        buffered，scrub `apiKey`/`secret*`/`*passphrase*`/`*Ciphertext`）+
+        `/admin/audit` 列表 + UI `(dashboard)/admin/audit`
+      - quant `RATELIMIT_BACKEND=redis`（同样的 token-bucket 算法走 Lua + EVALSHA
+        + 5 分钟 PEXPIRE；fakeredis 用 HSET-only emulation 跑测试）
+      - `crypto.KEKProvider` 接口（env / aws-kms stub / gcp-kms stub）；
+        `EnvelopeService` 改成接受 provider；Phase 0 golden vector 仍 byte-equal
+      - 进程内 Prometheus 计数器/直方图 + `/metrics` endpoint（gateway+quant），
+        默认 stdout tracer（OTel OTLP 走 env）；Grafana dashboards 检入 JSON
+      - `infra/scripts/{backup,restore}-{mongo,timescale}.sh`（commit-only，
+        含 README + RPO/RTO 说明）
+      - `infra/k8s/`（Deployments / StatefulSets / Ingress / HPA / kustomization；
+        secret 为占位 example）
+      - `.github/workflows/ci.yml`：Go vet/test/build + ruff + pytest + yarn
+        lint/build，三 job 并行
 - [ ] 期权配置表单接通 POST 提交
 - [ ] `client/app/list/` 实现
-- [ ] **Phase 7**：加固（audit / OTel / KMS / k8s — 详见
-      `/root/.claude/plans/vectorized-waddling-hoare.md`）

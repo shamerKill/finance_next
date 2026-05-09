@@ -384,3 +384,117 @@ export function wsUrl(): string {
   u.pathname = u.pathname.replace(/\/api\/?$/, "") + "/ws";
   return u.toString();
 }
+
+// ---------- Phase 7 — admin: kill switch, portfolio limits, audit ----------
+
+export interface TypeSystemState {
+  id: string;
+  tradingHalted: boolean;
+  haltedAt?: string;
+  haltedReason?: string;
+  haltedBy?: string;
+}
+
+export interface TypePortfolioLimits {
+  userId: string;
+  maxOpenNotionalUsd: number;
+  maxOpenPositionsCount: number;
+  maxDailyLossUsd: number;
+}
+
+export interface TypeAuditEntry {
+  id: string;
+  ts: string;
+  actor: string;
+  action: string;
+  resourceType: string;
+  resourceId?: string;
+  method: string;
+  path: string;
+  statusCode: number;
+  payload?: unknown;
+  ip?: string;
+  userAgent?: string;
+  requestId?: string;
+}
+
+const adminHeaders = (key: string) => ({
+  "Content-Type": "application/json",
+  "X-Admin-Key": key,
+});
+
+export const getSystemState = async (
+  adminKey: string,
+): Promise<TypeSystemState> => {
+  const res = await fetch(parseUrl("v1/admin/system-state"), {
+    cache: "no-store",
+    headers: { "X-Admin-Key": adminKey },
+  });
+  return jsonOrThrow<TypeSystemState>(res);
+};
+
+export const haltTrading = async (
+  adminKey: string,
+  reason: string,
+): Promise<TypeSystemState> => {
+  const res = await fetch(parseUrl("v1/admin/halt"), {
+    method: "POST",
+    headers: adminHeaders(adminKey),
+    body: JSON.stringify({ reason }),
+  });
+  return jsonOrThrow<TypeSystemState>(res);
+};
+
+export const resumeTrading = async (
+  adminKey: string,
+): Promise<TypeSystemState> => {
+  const res = await fetch(parseUrl("v1/admin/resume"), {
+    method: "POST",
+    headers: adminHeaders(adminKey),
+  });
+  return jsonOrThrow<TypeSystemState>(res);
+};
+
+export const getPortfolioLimits = async (
+  adminKey: string,
+): Promise<TypePortfolioLimits> => {
+  const res = await fetch(parseUrl("v1/admin/portfolio-limits"), {
+    cache: "no-store",
+    headers: { "X-Admin-Key": adminKey },
+  });
+  return jsonOrThrow<TypePortfolioLimits>(res);
+};
+
+export const setPortfolioLimits = async (
+  adminKey: string,
+  limits: Omit<TypePortfolioLimits, "userId">,
+): Promise<TypePortfolioLimits> => {
+  const res = await fetch(parseUrl("v1/admin/portfolio-limits"), {
+    method: "PUT",
+    headers: adminHeaders(adminKey),
+    body: JSON.stringify(limits),
+  });
+  return jsonOrThrow<TypePortfolioLimits>(res);
+};
+
+export const listAudit = async (
+  adminKey: string,
+  params: {
+    actor?: string;
+    resourceType?: string;
+    since?: string;
+    limit?: number;
+  } = {},
+): Promise<TypeAuditEntry[]> => {
+  const qs = new URLSearchParams();
+  if (params.actor) qs.set("actor", params.actor);
+  if (params.resourceType) qs.set("resourceType", params.resourceType);
+  if (params.since) qs.set("since", params.since);
+  if (params.limit) qs.set("limit", String(params.limit));
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  const res = await fetch(parseUrl(`v1/admin/audit${suffix}`), {
+    cache: "no-store",
+    headers: { "X-Admin-Key": adminKey },
+  });
+  return jsonOrThrow<TypeAuditEntry[]>(res);
+};

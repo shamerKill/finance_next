@@ -270,6 +270,89 @@ func (r *OrderRepo) SumRealisedPnlSince(ctx context.Context, strategyID string, 
 	return 0, cur.Err()
 }
 
+// SumOpenNotionalForUser computes the sum of (qty - filled) * price for
+// all currently-open orders belonging to the given userId. Phase 7's
+// portfolio cap consults this across every strategy. We approximate
+// "open notional" as the *unfilled* portion of orders in status
+// {new,partial}; matched filled portions roll into RealisedPnl instead.
+//
+// Pre-auth, every order is the "default" user — there is no userId
+// column on order_log yet, so this returns the sum across ALL rows.
+// Phase 8 will add a userId field + filter.
+func (r *OrderRepo) SumOpenNotionalForUser(ctx context.Context, userID string) (notional float64, count int, err error) {
+	cur, aggErr := r.col.Aggregate(ctx, []bson.D{
+		{
+			{Key: "$match", Value: bson.M{
+				"status": bson.M{"$in": bson.A{
+					string(domain.OrderStatusNew),
+					string(domain.OrderStatusPartial),
+				}},
+			}},
+		},
+		{
+			{Key: "$group", Value: bson.M{
+				"_id": nil,
+				"notional": bson.M{"$sum": bson.M{
+					"$multiply": bson.A{
+						bson.M{"$subtract": bson.A{"$qty", bson.M{"$ifNull": bson.A{"$filled", 0}}}},
+						bson.M{"$ifNull": bson.A{"$price", 0}},
+					},
+				}},
+				"count": bson.M{"$sum": 1},
+			}},
+		},
+	})
+	if aggErr != nil {
+		return 0, 0, aggErr
+	}
+	defer cur.Close(ctx)
+	if cur.Next(ctx) {
+		var row struct {
+			Notional float64 `bson:"notional"`
+			Count    int     `bson:"count"`
+		}
+		if derr := cur.Decode(&row); derr != nil {
+			return 0, 0, derr
+		}
+		return row.Notional, row.Count, nil
+	}
+	return 0, 0, cur.Err()
+}
+
+// SumRealisedPnlSinceForUser is the cross-strategy variant of
+// SumRealisedPnlSince. Same caveat re: userId — Phase 7 sums across all
+// rows; Phase 8 will filter by user.
+func (r *OrderRepo) SumRealisedPnlSinceForUser(ctx context.Context, userID string, since time.Time) (float64, error) {
+	cur, err := r.col.Aggregate(ctx, []bson.D{
+		{
+			{Key: "$match", Value: bson.M{
+				"status":      string(domain.OrderStatusFilled),
+				"submittedAt": bson.M{"$gte": since},
+			}},
+		},
+		{
+			{Key: "$group", Value: bson.M{
+				"_id":   nil,
+				"total": bson.M{"$sum": "$realisedPnlUsd"},
+			}},
+		},
+	})
+	if err != nil {
+		return 0, err
+	}
+	defer cur.Close(ctx)
+	if cur.Next(ctx) {
+		var row struct {
+			Total float64 `bson:"total"`
+		}
+		if err := cur.Decode(&row); err != nil {
+			return 0, err
+		}
+		return row.Total, nil
+	}
+	return 0, cur.Err()
+}
+
 // decodeOrder mirrors decodeOption / decodeAccount. We use a marshal
 // round-trip so legacy fields don't trip strict decoding.
 func decodeOrder(m bson.M) (*domain.OrderLog, error) {

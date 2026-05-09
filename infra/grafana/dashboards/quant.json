@@ -1,0 +1,60 @@
+{
+  "title": "finance_next quant",
+  "uid": "fn-quant",
+  "tags": ["finance-next", "quant"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Backtest runs (24h)",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+      "targets": [
+        {
+          "expr": "increase(quant_backtest_runs_total[24h])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Optimization runs (24h)",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 6 },
+      "targets": [
+        {
+          "expr": "increase(quant_optimization_runs_total[24h])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "AI USD spent (per model)",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by(model) (rate(quant_ai_usd_spent_total[5m]))",
+          "legendFormat": "{{model}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Ingest latency p95 (per exchange)",
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by(exchange, le) (rate(quant_ingest_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{exchange}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

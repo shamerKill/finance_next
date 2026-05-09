@@ -27,16 +27,37 @@ import (
 	"strings"
 )
 
-// EnvelopeService wraps a Service (master KEK) and adds DEK-based envelope
-// encryption helpers. It does not replace Service; Option still uses Service
-// directly for backwards compatibility.
+// EnvelopeService wraps a [KEKProvider] (master KEK) and adds DEK-based
+// envelope encryption helpers. It does not replace Service; Option still
+// uses Service directly for backwards compatibility.
+//
+// Phase 7: the constructor was widened to accept a KEKProvider so KMS
+// can be swapped in without changing call sites. The legacy
+// [NewEnvelope] constructor is preserved and wraps the Service in an
+// [EnvKEKProvider] so the byte-for-byte golden vector still passes.
 type EnvelopeService struct {
-	kek *Service
+	kek KEKProvider
 }
 
-// NewEnvelope wraps an existing master Service.
+// NewEnvelope wraps an existing master Service. Equivalent to
+// NewEnvelopeWithProvider(NewEnvKEKProvider(master)). Kept for source
+// compatibility with the rest of the codebase.
 func NewEnvelope(master *Service) *EnvelopeService {
-	return &EnvelopeService{kek: master}
+	return &EnvelopeService{kek: NewEnvKEKProvider(master)}
+}
+
+// NewEnvelopeWithProvider lets callers pick an arbitrary KEK
+// implementation (env, AWS KMS, GCP KMS, …).
+func NewEnvelopeWithProvider(kek KEKProvider) *EnvelopeService {
+	return &EnvelopeService{kek: kek}
+}
+
+// KEKName returns the active KEK provider's identifier (for logging).
+func (e *EnvelopeService) KEKName() string {
+	if e == nil || e.kek == nil {
+		return "<nil>"
+	}
+	return e.kek.Name()
 }
 
 // EncryptForAccount generates a fresh 32-byte DEK, encrypts plaintext with the
@@ -57,9 +78,9 @@ func (e *EnvelopeService) EncryptForAccount(plaintext string) (dekCT string, pay
 	}
 
 	// Wrap the raw DEK bytes (not as a string but as base64 to round-trip
-	// through the Service.Encrypt API which is string-typed). DecryptForAccount
+	// through the KEK.Encrypt API which is byte-typed). DecryptForAccount
 	// reverses this to recover the raw key.
-	dekCT, err = e.kek.Encrypt(base64.StdEncoding.EncodeToString(dek))
+	dekCT, err = e.kek.Encrypt([]byte(base64.StdEncoding.EncodeToString(dek)))
 	if err != nil {
 		return "", "", fmt.Errorf("seal DEK: %w", err)
 	}
@@ -90,11 +111,11 @@ func (e *EnvelopeService) DecryptForAccount(dekCT, payloadCT string) (string, er
 }
 
 func (e *EnvelopeService) unwrapDEK(dekCT string) ([]byte, error) {
-	dekB64, err := e.kek.Decrypt(dekCT)
+	dekB64Bytes, err := e.kek.Decrypt(dekCT)
 	if err != nil {
 		return nil, fmt.Errorf("unwrap DEK: %w", err)
 	}
-	dek, err := base64.StdEncoding.DecodeString(dekB64)
+	dek, err := base64.StdEncoding.DecodeString(string(dekB64Bytes))
 	if err != nil {
 		return nil, fmt.Errorf("decode DEK: %w", err)
 	}

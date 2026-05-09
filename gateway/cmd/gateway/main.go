@@ -18,6 +18,8 @@ import (
 	"github.com/finance_next/gateway/internal/crypto"
 	"github.com/finance_next/gateway/internal/exchange/meta"
 	gwhttp "github.com/finance_next/gateway/internal/http"
+	auditmw "github.com/finance_next/gateway/internal/http/middleware"
+	"github.com/finance_next/gateway/internal/observability"
 	"github.com/finance_next/gateway/internal/orderengine"
 	"github.com/finance_next/gateway/internal/quantclient"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
@@ -103,7 +105,31 @@ func main() {
 		logger.Warn("ensure optimization_runs indexes failed", "err", err)
 	}
 
-	envelope := crypto.NewEnvelope(cryptoSvc)
+	// Phase 7: kill switch + portfolio limits, audit log.
+	systemRepo := mongostore.NewSystemRepo(db)
+	if err := systemRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure system_state indexes failed", "err", err)
+	}
+	auditRepo := mongostore.NewAuditRepo(db)
+	if err := auditRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure audit indexes failed", "err", err)
+	}
+
+	// Phase 7: KEK provider selection. Default is the env-backed Service;
+	// `KEK_PROVIDER=aws-kms` / `gcp-kms` swap to a stub that errors at
+	// runtime — production swap requires the corresponding SDK.
+	kekProvider := selectKEKProvider(cryptoSvc, logger)
+	envelope := crypto.NewEnvelopeWithProvider(kekProvider)
+	logger.Info("envelope crypto wired", "kek", envelope.KEKName())
+
+	// Phase 7 observability registry. Cheap when nothing scrapes.
+	metrics := observability.NewRegistry()
+	auditMW, err := auditmw.New(auditmw.Config{Writer: auditRepo, BufferSize: 1024, Log: logger})
+	if err != nil {
+		logger.Error("audit middleware init failed", "err", err)
+		os.Exit(1)
+	}
+	go auditMW.Start(rootCtx)
 
 	// ---- Phase 2 wiring: Timescale pool + quant gRPC client (best-effort) ----
 	var tsStore *tsstore.Store
@@ -156,13 +182,15 @@ func main() {
 	var orderEngine *orderengine.Engine
 	if redisClient != nil {
 		orderEngine = orderengine.New(orderengine.Deps{
-			Redis:       redisClient,
-			OrderRepo:   orderRepo,
-			OptionRepo:  optRepo,
-			AccountRepo: acctRepo,
-			Envelope:    envelope,
-			Gate:        gate,
-			Log:         logger,
+			Redis:          redisClient,
+			OrderRepo:      orderRepo,
+			OptionRepo:     optRepo,
+			AccountRepo:    acctRepo,
+			Envelope:       envelope,
+			Gate:           gate,
+			SystemRepo:     systemRepo,
+			PortfolioStats: orderRepo,
+			Log:            logger,
 		})
 		go func() {
 			if err := orderEngine.Start(rootCtx); err != nil && !errors.Is(err, context.Canceled) {
@@ -182,6 +210,8 @@ func main() {
 		ExchangeMetaRepo:    metaRepo,
 		RecommendationRepo:  recRepo,
 		OptimizationRunRepo: optRunRepo,
+		SystemRepo:          systemRepo,
+		AuditRepo:           auditRepo,
 		Crypto:              cryptoSvc,
 		Envelope:            envelope,
 		Timescale:           tsStore,
@@ -189,6 +219,8 @@ func main() {
 		AdminKey:            cfg.AdminKey,
 		Redis:               redisClient,
 		OrderEngine:         orderEngine,
+		AuditMiddleware:     auditMW,
+		Metrics:             metrics,
 	})
 
 	addr := ":" + cfg.Port
@@ -232,6 +264,24 @@ func main() {
 		logger.Error("mongo disconnect error", "err", err)
 	}
 	logger.Info("gateway stopped")
+}
+
+// selectKEKProvider chooses a [crypto.KEKProvider] based on the
+// KEK_PROVIDER env var. Default is the env-backed AES-256-GCM Service.
+// AWS / GCP variants return stubs that surface ErrKEKNotConfigured at
+// runtime — production swap requires the corresponding SDK; see
+// gateway/internal/crypto/kek.go for the integration shape.
+func selectKEKProvider(svc *crypto.Service, log *slog.Logger) crypto.KEKProvider {
+	switch os.Getenv("KEK_PROVIDER") {
+	case "aws-kms":
+		log.Warn("KEK_PROVIDER=aws-kms — using stub; runtime calls will fail until SDK is wired")
+		return crypto.NewAWSKMSKEKProvider(os.Getenv("AWS_KMS_KEY_ID"), os.Getenv("AWS_REGION"))
+	case "gcp-kms":
+		log.Warn("KEK_PROVIDER=gcp-kms — using stub; runtime calls will fail until SDK is wired")
+		return crypto.NewGCPKMSKEKProvider(os.Getenv("GCP_KMS_KEY_NAME"))
+	default:
+		return crypto.NewEnvKEKProvider(svc)
+	}
 }
 
 // databaseFromURI extracts the database name from the path segment of a Mongo URI.

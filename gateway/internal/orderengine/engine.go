@@ -88,6 +88,19 @@ var (
 	ErrMissingMarkPrice = errors.New("orderengine: MARKET order requires markPrice hint for risk gate")
 	// ErrAccountNotConfigured means the strategy's live.accountId is empty.
 	ErrAccountNotConfigured = errors.New("orderengine: strategy has no live.accountId configured")
+	// ErrTradingHalted is the Phase 7 portfolio kill switch. Returned when
+	// `system_state.tradingHalted=true`. Checked BEFORE any per-strategy
+	// risk gate so an admin halt overrides everything.
+	ErrTradingHalted = errors.New("orderengine: trading halted globally")
+	// ErrPortfolioNotional means the sum of open notional across all of
+	// this user's strategies would exceed `portfolio_limits.maxOpenNotionalUsd`.
+	ErrPortfolioNotional = errors.New("orderengine: portfolio open notional cap exceeded")
+	// ErrPortfolioPositions means the count of open positions across the
+	// user's strategies would exceed `maxOpenPositionsCount`.
+	ErrPortfolioPositions = errors.New("orderengine: portfolio open positions cap exceeded")
+	// ErrPortfolioDailyLoss means today's cumulative realised loss across
+	// every strategy is below -`maxDailyLossUsd`.
+	ErrPortfolioDailyLoss = errors.New("orderengine: portfolio daily loss cap reached")
 )
 
 // OrderClientFactory builds an exchange-specific order adapter for a
@@ -109,6 +122,22 @@ type OrderClientFactory func(
 // implements this.
 type OrderAdapter = exchange.OrderClient
 
+// SystemStateProvider is the read-side of the kill switch + portfolio
+// limits collections, kept as a small interface so the engine tests can
+// inject a fake without depending on Mongo. Implemented by
+// [mongostore.SystemRepo].
+type SystemStateProvider interface {
+	GetSystemState(ctx context.Context) (*domain.SystemState, error)
+	GetPortfolioLimits(ctx context.Context, userID string) (*domain.PortfolioLimits, error)
+}
+
+// PortfolioOrderStats is the aggregate query the engine needs for
+// cross-strategy caps. Implemented by [mongostore.OrderRepo].
+type PortfolioOrderStats interface {
+	SumOpenNotionalForUser(ctx context.Context, userID string) (notional float64, count int, err error)
+	SumRealisedPnlSinceForUser(ctx context.Context, userID string, since time.Time) (float64, error)
+}
+
 // Deps bundles every dependency Engine needs. Keep this as a single
 // struct so wiring in cmd/gateway/main.go stays compact.
 type Deps struct {
@@ -118,6 +147,13 @@ type Deps struct {
 	AccountRepo *mongostore.AccountRepo
 	Envelope    *crypto.EnvelopeService
 	Gate        *TokenStore
+	// SystemRepo provides kill-switch + portfolio-limits reads. Optional;
+	// when nil, the kill-switch + portfolio caps are skipped and only the
+	// per-strategy risk gate runs (legacy Phase 4 behaviour).
+	SystemRepo SystemStateProvider
+	// PortfolioStats provides cross-strategy aggregates. Optional; when
+	// nil, portfolio caps are skipped (per-strategy gate still runs).
+	PortfolioStats PortfolioOrderStats
 	// Factory is optional — when nil, defaultOrderClientFactory is used
 	// (which wraps binance.NewOrderClient). Tests inject a mock.
 	Factory OrderClientFactory
@@ -312,6 +348,25 @@ func (e *Engine) processMessage(ctx context.Context, msg redis.XMessage) {
 // Return value is the resulting [domain.OrderLog]; nil + error indicates
 // the command was rejected before any exchange call.
 func (e *Engine) processCommand(ctx context.Context, cmd domain.SubmitOrderCommand) (*domain.OrderLog, error) {
+	// ---- Phase 7 portfolio kill switch (checked BEFORE per-strategy risk).
+	// When SystemRepo is wired the engine reads the global system_state
+	// doc on every submission; a halted state rejects unconditionally
+	// with ErrTradingHalted. The check is first so even a misconfigured
+	// strategy can't sneak past during an emergency stop.
+	if e.deps.SystemRepo != nil {
+		state, err := e.deps.SystemRepo.GetSystemState(ctx)
+		if err != nil {
+			// Fail closed: storage outage during an emergency must NOT
+			// allow trading.
+			e.publishRejection(ctx, cmd, fmt.Errorf("system state lookup: %w", err))
+			return nil, fmt.Errorf("system state lookup: %w", err)
+		}
+		if state.TradingHalted {
+			e.publishRejection(ctx, cmd, ErrTradingHalted)
+			return nil, ErrTradingHalted
+		}
+	}
+
 	opt, err := e.deps.OptionRepo.FindByID(ctx, cmd.StrategyID)
 	if err != nil {
 		return nil, fmt.Errorf("load strategy: %w", err)
@@ -355,6 +410,50 @@ func (e *Engine) processCommand(ctx context.Context, cmd domain.SubmitOrderComma
 	if pnl <= -opt.Risk.DailyLossCapUsd {
 		e.publishRejection(ctx, cmd, ErrRiskDailyLoss)
 		return nil, ErrRiskDailyLoss
+	}
+
+	// ---- Phase 7 cross-strategy portfolio caps (after per-strategy gate).
+	// Only runs when both repos are wired. Zero-valued limits = "no cap"
+	// (admin must explicitly set a value to enforce).
+	if e.deps.SystemRepo != nil && e.deps.PortfolioStats != nil {
+		// Pre-auth: every strategy belongs to userId="default". Phase 8
+		// will resolve the user from the authenticated context.
+		userID := domain.DefaultUserID
+		limits, err := e.deps.SystemRepo.GetPortfolioLimits(ctx, userID)
+		if err != nil {
+			e.publishRejection(ctx, cmd, fmt.Errorf("portfolio limits lookup: %w", err))
+			return nil, fmt.Errorf("portfolio limits lookup: %w", err)
+		}
+		if limits.MaxOpenNotionalUsd > 0 || limits.MaxOpenPositionsCount > 0 {
+			openNotional, openCount, err := e.deps.PortfolioStats.SumOpenNotionalForUser(ctx, userID)
+			if err != nil {
+				e.publishRejection(ctx, cmd, fmt.Errorf("portfolio open lookup: %w", err))
+				return nil, fmt.Errorf("portfolio open lookup: %w", err)
+			}
+			// Adding this submission counts toward the cap.
+			projected := openNotional + notional
+			if limits.MaxOpenNotionalUsd > 0 && projected > limits.MaxOpenNotionalUsd {
+				e.publishRejection(ctx, cmd,
+					fmt.Errorf("%w: projected=%.2f cap=%.2f", ErrPortfolioNotional, projected, limits.MaxOpenNotionalUsd))
+				return nil, ErrPortfolioNotional
+			}
+			if limits.MaxOpenPositionsCount > 0 && openCount+1 > limits.MaxOpenPositionsCount {
+				e.publishRejection(ctx, cmd,
+					fmt.Errorf("%w: projected=%d cap=%d", ErrPortfolioPositions, openCount+1, limits.MaxOpenPositionsCount))
+				return nil, ErrPortfolioPositions
+			}
+		}
+		if limits.MaxDailyLossUsd > 0 {
+			portfolioPnl, err := e.deps.PortfolioStats.SumRealisedPnlSinceForUser(ctx, userID, since)
+			if err != nil {
+				e.publishRejection(ctx, cmd, fmt.Errorf("portfolio pnl lookup: %w", err))
+				return nil, fmt.Errorf("portfolio pnl lookup: %w", err)
+			}
+			if portfolioPnl <= -limits.MaxDailyLossUsd {
+				e.publishRejection(ctx, cmd, ErrPortfolioDailyLoss)
+				return nil, ErrPortfolioDailyLoss
+			}
+		}
 	}
 
 	// ---- Build clientOrderId + insert pending row -------------------
@@ -479,6 +578,9 @@ func (e *Engine) publishOrderEvent(ctx context.Context, eventType string, log *d
 }
 
 func (e *Engine) publishRaw(ctx context.Context, eventType string, payload map[string]any) {
+	if e.deps.Redis == nil {
+		return // tests sometimes wire the engine without Redis.
+	}
 	payload["type"] = eventType
 	bs, err := json.Marshal(payload)
 	if err != nil {
@@ -491,6 +593,13 @@ func (e *Engine) publishRaw(ctx context.Context, eventType string, payload map[s
 	}).Result(); err != nil {
 		e.log.Warn("orderengine: publish event", "err", err, "type", eventType)
 	}
+}
+
+// processCommandSkippingPublish is a thin test seam — same logic as
+// processCommand, but exposed so tests can drive it directly without
+// constructing a Redis client.
+func (e *Engine) processCommandSkippingPublish(ctx context.Context, cmd domain.SubmitOrderCommand) (*domain.OrderLog, error) {
+	return e.processCommand(ctx, cmd)
 }
 
 // deriveClientOrderID computes the deterministic idempotency key. Spec:

@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: quant
+  namespace: finance-next
+spec:
+  selector:
+    app: quant
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: 50051
+    - name: http
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quant
+  namespace: finance-next
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quant
+  template:
+    metadata:
+      labels:
+        app: quant
+    spec:
+      containers:
+        - name: quant
+          image: finance-next/quant:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "quant.main"]
+          ports:
+            - containerPort: 50051
+              name: grpc
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - secretRef:
+                name: finance-next-secrets
+          env:
+            - name: RATELIMIT_BACKEND
+              value: "redis"
+            - name: REDIS_URL
+              value: "redis://redis.finance-next.svc:6379/0"
+            - name: TIMESCALE_DSN
+              value: "postgres://app@timescale.finance-next.svc:5432/finance?sslmode=disable"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+        # Arq runs as a sidecar container in the same pod so it shares
+        # network identity (e.g. accessing Redis via the same DNS) and
+        # can be deployed/rolled together with the gRPC server.
+        - name: arq
+          image: finance-next/quant:latest
+          imagePullPolicy: IfNotPresent
+          command: ["arq", "quant.workers.settings.WorkerSettings"]
+          envFrom:
+            - secretRef:
+                name: finance-next-secrets
+          env:
+            - name: REDIS_URL
+              value: "redis://redis.finance-next.svc:6379/0"
+            - name: TIMESCALE_DSN
+              value: "postgres://app@timescale.finance-next.svc:5432/finance?sslmode=disable"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi

@@ -1,0 +1,9 @@
+# Compiled binary
+/gateway
+
+# Local env
+.env
+
+# Go test cache / coverage
+*.test
+*.out

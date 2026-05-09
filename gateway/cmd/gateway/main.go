@@ -93,6 +93,16 @@ func main() {
 	// sub-task (precision/min-notional validation) will.
 	go meta.New(metaRepo, logger).RefreshIfStale(rootCtx)
 
+	// Phase 6: AI recommendations + optimization runs.
+	recRepo := mongostore.NewRecommendationRepo(db)
+	if err := recRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure recommendation indexes failed", "err", err)
+	}
+	optRunRepo := mongostore.NewOptimizationRunRepo(db)
+	if err := optRunRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure optimization_runs indexes failed", "err", err)
+	}
+
 	envelope := crypto.NewEnvelope(cryptoSvc)
 
 	// ---- Phase 2 wiring: Timescale pool + quant gRPC client (best-effort) ----
@@ -165,18 +175,20 @@ func main() {
 	}
 
 	e := gwhttp.NewRouter(gwhttp.Deps{
-		OptionRepo:       optRepo,
-		AccountRepo:      acctRepo,
-		BacktestRepo:     bktRepo,
-		OrderRepo:        orderRepo,
-		ExchangeMetaRepo: metaRepo,
-		Crypto:           cryptoSvc,
-		Envelope:         envelope,
-		Timescale:        tsStore,
-		Quant:            quantCli,
-		AdminKey:         cfg.AdminKey,
-		Redis:            redisClient,
-		OrderEngine:      orderEngine,
+		OptionRepo:          optRepo,
+		AccountRepo:         acctRepo,
+		BacktestRepo:        bktRepo,
+		OrderRepo:           orderRepo,
+		ExchangeMetaRepo:    metaRepo,
+		RecommendationRepo:  recRepo,
+		OptimizationRunRepo: optRunRepo,
+		Crypto:              cryptoSvc,
+		Envelope:            envelope,
+		Timescale:           tsStore,
+		Quant:               quantCli,
+		AdminKey:            cfg.AdminKey,
+		Redis:               redisClient,
+		OrderEngine:         orderEngine,
 	})
 
 	addr := ":" + cfg.Port

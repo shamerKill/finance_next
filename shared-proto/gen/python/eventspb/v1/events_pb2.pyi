@@ -49,6 +49,36 @@ class BacktestProgress(_message.Message):
     state: int
     def __init__(self, run_id: _Optional[str] = ..., progress: _Optional[float] = ..., recent_equity: _Optional[_Iterable[float]] = ..., state: _Optional[int] = ...) -> None: ...
 
+class OptimizationSuggested(_message.Message):
+    __slots__ = ("strategy_id", "study_id", "recommendation_id", "expected_sharpe_delta")
+    STRATEGY_ID_FIELD_NUMBER: _ClassVar[int]
+    STUDY_ID_FIELD_NUMBER: _ClassVar[int]
+    RECOMMENDATION_ID_FIELD_NUMBER: _ClassVar[int]
+    EXPECTED_SHARPE_DELTA_FIELD_NUMBER: _ClassVar[int]
+    strategy_id: str
+    study_id: str
+    recommendation_id: str
+    expected_sharpe_delta: float
+    def __init__(self, strategy_id: _Optional[str] = ..., study_id: _Optional[str] = ..., recommendation_id: _Optional[str] = ..., expected_sharpe_delta: _Optional[float] = ...) -> None: ...
+
+class OptimizationProgress(_message.Message):
+    __slots__ = ("study_id", "trials_completed", "trials_total", "best_value", "state", "current_cost_usd", "error_message")
+    STUDY_ID_FIELD_NUMBER: _ClassVar[int]
+    TRIALS_COMPLETED_FIELD_NUMBER: _ClassVar[int]
+    TRIALS_TOTAL_FIELD_NUMBER: _ClassVar[int]
+    BEST_VALUE_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    CURRENT_COST_USD_FIELD_NUMBER: _ClassVar[int]
+    ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    study_id: str
+    trials_completed: int
+    trials_total: int
+    best_value: float
+    state: int
+    current_cost_usd: float
+    error_message: str
+    def __init__(self, study_id: _Optional[str] = ..., trials_completed: _Optional[int] = ..., trials_total: _Optional[int] = ..., best_value: _Optional[float] = ..., state: _Optional[int] = ..., current_cost_usd: _Optional[float] = ..., error_message: _Optional[str] = ...) -> None: ...
+
 class BacktestCompleted(_message.Message):
     __slots__ = ("run_id", "strategy_id", "metrics", "state", "error_message", "finished_at")
     class MetricsEntry(_message.Message):

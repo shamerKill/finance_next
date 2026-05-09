@@ -74,7 +74,7 @@ finance_next/
 │       ├── quantclient/              # gRPC client → Python quant worker
 │       └── http/
 │           ├── router.go             # Echo 路由 + middleware
-│           └── handlers/             # option.go + account.go + market.go + backtest.go + strategy.go + exchange_meta.go + portfolio.go
+│           └── handlers/             # option.go + account.go + market.go + backtest.go + strategy.go + exchange_meta.go + portfolio.go + recommendation.go + optimization.go (Phase 6)
 ├── quant/                            # Phase 2 Python 量化 worker（uv 管理）
 │   ├── pyproject.toml                # uv-managed deps (fastapi/grpcio/ccxt/akshare/asyncpg/arq)
 │   ├── Dockerfile                    # uv:python3.12-bookworm-slim
@@ -82,11 +82,12 @@ finance_next/
 │   │   ├── main.py                   # FastAPI healthz + grpc.aio bootstrap
 │   │   ├── grpc_server.py            # QuantServicer (impls quant.v1.Quant)
 │   │   ├── ratelimit.py              # async TokenBucket + 每交易所 registry
-│   │   ├── data/{ccxt_source,akshare_source,timescale,symbols,mongo}.py
+│   │   ├── data/{ccxt_source,akshare_source,timescale,symbols,mongo,recommendations}.py
 │   │   ├── strategies/{base,grid_dca}.py  # Phase 3：抽象策略 + 信号→portfolio 模拟器（带 shift(1) 防 look-ahead）
 │   │   ├── runtime/runtime.py        # Phase 4：长生命周期 asyncio 任务，每分钟扫 live=true 策略并发 command.order.submit
-│   │   ├── workers/{ingest,backtest,settings}.py  # Arq 任务 + WorkerSettings
-│   │   └── events/redis_stream.py    # OhlcvIngested + BacktestProgress/Completed 发布
+│   │   ├── ai/{claude_client,cost_ledger,optimizer,prompts}.py  # Phase 6：Anthropic SDK + Optuna walk-forward + budget gate
+│   │   ├── workers/{ingest,backtest,optimize,settings}.py  # Arq 任务 + WorkerSettings + daily cron
+│   │   └── events/redis_stream.py    # OhlcvIngested + BacktestProgress/Completed + OptimizationProgress/Suggested 发布
 │   └── tests/                        # 离线运行：respx + fakeredis + 模块替换
 ├── shared-proto/                     # protobuf 单一来源（Go + Python 生成代码已检入）
 │   ├── quantpb/v1/quant.proto        # gRPC 服务（IngestNow Phase 2 落地）
@@ -193,10 +194,22 @@ docker compose -f infra/docker-compose.yml up --build
 | GET    | `/api/v1/exchange/meta`         | `exchange_meta` 列表；`?exchange=&symbol=` 过滤；symbol 为空时返回该 exchange 全部              |
 | GET    | `/api/v1/portfolio/summary`     | 跨账户余额汇总：`{totalUsd, perExchange[], perAsset (top 10)[], notes[]}`，USD 估值走 Timescale 最近 close（`<asset>USDT`）|
 
-WS（phase 3 扩展 topic 模型 + phase 4 增加 strategy）：
+**AI Recommendations + Optimization**（`gateway/internal/http/handlers/recommendation.go` + `optimization.go`，phase 6）
+| 方法     | 路径                                                | 说明                                                                                          |
+| ------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| GET    | `/api/v1/recommendations`                         | 推荐列表；`?status=` (默认 `pending_review`) / `?strategyId=`                                       |
+| GET    | `/api/v1/recommendations/:id`                     | 单条推荐详情（含 proposed params + rationale + expectedDelta）                                       |
+| POST   | `/api/v1/recommendations/:id/approve`             | **原子事务**：写 strategy + 自增 `currentVersion` + supersede 同 strategy 其它 pending + emit `event.strategy.upserted` |
+| POST   | `/api/v1/recommendations/:id/reject`              | `status=rejected`                                                                            |
+| POST   | `/api/v1/strategies/:id/optimize`                 | 调 Quant.StartOptimization gRPC，202 返回 `{studyId, enqueuedAt}`                              |
+| GET    | `/api/v1/optimizations`                           | study 列表（含 cost ledger snapshot）；`?strategyId=` 过滤                                          |
+| GET    | `/api/v1/optimizations/:id`                       | study 头 doc                                                                                  |
+
+WS（phase 3 扩展 topic 模型 + phase 4 增加 strategy + phase 6 增加 optimization）：
 - 现有 `{type:"subscribe", accountId:"..."}` 仍兼容（默认 topic=`account`）。
 - `{type:"subscribe", topic:"backtest", id:"<runId>"}` — gateway 订阅 Redis Streams `event.backtest.progress` / `event.backtest.completed`，按 runId 过滤后扇出。
 - `{type:"subscribe", topic:"strategy", id:"<strategyId>"}` — gateway 订阅 Redis Stream `events`（订单事件），按 strategyId 过滤推 `event.order.{filled|rejected|canceled|updated}`。
+- `{type:"subscribe", topic:"optimization", id:"<studyId>"}` — gateway 订阅 `event.optimization.progress` + `event.optimization.suggested`，按 studyId 过滤；`optimization.progress` 每 ~5 trial 一条，`optimization.suggested` 是终态（含 `recommendation_id`）。
 
 **Option 字段**（以 `CreateOptionDto` 为准，`client/data/type.d.ts` 与之对应）
 - `name`（3-8 字符，唯一）
@@ -259,6 +272,19 @@ canWithdraw=true，解析失败 fail-closed）。
     设为 true，仍需 admin 走完 token request → confirm 流程（见 §8 安全说明）。
   - `QUANT_RUNTIME_DISABLED`（quant 端，Phase 4 新增，可选）— `true` 时
     `quant.runtime` 长生命周期任务不启动；测试和冷启动时使用。
+  - **Phase 6（AI 优化）env vars**（仅 quant worker 读取，gateway 不直接消费）：
+    - `ANTHROPIC_API_KEY` — Anthropic SDK 鉴权；为空时优化器跳过所有 Claude 调用
+      使用默认 search space + 确定性 fallback rationale（dev 友好）
+    - `AI_MAX_USD_PER_STUDY` (default `5.0`) — 每个 study 的硬上限；超过则
+      `BudgetGate.try_charge` 返回 false，optimizer 写 `OPT_BUDGET_EXCEEDED` 状态
+    - `AI_MAX_USD_PER_DAY` (default `50.0`) — 全局每日上限，按 UTC 日聚合
+      `optimization_runs.cost.usdSpent`
+    - `AI_MAX_TRIALS_PER_STUDY` (default `200`) — Optuna trial 上限
+    - `AI_MAX_SECONDS_PER_STUDY` (default `300`) — Optuna 硬 wall-clock 截断
+    - `AI_OPTIMIZATION_DAILY_CRON` (default `0 2 * * *`) — Arq cron schedule；
+      仅支持 `M H * * *` 格式
+    - `AI_OPTIMIZATION_LOOKBACK_DAYS` (default `90`) — 每个 study 默认拉取的
+      OHLCV 历史窗口（小时线）
   - **测试网默认**：gateway 的 Binance 订单适配器 (`exchange/binance/orders.go`)
     构造时根据 `Live.Mode` 把 `futures.BaseURL` pin 到
     `https://testnet.binancefuture.com`（mainnet 需要 env+token gate 同时开
@@ -291,6 +317,13 @@ canWithdraw=true，解析失败 fail-closed）。
   完整 token，只返回 8 字符前缀 hint。完整 token 通过日志 stderr 打印（关键字
   `EMAIL CONFIRMATION REQUIRED`），运维需从日志拷贝后调 `/confirm`。Phase 7
   会替换为真实邮件发信。
+- **AI 推荐必须人工审批**（Phase 6，硬要求）：`ai_recommendations` 始终以
+  `status=pending_review` 入库，**不存在 auto-apply 路径**。批准走
+  `POST /api/v1/recommendations/:id/approve` 的 Mongo 事务（更新 strategy +
+  自增 currentVersion + supersede 同 strategy 其余 pending + emit
+  `event.strategy.upserted`）。预算闸 fail-closed：`AI_MAX_USD_PER_STUDY` /
+  `AI_MAX_USD_PER_DAY` 任一耗尽，`BudgetGate.try_charge` 返回 false 且
+  optimizer 写 `OPT_BUDGET_EXCEEDED` 状态。
 
 ## 9. 当前进度 / TODO
 
@@ -366,7 +399,31 @@ canWithdraw=true，解析失败 fail-closed）。
       - `GET /api/v1/portfolio/summary`：跨账户 USD 汇总（best-effort 走 Timescale
         最近 close）；UI `(dashboard)/portfolio`
       - `quant/data/symbols.py` 同步加 canonical 形态 + `to_native()`
+- [x] **Phase 6**：AI 自动优化循环
+      - `quantpb/v1` 落地 `StartOptimization` / `GetOptimizationStatus` /
+        `StreamOptimizationProgress`（`OptimizationState` 5 值枚举）；
+        `eventspb/v1` 加 `OptimizationProgress` / `OptimizationSuggested`
+      - `quant/ai/`：Anthropic SDK 包装（system prompt + study-context block 用
+        `cache_control={type:ephemeral}` 缓存，1h ttl 路径预留）；硬编码 Sonnet 4.6
+        ($3/M 入 / $15/M 出) + Haiku 4.5 ($1/M / $5/M) 价格表；Optuna TPE +
+        MedianPruner；**walk-forward 70/30 IS/OOS gate（OOS sharpe < 0.7×IS sharpe
+        直接 -inf 拒绝，单测覆盖）**
+      - `quant/data/recommendations.py`：`ai_recommendations` + `optimization_runs`
+        集合写路径；status 流转 `pending_review → approved | rejected | superseded`
+      - `quant/workers/optimize.py`：单 strategy 全循环（载历史 → Claude define
+        space → Optuna 跑 trials → mid-study Haiku refine（可选）→ Claude rationale
+        → 写 Mongo + 发 Redis Stream）；Arq cron 每日 02:00 UTC（env 可改）扫
+        `live.enabled=true OR optimizationEnabled=true` 策略并 enqueue
+      - gateway `recommendation_repo.go` + `optimization_run_repo.go` +
+        `recommendation.go`(approve/reject/list/detail) + `optimization.go`
+        (POST /strategies/:id/optimize, GET /optimizations*)；approve 走
+        Mongo session+tx：写 strategy + 自增 currentVersion + supersede 同
+        strategy 其余 pending + 发 `event.strategy.upserted`
+      - WS `redis_optimization.go` + `(kind=optimization, id=studyId)` topic
+      - UI `(dashboard)/recommendations/{page,[id]/page,actions}.tsx` 列表/diff/
+        approve；strategy 详情 "Tune now" 按钮 + `useOptimizationStream` live cost
+        meter；`api-client.ts` + `type.d.ts` 加齐 6 个新接口
 - [ ] 期权配置表单接通 POST 提交
 - [ ] `client/app/list/` 实现
-- [ ] **Phase 6+**：AI 优化循环 / 加固（详见
+- [ ] **Phase 7**：加固（audit / OTel / KMS / k8s — 详见
       `/root/.claude/plans/vectorized-waddling-hoare.md`）

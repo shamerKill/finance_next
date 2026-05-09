@@ -40,6 +40,10 @@ const (
 	// (TopicStrategy is defined in redis_strategy.go — phase 4 — with
 	// the same string constant the browser sends. Keep its definition
 	// next to its consumer for readability.)
+	// TopicOptimization: Optuna study progress events (phase 6). Emitted
+	// by the Python quant worker on `event.optimization.progress` and
+	// forwarded to subscribers on (kind=optimization, id=studyId).
+	TopicOptimization TopicKind = "optimization"
 )
 
 // topicKey is the hub-internal map key.
@@ -183,7 +187,7 @@ func (h *Hub) Subscribe(ctx context.Context, sessionID string, kind TopicKind, i
 				return errors.New("ws: account upstream factory not configured")
 			}
 			acctStream, err = h.acctFactory(newCtx, id)
-		case TopicBacktest, TopicStrategy:
+		case TopicBacktest, TopicStrategy, TopicOptimization:
 			// Generic-stream topics. The composed generic factory in
 			// router.go dispatches by kind; we only enforce that *some*
 			// factory exists.

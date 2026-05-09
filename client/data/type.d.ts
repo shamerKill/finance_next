@@ -263,3 +263,63 @@ export type TypePortfolioSummary = {
   generatedAt: string;
   notes?: string[];
 };
+
+// ---------- Phase 6 — AI recommendations + optimizations ----------
+
+export type TypeRecommendationStatus =
+  | "pending_review"
+  | "approved"
+  | "rejected"
+  | "superseded";
+
+export type TypeRecommendation = {
+  id: string;
+  strategyId: string;
+  studyId: string;
+  proposedParams: Record<string, unknown>;
+  expectedDelta: { sharpe: number; return: number };
+  rationale: string;
+  status: TypeRecommendationStatus;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  appliedVersion?: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TypeOptimizationCost = {
+  claudeTokensIn: number;
+  claudeTokensOut: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  usdSpent: number;
+};
+
+export type TypeOptimizationRun = {
+  studyId: string;
+  strategyId: string;
+  algorithm: string;
+  paramSpace: Record<string, unknown>;
+  claudeContextHash: string;
+  trialsTotal: number;
+  trialsCompleted: number;
+  bestValue: number;
+  bestTrialId?: string | null;
+  cost: TypeOptimizationCost;
+  state: string;
+  startedAt: string;
+  finishedAt?: string | null;
+  error: string;
+  recommendationId?: string | null;
+};
+
+export type TypeStudyHandle = {
+  studyId: string;
+  enqueuedAt: string;
+};
+
+export type TypeApproveRecommendation = {
+  recommendation: TypeRecommendation;
+  strategy: TypeOption;
+  newVersion: number;
+};

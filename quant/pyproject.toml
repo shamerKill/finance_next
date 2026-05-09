@@ -28,6 +28,11 @@ dependencies = [
     "structlog>=24.4",
     # Phase 3: Mongo client for backtest head docs.
     "motor>=3.5",
+    # Phase 6: Anthropic SDK + Optuna for the AI auto-optimization loop.
+    # `anthropic` is only used by quant/ai/claude_client.py at study
+    # boundaries; `optuna` powers the per-trial TPE sampler.
+    "anthropic>=0.40",
+    "optuna>=4.0",
 ]
 
 [project.optional-dependencies]

@@ -55,6 +55,16 @@ class QuantStub(object):
                 request_serializer=quantpb_dot_v1_dot_quant__pb2.OptimizationRequest.SerializeToString,
                 response_deserializer=quantpb_dot_v1_dot_quant__pb2.StudyHandle.FromString,
                 _registered_method=True)
+        self.GetOptimizationStatus = channel.unary_unary(
+                '/quantpb.v1.Quant/GetOptimizationStatus',
+                request_serializer=quantpb_dot_v1_dot_quant__pb2.StudyHandle.SerializeToString,
+                response_deserializer=quantpb_dot_v1_dot_quant__pb2.OptimizationStatus.FromString,
+                _registered_method=True)
+        self.StreamOptimizationProgress = channel.unary_stream(
+                '/quantpb.v1.Quant/StreamOptimizationProgress',
+                request_serializer=quantpb_dot_v1_dot_quant__pb2.StudyHandle.SerializeToString,
+                response_deserializer=quantpb_dot_v1_dot_quant__pb2.OptimizationProgress.FromString,
+                _registered_method=True)
         self.IngestNow = channel.unary_unary(
                 '/quantpb.v1.Quant/IngestNow',
                 request_serializer=quantpb_dot_v1_dot_quant__pb2.IngestRequest.SerializeToString,
@@ -100,6 +110,21 @@ class QuantServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetOptimizationStatus(self, request, context):
+        """Phase 6: poll a study's progress / cost ledger snapshot.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def StreamOptimizationProgress(self, request, context):
+        """Phase 6: server-streaming progress (one OptimizationProgress per update).
+        Stream terminates when the study reaches a terminal state.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def IngestNow(self, request, context):
         """Phase 2: synchronously trigger an OHLCV ingest range.
         Implementation chunks the request via ccxt `since`+`limit` and upserts
@@ -138,6 +163,16 @@ def add_QuantServicer_to_server(servicer, server):
                     servicer.StartOptimization,
                     request_deserializer=quantpb_dot_v1_dot_quant__pb2.OptimizationRequest.FromString,
                     response_serializer=quantpb_dot_v1_dot_quant__pb2.StudyHandle.SerializeToString,
+            ),
+            'GetOptimizationStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetOptimizationStatus,
+                    request_deserializer=quantpb_dot_v1_dot_quant__pb2.StudyHandle.FromString,
+                    response_serializer=quantpb_dot_v1_dot_quant__pb2.OptimizationStatus.SerializeToString,
+            ),
+            'StreamOptimizationProgress': grpc.unary_stream_rpc_method_handler(
+                    servicer.StreamOptimizationProgress,
+                    request_deserializer=quantpb_dot_v1_dot_quant__pb2.StudyHandle.FromString,
+                    response_serializer=quantpb_dot_v1_dot_quant__pb2.OptimizationProgress.SerializeToString,
             ),
             'IngestNow': grpc.unary_unary_rpc_method_handler(
                     servicer.IngestNow,
@@ -259,6 +294,60 @@ class Quant(object):
             '/quantpb.v1.Quant/StartOptimization',
             quantpb_dot_v1_dot_quant__pb2.OptimizationRequest.SerializeToString,
             quantpb_dot_v1_dot_quant__pb2.StudyHandle.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetOptimizationStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/quantpb.v1.Quant/GetOptimizationStatus',
+            quantpb_dot_v1_dot_quant__pb2.StudyHandle.SerializeToString,
+            quantpb_dot_v1_dot_quant__pb2.OptimizationStatus.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StreamOptimizationProgress(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/quantpb.v1.Quant/StreamOptimizationProgress',
+            quantpb_dot_v1_dot_quant__pb2.StudyHandle.SerializeToString,
+            quantpb_dot_v1_dot_quant__pb2.OptimizationProgress.FromString,
             options,
             channel_credentials,
             insecure,

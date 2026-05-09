@@ -57,6 +57,15 @@ func (f *fakeQuant) StreamBacktestProgress(_ context.Context, _ *quantv1.GetBack
 	return nil, nil
 }
 
+// Phase 6 stubs — tests can override by embedding this fake.
+func (f *fakeQuant) StartOptimization(_ context.Context, _ *quantv1.OptimizationRequest) (*quantv1.StudyHandle, error) {
+	return &quantv1.StudyHandle{StudyId: "test-study", EnqueuedAt: timestamppb.Now()}, nil
+}
+
+func (f *fakeQuant) GetOptimizationStatus(_ context.Context, _ *quantv1.StudyHandle) (*quantv1.OptimizationStatus, error) {
+	return nil, nil
+}
+
 func (f *fakeQuant) Close() error { return nil }
 
 // helper: route /api/v1/market/ingest with the supplied dependencies.

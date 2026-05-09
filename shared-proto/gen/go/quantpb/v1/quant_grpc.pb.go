@@ -31,12 +31,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Quant_RunBacktest_FullMethodName            = "/quantpb.v1.Quant/RunBacktest"
-	Quant_GetBacktestStatus_FullMethodName      = "/quantpb.v1.Quant/GetBacktestStatus"
-	Quant_StreamBacktestProgress_FullMethodName = "/quantpb.v1.Quant/StreamBacktestProgress"
-	Quant_StartOptimization_FullMethodName      = "/quantpb.v1.Quant/StartOptimization"
-	Quant_IngestNow_FullMethodName              = "/quantpb.v1.Quant/IngestNow"
-	Quant_EvaluateSignal_FullMethodName         = "/quantpb.v1.Quant/EvaluateSignal"
+	Quant_RunBacktest_FullMethodName                = "/quantpb.v1.Quant/RunBacktest"
+	Quant_GetBacktestStatus_FullMethodName          = "/quantpb.v1.Quant/GetBacktestStatus"
+	Quant_StreamBacktestProgress_FullMethodName     = "/quantpb.v1.Quant/StreamBacktestProgress"
+	Quant_StartOptimization_FullMethodName          = "/quantpb.v1.Quant/StartOptimization"
+	Quant_GetOptimizationStatus_FullMethodName      = "/quantpb.v1.Quant/GetOptimizationStatus"
+	Quant_StreamOptimizationProgress_FullMethodName = "/quantpb.v1.Quant/StreamOptimizationProgress"
+	Quant_IngestNow_FullMethodName                  = "/quantpb.v1.Quant/IngestNow"
+	Quant_EvaluateSignal_FullMethodName             = "/quantpb.v1.Quant/EvaluateSignal"
 )
 
 // QuantClient is the client API for Quant service.
@@ -54,6 +56,11 @@ type QuantClient interface {
 	StreamBacktestProgress(ctx context.Context, in *GetBacktestStatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[BacktestProgress], error)
 	// Phase 6: launch an Optuna study.
 	StartOptimization(ctx context.Context, in *OptimizationRequest, opts ...grpc.CallOption) (*StudyHandle, error)
+	// Phase 6: poll a study's progress / cost ledger snapshot.
+	GetOptimizationStatus(ctx context.Context, in *StudyHandle, opts ...grpc.CallOption) (*OptimizationStatus, error)
+	// Phase 6: server-streaming progress (one OptimizationProgress per update).
+	// Stream terminates when the study reaches a terminal state.
+	StreamOptimizationProgress(ctx context.Context, in *StudyHandle, opts ...grpc.CallOption) (grpc.ServerStreamingClient[OptimizationProgress], error)
 	// Phase 2: synchronously trigger an OHLCV ingest range.
 	// Implementation chunks the request via ccxt `since`+`limit` and upserts
 	// into TimescaleDB's `ohlcv` hypertable using ON CONFLICT DO NOTHING.
@@ -119,6 +126,35 @@ func (c *quantClient) StartOptimization(ctx context.Context, in *OptimizationReq
 	return out, nil
 }
 
+func (c *quantClient) GetOptimizationStatus(ctx context.Context, in *StudyHandle, opts ...grpc.CallOption) (*OptimizationStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OptimizationStatus)
+	err := c.cc.Invoke(ctx, Quant_GetOptimizationStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *quantClient) StreamOptimizationProgress(ctx context.Context, in *StudyHandle, opts ...grpc.CallOption) (grpc.ServerStreamingClient[OptimizationProgress], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Quant_ServiceDesc.Streams[1], Quant_StreamOptimizationProgress_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StudyHandle, OptimizationProgress]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Quant_StreamOptimizationProgressClient = grpc.ServerStreamingClient[OptimizationProgress]
+
 func (c *quantClient) IngestNow(ctx context.Context, in *IngestRequest, opts ...grpc.CallOption) (*IngestAck, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(IngestAck)
@@ -154,6 +190,11 @@ type QuantServer interface {
 	StreamBacktestProgress(*GetBacktestStatusRequest, grpc.ServerStreamingServer[BacktestProgress]) error
 	// Phase 6: launch an Optuna study.
 	StartOptimization(context.Context, *OptimizationRequest) (*StudyHandle, error)
+	// Phase 6: poll a study's progress / cost ledger snapshot.
+	GetOptimizationStatus(context.Context, *StudyHandle) (*OptimizationStatus, error)
+	// Phase 6: server-streaming progress (one OptimizationProgress per update).
+	// Stream terminates when the study reaches a terminal state.
+	StreamOptimizationProgress(*StudyHandle, grpc.ServerStreamingServer[OptimizationProgress]) error
 	// Phase 2: synchronously trigger an OHLCV ingest range.
 	// Implementation chunks the request via ccxt `since`+`limit` and upserts
 	// into TimescaleDB's `ohlcv` hypertable using ON CONFLICT DO NOTHING.
@@ -181,6 +222,12 @@ func (UnimplementedQuantServer) StreamBacktestProgress(*GetBacktestStatusRequest
 }
 func (UnimplementedQuantServer) StartOptimization(context.Context, *OptimizationRequest) (*StudyHandle, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartOptimization not implemented")
+}
+func (UnimplementedQuantServer) GetOptimizationStatus(context.Context, *StudyHandle) (*OptimizationStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetOptimizationStatus not implemented")
+}
+func (UnimplementedQuantServer) StreamOptimizationProgress(*StudyHandle, grpc.ServerStreamingServer[OptimizationProgress]) error {
+	return status.Error(codes.Unimplemented, "method StreamOptimizationProgress not implemented")
 }
 func (UnimplementedQuantServer) IngestNow(context.Context, *IngestRequest) (*IngestAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method IngestNow not implemented")
@@ -274,6 +321,35 @@ func _Quant_StartOptimization_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Quant_GetOptimizationStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StudyHandle)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QuantServer).GetOptimizationStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Quant_GetOptimizationStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QuantServer).GetOptimizationStatus(ctx, req.(*StudyHandle))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Quant_StreamOptimizationProgress_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StudyHandle)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(QuantServer).StreamOptimizationProgress(m, &grpc.GenericServerStream[StudyHandle, OptimizationProgress]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Quant_StreamOptimizationProgressServer = grpc.ServerStreamingServer[OptimizationProgress]
+
 func _Quant_IngestNow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(IngestRequest)
 	if err := dec(in); err != nil {
@@ -330,6 +406,10 @@ var Quant_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Quant_StartOptimization_Handler,
 		},
 		{
+			MethodName: "GetOptimizationStatus",
+			Handler:    _Quant_GetOptimizationStatus_Handler,
+		},
+		{
 			MethodName: "IngestNow",
 			Handler:    _Quant_IngestNow_Handler,
 		},
@@ -342,6 +422,11 @@ var Quant_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "StreamBacktestProgress",
 			Handler:       _Quant_StreamBacktestProgress_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "StreamOptimizationProgress",
+			Handler:       _Quant_StreamOptimizationProgress_Handler,
 			ServerStreams: true,
 		},
 	},

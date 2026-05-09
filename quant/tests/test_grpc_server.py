@@ -74,9 +74,10 @@ async def test_ingest_now_round_trip(patched_ingest, fake_redis) -> None:
 
 
 async def test_unimplemented_rpcs_surface_unimplemented_status(patched_ingest) -> None:
-    """Phase 4 (EvaluateSignal) and Phase 6 (StartOptimization) are still
-    placeholders. Phase 3 wired up RunBacktest; that path is covered by
-    test_grpc_backtest.py.
+    """Phase 4 (EvaluateSignal) is still a placeholder. Phase 3 (RunBacktest)
+    is covered by test_grpc_backtest.py; Phase 6 (StartOptimization) is
+    covered by test_grpc_optimization.py — when Mongo is missing it now
+    surfaces FAILED_PRECONDITION rather than UNIMPLEMENTED.
     """
     server = grpc.aio.server()
     servicer = grpc_server.QuantServicer(redis_client=None)
@@ -90,10 +91,12 @@ async def test_unimplemented_rpcs_surface_unimplemented_status(patched_ingest) -
             with pytest.raises(grpc.aio.AioRpcError) as ex:
                 await stub.EvaluateSignal(quant_pb2.EvaluateRequest(strategy_id="x"))
             assert ex.value.code() == grpc.StatusCode.UNIMPLEMENTED
+            # Phase 6 wired StartOptimization; without Mongo it 503s
+            # via FAILED_PRECONDITION (not UNIMPLEMENTED).
             with pytest.raises(grpc.aio.AioRpcError) as ex:
                 await stub.StartOptimization(
                     quant_pb2.OptimizationRequest(strategy_id="x")
                 )
-            assert ex.value.code() == grpc.StatusCode.UNIMPLEMENTED
+            assert ex.value.code() == grpc.StatusCode.FAILED_PRECONDITION
     finally:
         await server.stop(grace=0.0)

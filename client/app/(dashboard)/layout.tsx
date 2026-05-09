@@ -31,6 +31,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <Link className="hover:text-primary" href="/backtests">
             Backtests
           </Link>
+          <Link className="hover:text-primary" href="/recommendations">
+            Recommendations
+          </Link>
         </nav>
       </aside>
       <main className="flex-1 p-6">{children}</main>

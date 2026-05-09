@@ -25,6 +25,10 @@ type Client interface {
 	GetBacktestStatus(ctx context.Context, req *quantv1.GetBacktestStatusRequest) (*quantv1.BacktestStatus, error)
 	StreamBacktestProgress(ctx context.Context, req *quantv1.GetBacktestStatusRequest) (quantv1.Quant_StreamBacktestProgressClient, error)
 
+	// Phase 6 — optimization RPCs.
+	StartOptimization(ctx context.Context, req *quantv1.OptimizationRequest) (*quantv1.StudyHandle, error)
+	GetOptimizationStatus(ctx context.Context, req *quantv1.StudyHandle) (*quantv1.OptimizationStatus, error)
+
 	Close() error
 }
 
@@ -84,6 +88,20 @@ func (c *grpcClient) StreamBacktestProgress(
 	req *quantv1.GetBacktestStatusRequest,
 ) (quantv1.Quant_StreamBacktestProgressClient, error) {
 	return c.stub.StreamBacktestProgress(ctx, req)
+}
+
+func (c *grpcClient) StartOptimization(
+	ctx context.Context,
+	req *quantv1.OptimizationRequest,
+) (*quantv1.StudyHandle, error) {
+	return c.stub.StartOptimization(ctx, req)
+}
+
+func (c *grpcClient) GetOptimizationStatus(
+	ctx context.Context,
+	req *quantv1.StudyHandle,
+) (*quantv1.OptimizationStatus, error) {
+	return c.stub.GetOptimizationStatus(ctx, req)
 }
 
 func (c *grpcClient) Close() error {
@@ -161,6 +179,28 @@ func (l *LazyClient) StreamBacktestProgress(
 		return nil, err
 	}
 	return c.StreamBacktestProgress(ctx, req)
+}
+
+func (l *LazyClient) StartOptimization(
+	ctx context.Context,
+	req *quantv1.OptimizationRequest,
+) (*quantv1.StudyHandle, error) {
+	c, err := l.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.StartOptimization(ctx, req)
+}
+
+func (l *LazyClient) GetOptimizationStatus(
+	ctx context.Context,
+	req *quantv1.StudyHandle,
+) (*quantv1.OptimizationStatus, error) {
+	c, err := l.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.GetOptimizationStatus(ctx, req)
 }
 
 func (l *LazyClient) Close() error {

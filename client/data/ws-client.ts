@@ -12,7 +12,7 @@ import { wsUrl } from "./api-client";
 // "account.event", accountId, payload}) so existing consumers continue to
 // work. New backtest envelopes use {type, topic, id, payload}.
 
-export type WsTopic = "account" | "backtest" | "strategy";
+export type WsTopic = "account" | "backtest" | "strategy" | "optimization";
 
 export type WsEvent = {
   // Examples: "account.event", "account.upstream_closed", "backtest.progress",
@@ -242,4 +242,65 @@ export function useStrategyStream(
   }, [strategyId, bufferSize]);
 
   return { events, last: events[0] ?? null, connected };
+}
+
+// Phase 6: subscribe to live Optuna study progress for a single study id.
+//
+// Each envelope is either `optimization.progress` (per-5-trials update)
+// or `optimization.suggested` (terminal — recommendation_id is
+// populated). The `state` int mirrors quantpb.v1.OptimizationState
+// (1=PENDING, 2=RUNNING, 3=COMPLETED, 4=FAILED, 5=BUDGET_EXCEEDED).
+export function useOptimizationStream(
+  studyId: string | null | undefined,
+  bufferSize = 50,
+) {
+  const [events, setEvents] = useState<WsEvent[]>([]);
+  const [trialsCompleted, setTrialsCompleted] = useState(0);
+  const [trialsTotal, setTrialsTotal] = useState(0);
+  const [bestValue, setBestValue] = useState(0);
+  const [costUsd, setCostUsd] = useState(0);
+  const [state, setState] = useState<number | null>(null);
+  const [recommendationId, setRecommendationId] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!studyId) return;
+    const off = getClient().subscribe("optimization", studyId, (ev) => {
+      const payload = (ev.payload ?? {}) as Record<string, unknown>;
+      if (typeof payload["trials_completed"] === "number")
+        setTrialsCompleted(payload["trials_completed"] as number);
+      if (typeof payload["trials_total"] === "number")
+        setTrialsTotal(payload["trials_total"] as number);
+      if (typeof payload["best_value"] === "number")
+        setBestValue(payload["best_value"] as number);
+      if (typeof payload["current_cost_usd"] === "number")
+        setCostUsd(payload["current_cost_usd"] as number);
+      if (typeof payload["state"] === "number")
+        setState(payload["state"] as number);
+      if (
+        ev.type === "optimization.suggested" &&
+        typeof payload["recommendation_id"] === "string"
+      ) {
+        setRecommendationId(payload["recommendation_id"] as string);
+      }
+      setEvents((prev) => [ev, ...prev].slice(0, bufferSize));
+    });
+    return () => {
+      off();
+    };
+  }, [studyId, bufferSize]);
+
+  const progress = trialsTotal > 0 ? trialsCompleted / trialsTotal : 0;
+  return {
+    events,
+    last: events[0] ?? null,
+    trialsCompleted,
+    trialsTotal,
+    bestValue,
+    costUsd,
+    state,
+    progress,
+    recommendationId,
+  };
 }

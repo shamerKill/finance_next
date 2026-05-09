@@ -121,6 +121,17 @@ type Option struct {
 	// "no risk caps configured" / "live disabled" respectively.
 	Risk *RiskCaps   `json:"risk,omitempty" bson:"risk,omitempty"`
 	Live *LiveConfig `json:"live,omitempty" bson:"live,omitempty"`
+
+	// Phase 6 additions. ``Kind`` discriminates strategy implementations
+	// (currently only "grid_dca"). ``CurrentVersion`` is monotonic, bumped
+	// every time an AI recommendation is approved — see the recommendation
+	// approve handler. ``OptimizationEnabled`` opts a strategy into the
+	// daily AI-tuning cron without requiring live trading.
+	// ``LastTunedAt`` is set by the approve flow for UI display.
+	Kind                string     `json:"kind,omitempty" bson:"kind,omitempty"`
+	CurrentVersion      int64      `json:"currentVersion,omitempty" bson:"currentVersion,omitempty"`
+	OptimizationEnabled bool       `json:"optimizationEnabled,omitempty" bson:"optimizationEnabled,omitempty"`
+	LastTunedAt         *time.Time `json:"lastTunedAt,omitempty" bson:"lastTunedAt,omitempty"`
 }
 
 // LiveEnabled is a nil-safe accessor.

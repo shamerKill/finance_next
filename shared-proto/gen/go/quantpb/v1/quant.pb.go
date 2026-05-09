@@ -90,6 +90,64 @@ func (BacktestState) EnumDescriptor() ([]byte, []int) {
 	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{0}
 }
 
+type OptimizationState int32
+
+const (
+	OptimizationState_OPTIMIZATION_STATE_UNSPECIFIED OptimizationState = 0
+	OptimizationState_OPT_PENDING                    OptimizationState = 1
+	OptimizationState_OPT_RUNNING                    OptimizationState = 2
+	OptimizationState_OPT_COMPLETED                  OptimizationState = 3
+	OptimizationState_OPT_FAILED                     OptimizationState = 4
+	OptimizationState_OPT_BUDGET_EXCEEDED            OptimizationState = 5
+)
+
+// Enum value maps for OptimizationState.
+var (
+	OptimizationState_name = map[int32]string{
+		0: "OPTIMIZATION_STATE_UNSPECIFIED",
+		1: "OPT_PENDING",
+		2: "OPT_RUNNING",
+		3: "OPT_COMPLETED",
+		4: "OPT_FAILED",
+		5: "OPT_BUDGET_EXCEEDED",
+	}
+	OptimizationState_value = map[string]int32{
+		"OPTIMIZATION_STATE_UNSPECIFIED": 0,
+		"OPT_PENDING":                    1,
+		"OPT_RUNNING":                    2,
+		"OPT_COMPLETED":                  3,
+		"OPT_FAILED":                     4,
+		"OPT_BUDGET_EXCEEDED":            5,
+	}
+)
+
+func (x OptimizationState) Enum() *OptimizationState {
+	p := new(OptimizationState)
+	*p = x
+	return p
+}
+
+func (x OptimizationState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (OptimizationState) Descriptor() protoreflect.EnumDescriptor {
+	return file_quantpb_v1_quant_proto_enumTypes[1].Descriptor()
+}
+
+func (OptimizationState) Type() protoreflect.EnumType {
+	return &file_quantpb_v1_quant_proto_enumTypes[1]
+}
+
+func (x OptimizationState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use OptimizationState.Descriptor instead.
+func (OptimizationState) EnumDescriptor() ([]byte, []int) {
+	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{1}
+}
+
 type SignalDecision_Action int32
 
 const (
@@ -132,11 +190,11 @@ func (x SignalDecision_Action) String() string {
 }
 
 func (SignalDecision_Action) Descriptor() protoreflect.EnumDescriptor {
-	return file_quantpb_v1_quant_proto_enumTypes[1].Descriptor()
+	return file_quantpb_v1_quant_proto_enumTypes[2].Descriptor()
 }
 
 func (SignalDecision_Action) Type() protoreflect.EnumType {
-	return &file_quantpb_v1_quant_proto_enumTypes[1]
+	return &file_quantpb_v1_quant_proto_enumTypes[2]
 }
 
 func (x SignalDecision_Action) Number() protoreflect.EnumNumber {
@@ -145,7 +203,7 @@ func (x SignalDecision_Action) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SignalDecision_Action.Descriptor instead.
 func (SignalDecision_Action) EnumDescriptor() ([]byte, []int) {
-	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{10, 0}
+	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{12, 0}
 }
 
 type IngestRequest struct {
@@ -708,15 +766,13 @@ func (x *BacktestProgress) GetErrorMessage() string {
 }
 
 type OptimizationRequest struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	StrategyId string                 `protobuf:"bytes,1,opt,name=strategy_id,json=strategyId,proto3" json:"strategy_id,omitempty"`
-	Exchange   string                 `protobuf:"bytes,2,opt,name=exchange,proto3" json:"exchange,omitempty"`
-	Symbol     string                 `protobuf:"bytes,3,opt,name=symbol,proto3" json:"symbol,omitempty"`
-	Timeframe  string                 `protobuf:"bytes,4,opt,name=timeframe,proto3" json:"timeframe,omitempty"`
-	Start      *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=start,proto3" json:"start,omitempty"`
-	End        *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=end,proto3" json:"end,omitempty"`
-	// Optuna study config as JSON: trial budget, search space, pruner config.
-	StudyConfigJson string `protobuf:"bytes,7,opt,name=study_config_json,json=studyConfigJson,proto3" json:"study_config_json,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Mongo strategies._id (string form). Required.
+	StrategyId string `protobuf:"bytes,1,opt,name=strategy_id,json=strategyId,proto3" json:"strategy_id,omitempty"`
+	// When true, run even if the strategy already has a recent recommendation.
+	Force bool `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"`
+	// Optional override for trials cap; 0 means use AI_MAX_TRIALS_PER_STUDY.
+	NTrialsOverride int32 `protobuf:"varint,3,opt,name=n_trials_override,json=nTrialsOverride,proto3" json:"n_trials_override,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -758,51 +814,24 @@ func (x *OptimizationRequest) GetStrategyId() string {
 	return ""
 }
 
-func (x *OptimizationRequest) GetExchange() string {
+func (x *OptimizationRequest) GetForce() bool {
 	if x != nil {
-		return x.Exchange
+		return x.Force
 	}
-	return ""
+	return false
 }
 
-func (x *OptimizationRequest) GetSymbol() string {
+func (x *OptimizationRequest) GetNTrialsOverride() int32 {
 	if x != nil {
-		return x.Symbol
+		return x.NTrialsOverride
 	}
-	return ""
-}
-
-func (x *OptimizationRequest) GetTimeframe() string {
-	if x != nil {
-		return x.Timeframe
-	}
-	return ""
-}
-
-func (x *OptimizationRequest) GetStart() *timestamppb.Timestamp {
-	if x != nil {
-		return x.Start
-	}
-	return nil
-}
-
-func (x *OptimizationRequest) GetEnd() *timestamppb.Timestamp {
-	if x != nil {
-		return x.End
-	}
-	return nil
-}
-
-func (x *OptimizationRequest) GetStudyConfigJson() string {
-	if x != nil {
-		return x.StudyConfigJson
-	}
-	return ""
+	return 0
 }
 
 type StudyHandle struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	StudyId       string                 `protobuf:"bytes,1,opt,name=study_id,json=studyId,proto3" json:"study_id,omitempty"`
+	EnqueuedAt    *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=enqueued_at,json=enqueuedAt,proto3" json:"enqueued_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -844,6 +873,231 @@ func (x *StudyHandle) GetStudyId() string {
 	return ""
 }
 
+func (x *StudyHandle) GetEnqueuedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EnqueuedAt
+	}
+	return nil
+}
+
+type OptimizationStatus struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	StudyId         string                 `protobuf:"bytes,1,opt,name=study_id,json=studyId,proto3" json:"study_id,omitempty"`
+	StrategyId      string                 `protobuf:"bytes,2,opt,name=strategy_id,json=strategyId,proto3" json:"strategy_id,omitempty"`
+	State           OptimizationState      `protobuf:"varint,3,opt,name=state,proto3,enum=quantpb.v1.OptimizationState" json:"state,omitempty"`
+	TrialsCompleted int32                  `protobuf:"varint,4,opt,name=trials_completed,json=trialsCompleted,proto3" json:"trials_completed,omitempty"`
+	TrialsTotal     int32                  `protobuf:"varint,5,opt,name=trials_total,json=trialsTotal,proto3" json:"trials_total,omitempty"`
+	BestValue       float64                `protobuf:"fixed64,6,opt,name=best_value,json=bestValue,proto3" json:"best_value,omitempty"`
+	CurrentCostUsd  float64                `protobuf:"fixed64,7,opt,name=current_cost_usd,json=currentCostUsd,proto3" json:"current_cost_usd,omitempty"`
+	ErrorMessage    string                 `protobuf:"bytes,8,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	StartedAt       *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	FinishedAt      *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	// Recommendation id once published (Mongo `ai_recommendations._id`).
+	RecommendationId string `protobuf:"bytes,11,opt,name=recommendation_id,json=recommendationId,proto3" json:"recommendation_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *OptimizationStatus) Reset() {
+	*x = OptimizationStatus{}
+	mi := &file_quantpb_v1_quant_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OptimizationStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OptimizationStatus) ProtoMessage() {}
+
+func (x *OptimizationStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_quantpb_v1_quant_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OptimizationStatus.ProtoReflect.Descriptor instead.
+func (*OptimizationStatus) Descriptor() ([]byte, []int) {
+	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *OptimizationStatus) GetStudyId() string {
+	if x != nil {
+		return x.StudyId
+	}
+	return ""
+}
+
+func (x *OptimizationStatus) GetStrategyId() string {
+	if x != nil {
+		return x.StrategyId
+	}
+	return ""
+}
+
+func (x *OptimizationStatus) GetState() OptimizationState {
+	if x != nil {
+		return x.State
+	}
+	return OptimizationState_OPTIMIZATION_STATE_UNSPECIFIED
+}
+
+func (x *OptimizationStatus) GetTrialsCompleted() int32 {
+	if x != nil {
+		return x.TrialsCompleted
+	}
+	return 0
+}
+
+func (x *OptimizationStatus) GetTrialsTotal() int32 {
+	if x != nil {
+		return x.TrialsTotal
+	}
+	return 0
+}
+
+func (x *OptimizationStatus) GetBestValue() float64 {
+	if x != nil {
+		return x.BestValue
+	}
+	return 0
+}
+
+func (x *OptimizationStatus) GetCurrentCostUsd() float64 {
+	if x != nil {
+		return x.CurrentCostUsd
+	}
+	return 0
+}
+
+func (x *OptimizationStatus) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *OptimizationStatus) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *OptimizationStatus) GetFinishedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FinishedAt
+	}
+	return nil
+}
+
+func (x *OptimizationStatus) GetRecommendationId() string {
+	if x != nil {
+		return x.RecommendationId
+	}
+	return ""
+}
+
+// Streaming payload — emitted ~every 5 trials or on state change.
+type OptimizationProgress struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	StudyId         string                 `protobuf:"bytes,1,opt,name=study_id,json=studyId,proto3" json:"study_id,omitempty"`
+	TrialsCompleted int32                  `protobuf:"varint,2,opt,name=trials_completed,json=trialsCompleted,proto3" json:"trials_completed,omitempty"`
+	TrialsTotal     int32                  `protobuf:"varint,3,opt,name=trials_total,json=trialsTotal,proto3" json:"trials_total,omitempty"`
+	BestValue       float64                `protobuf:"fixed64,4,opt,name=best_value,json=bestValue,proto3" json:"best_value,omitempty"`
+	State           OptimizationState      `protobuf:"varint,5,opt,name=state,proto3,enum=quantpb.v1.OptimizationState" json:"state,omitempty"`
+	CurrentCostUsd  float64                `protobuf:"fixed64,6,opt,name=current_cost_usd,json=currentCostUsd,proto3" json:"current_cost_usd,omitempty"`
+	ErrorMessage    string                 `protobuf:"bytes,7,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *OptimizationProgress) Reset() {
+	*x = OptimizationProgress{}
+	mi := &file_quantpb_v1_quant_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OptimizationProgress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OptimizationProgress) ProtoMessage() {}
+
+func (x *OptimizationProgress) ProtoReflect() protoreflect.Message {
+	mi := &file_quantpb_v1_quant_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OptimizationProgress.ProtoReflect.Descriptor instead.
+func (*OptimizationProgress) Descriptor() ([]byte, []int) {
+	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *OptimizationProgress) GetStudyId() string {
+	if x != nil {
+		return x.StudyId
+	}
+	return ""
+}
+
+func (x *OptimizationProgress) GetTrialsCompleted() int32 {
+	if x != nil {
+		return x.TrialsCompleted
+	}
+	return 0
+}
+
+func (x *OptimizationProgress) GetTrialsTotal() int32 {
+	if x != nil {
+		return x.TrialsTotal
+	}
+	return 0
+}
+
+func (x *OptimizationProgress) GetBestValue() float64 {
+	if x != nil {
+		return x.BestValue
+	}
+	return 0
+}
+
+func (x *OptimizationProgress) GetState() OptimizationState {
+	if x != nil {
+		return x.State
+	}
+	return OptimizationState_OPTIMIZATION_STATE_UNSPECIFIED
+}
+
+func (x *OptimizationProgress) GetCurrentCostUsd() float64 {
+	if x != nil {
+		return x.CurrentCostUsd
+	}
+	return 0
+}
+
+func (x *OptimizationProgress) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
 type EvaluateRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	StrategyId string                 `protobuf:"bytes,1,opt,name=strategy_id,json=strategyId,proto3" json:"strategy_id,omitempty"`
@@ -858,7 +1112,7 @@ type EvaluateRequest struct {
 
 func (x *EvaluateRequest) Reset() {
 	*x = EvaluateRequest{}
-	mi := &file_quantpb_v1_quant_proto_msgTypes[9]
+	mi := &file_quantpb_v1_quant_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -870,7 +1124,7 @@ func (x *EvaluateRequest) String() string {
 func (*EvaluateRequest) ProtoMessage() {}
 
 func (x *EvaluateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_quantpb_v1_quant_proto_msgTypes[9]
+	mi := &file_quantpb_v1_quant_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -883,7 +1137,7 @@ func (x *EvaluateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvaluateRequest.ProtoReflect.Descriptor instead.
 func (*EvaluateRequest) Descriptor() ([]byte, []int) {
-	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{9}
+	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *EvaluateRequest) GetStrategyId() string {
@@ -934,7 +1188,7 @@ type SignalDecision struct {
 
 func (x *SignalDecision) Reset() {
 	*x = SignalDecision{}
-	mi := &file_quantpb_v1_quant_proto_msgTypes[10]
+	mi := &file_quantpb_v1_quant_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -946,7 +1200,7 @@ func (x *SignalDecision) String() string {
 func (*SignalDecision) ProtoMessage() {}
 
 func (x *SignalDecision) ProtoReflect() protoreflect.Message {
-	mi := &file_quantpb_v1_quant_proto_msgTypes[10]
+	mi := &file_quantpb_v1_quant_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -959,7 +1213,7 @@ func (x *SignalDecision) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalDecision.ProtoReflect.Descriptor instead.
 func (*SignalDecision) Descriptor() ([]byte, []int) {
-	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{10}
+	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SignalDecision) GetAction() SignalDecision_Action {
@@ -1038,18 +1292,42 @@ const file_quantpb_v1_quant_proto_rawDesc = "" +
 	"\bprogress\x18\x02 \x01(\x01R\bprogress\x12#\n" +
 	"\rrecent_equity\x18\x03 \x03(\x01R\frecentEquity\x12/\n" +
 	"\x05state\x18\x04 \x01(\x0e2\x19.quantpb.v1.BacktestStateR\x05state\x12#\n" +
-	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"\x94\x02\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"x\n" +
 	"\x13OptimizationRequest\x12\x1f\n" +
 	"\vstrategy_id\x18\x01 \x01(\tR\n" +
-	"strategyId\x12\x1a\n" +
-	"\bexchange\x18\x02 \x01(\tR\bexchange\x12\x16\n" +
-	"\x06symbol\x18\x03 \x01(\tR\x06symbol\x12\x1c\n" +
-	"\ttimeframe\x18\x04 \x01(\tR\ttimeframe\x120\n" +
-	"\x05start\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x05start\x12,\n" +
-	"\x03end\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x03end\x12*\n" +
-	"\x11study_config_json\x18\a \x01(\tR\x0fstudyConfigJson\"(\n" +
+	"strategyId\x12\x14\n" +
+	"\x05force\x18\x02 \x01(\bR\x05force\x12*\n" +
+	"\x11n_trials_override\x18\x03 \x01(\x05R\x0fnTrialsOverride\"e\n" +
 	"\vStudyHandle\x12\x19\n" +
-	"\bstudy_id\x18\x01 \x01(\tR\astudyId\"\xb0\x01\n" +
+	"\bstudy_id\x18\x01 \x01(\tR\astudyId\x12;\n" +
+	"\venqueued_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"enqueuedAt\"\xe6\x03\n" +
+	"\x12OptimizationStatus\x12\x19\n" +
+	"\bstudy_id\x18\x01 \x01(\tR\astudyId\x12\x1f\n" +
+	"\vstrategy_id\x18\x02 \x01(\tR\n" +
+	"strategyId\x123\n" +
+	"\x05state\x18\x03 \x01(\x0e2\x1d.quantpb.v1.OptimizationStateR\x05state\x12)\n" +
+	"\x10trials_completed\x18\x04 \x01(\x05R\x0ftrialsCompleted\x12!\n" +
+	"\ftrials_total\x18\x05 \x01(\x05R\vtrialsTotal\x12\x1d\n" +
+	"\n" +
+	"best_value\x18\x06 \x01(\x01R\tbestValue\x12(\n" +
+	"\x10current_cost_usd\x18\a \x01(\x01R\x0ecurrentCostUsd\x12#\n" +
+	"\rerror_message\x18\b \x01(\tR\ferrorMessage\x129\n" +
+	"\n" +
+	"started_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12;\n" +
+	"\vfinished_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"finishedAt\x12+\n" +
+	"\x11recommendation_id\x18\v \x01(\tR\x10recommendationId\"\xa2\x02\n" +
+	"\x14OptimizationProgress\x12\x19\n" +
+	"\bstudy_id\x18\x01 \x01(\tR\astudyId\x12)\n" +
+	"\x10trials_completed\x18\x02 \x01(\x05R\x0ftrialsCompleted\x12!\n" +
+	"\ftrials_total\x18\x03 \x01(\x05R\vtrialsTotal\x12\x1d\n" +
+	"\n" +
+	"best_value\x18\x04 \x01(\x01R\tbestValue\x123\n" +
+	"\x05state\x18\x05 \x01(\x0e2\x1d.quantpb.v1.OptimizationStateR\x05state\x12(\n" +
+	"\x10current_cost_usd\x18\x06 \x01(\x01R\x0ecurrentCostUsd\x12#\n" +
+	"\rerror_message\x18\a \x01(\tR\ferrorMessage\"\xb0\x01\n" +
 	"\x0fEvaluateRequest\x12\x1f\n" +
 	"\vstrategy_id\x18\x01 \x01(\tR\n" +
 	"strategyId\x12\x1a\n" +
@@ -1075,12 +1353,22 @@ const file_quantpb_v1_quant_proto_rawDesc = "" +
 	"\aRUNNING\x10\x02\x12\r\n" +
 	"\tCOMPLETED\x10\x03\x12\n" +
 	"\n" +
-	"\x06FAILED\x10\x042\xdf\x03\n" +
+	"\x06FAILED\x10\x04*\x95\x01\n" +
+	"\x11OptimizationState\x12\"\n" +
+	"\x1eOPTIMIZATION_STATE_UNSPECIFIED\x10\x00\x12\x0f\n" +
+	"\vOPT_PENDING\x10\x01\x12\x0f\n" +
+	"\vOPT_RUNNING\x10\x02\x12\x11\n" +
+	"\rOPT_COMPLETED\x10\x03\x12\x0e\n" +
+	"\n" +
+	"OPT_FAILED\x10\x04\x12\x17\n" +
+	"\x13OPT_BUDGET_EXCEEDED\x10\x052\x8c\x05\n" +
 	"\x05Quant\x12F\n" +
 	"\vRunBacktest\x12\x1b.quantpb.v1.BacktestRequest\x1a\x1a.quantpb.v1.BacktestHandle\x12U\n" +
 	"\x11GetBacktestStatus\x12$.quantpb.v1.GetBacktestStatusRequest\x1a\x1a.quantpb.v1.BacktestStatus\x12^\n" +
 	"\x16StreamBacktestProgress\x12$.quantpb.v1.GetBacktestStatusRequest\x1a\x1c.quantpb.v1.BacktestProgress0\x01\x12M\n" +
-	"\x11StartOptimization\x12\x1f.quantpb.v1.OptimizationRequest\x1a\x17.quantpb.v1.StudyHandle\x12=\n" +
+	"\x11StartOptimization\x12\x1f.quantpb.v1.OptimizationRequest\x1a\x17.quantpb.v1.StudyHandle\x12P\n" +
+	"\x15GetOptimizationStatus\x12\x17.quantpb.v1.StudyHandle\x1a\x1e.quantpb.v1.OptimizationStatus\x12Y\n" +
+	"\x1aStreamOptimizationProgress\x12\x17.quantpb.v1.StudyHandle\x1a .quantpb.v1.OptimizationProgress0\x01\x12=\n" +
 	"\tIngestNow\x12\x19.quantpb.v1.IngestRequest\x1a\x15.quantpb.v1.IngestAck\x12I\n" +
 	"\x0eEvaluateSignal\x12\x1b.quantpb.v1.EvaluateRequest\x1a\x1a.quantpb.v1.SignalDecisionB@Z>github.com/finance_next/shared-proto/gen/go/quantpb/v1;quantv1b\x06proto3"
 
@@ -1096,61 +1384,71 @@ func file_quantpb_v1_quant_proto_rawDescGZIP() []byte {
 	return file_quantpb_v1_quant_proto_rawDescData
 }
 
-var file_quantpb_v1_quant_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_quantpb_v1_quant_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_quantpb_v1_quant_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_quantpb_v1_quant_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_quantpb_v1_quant_proto_goTypes = []any{
 	(BacktestState)(0),               // 0: quantpb.v1.BacktestState
-	(SignalDecision_Action)(0),       // 1: quantpb.v1.SignalDecision.Action
-	(*IngestRequest)(nil),            // 2: quantpb.v1.IngestRequest
-	(*IngestAck)(nil),                // 3: quantpb.v1.IngestAck
-	(*BacktestRequest)(nil),          // 4: quantpb.v1.BacktestRequest
-	(*BacktestHandle)(nil),           // 5: quantpb.v1.BacktestHandle
-	(*GetBacktestStatusRequest)(nil), // 6: quantpb.v1.GetBacktestStatusRequest
-	(*BacktestStatus)(nil),           // 7: quantpb.v1.BacktestStatus
-	(*BacktestProgress)(nil),         // 8: quantpb.v1.BacktestProgress
-	(*OptimizationRequest)(nil),      // 9: quantpb.v1.OptimizationRequest
-	(*StudyHandle)(nil),              // 10: quantpb.v1.StudyHandle
-	(*EvaluateRequest)(nil),          // 11: quantpb.v1.EvaluateRequest
-	(*SignalDecision)(nil),           // 12: quantpb.v1.SignalDecision
-	nil,                              // 13: quantpb.v1.BacktestStatus.MetricsEntry
-	(*timestamppb.Timestamp)(nil),    // 14: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),          // 15: google.protobuf.Struct
+	(OptimizationState)(0),           // 1: quantpb.v1.OptimizationState
+	(SignalDecision_Action)(0),       // 2: quantpb.v1.SignalDecision.Action
+	(*IngestRequest)(nil),            // 3: quantpb.v1.IngestRequest
+	(*IngestAck)(nil),                // 4: quantpb.v1.IngestAck
+	(*BacktestRequest)(nil),          // 5: quantpb.v1.BacktestRequest
+	(*BacktestHandle)(nil),           // 6: quantpb.v1.BacktestHandle
+	(*GetBacktestStatusRequest)(nil), // 7: quantpb.v1.GetBacktestStatusRequest
+	(*BacktestStatus)(nil),           // 8: quantpb.v1.BacktestStatus
+	(*BacktestProgress)(nil),         // 9: quantpb.v1.BacktestProgress
+	(*OptimizationRequest)(nil),      // 10: quantpb.v1.OptimizationRequest
+	(*StudyHandle)(nil),              // 11: quantpb.v1.StudyHandle
+	(*OptimizationStatus)(nil),       // 12: quantpb.v1.OptimizationStatus
+	(*OptimizationProgress)(nil),     // 13: quantpb.v1.OptimizationProgress
+	(*EvaluateRequest)(nil),          // 14: quantpb.v1.EvaluateRequest
+	(*SignalDecision)(nil),           // 15: quantpb.v1.SignalDecision
+	nil,                              // 16: quantpb.v1.BacktestStatus.MetricsEntry
+	(*timestamppb.Timestamp)(nil),    // 17: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),          // 18: google.protobuf.Struct
 }
 var file_quantpb_v1_quant_proto_depIdxs = []int32{
-	14, // 0: quantpb.v1.IngestRequest.start:type_name -> google.protobuf.Timestamp
-	14, // 1: quantpb.v1.IngestRequest.end:type_name -> google.protobuf.Timestamp
-	14, // 2: quantpb.v1.IngestAck.from_ts:type_name -> google.protobuf.Timestamp
-	14, // 3: quantpb.v1.IngestAck.to_ts:type_name -> google.protobuf.Timestamp
-	15, // 4: quantpb.v1.BacktestRequest.params:type_name -> google.protobuf.Struct
-	14, // 5: quantpb.v1.BacktestRequest.start:type_name -> google.protobuf.Timestamp
-	14, // 6: quantpb.v1.BacktestRequest.end:type_name -> google.protobuf.Timestamp
-	14, // 7: quantpb.v1.BacktestHandle.enqueued_at:type_name -> google.protobuf.Timestamp
+	17, // 0: quantpb.v1.IngestRequest.start:type_name -> google.protobuf.Timestamp
+	17, // 1: quantpb.v1.IngestRequest.end:type_name -> google.protobuf.Timestamp
+	17, // 2: quantpb.v1.IngestAck.from_ts:type_name -> google.protobuf.Timestamp
+	17, // 3: quantpb.v1.IngestAck.to_ts:type_name -> google.protobuf.Timestamp
+	18, // 4: quantpb.v1.BacktestRequest.params:type_name -> google.protobuf.Struct
+	17, // 5: quantpb.v1.BacktestRequest.start:type_name -> google.protobuf.Timestamp
+	17, // 6: quantpb.v1.BacktestRequest.end:type_name -> google.protobuf.Timestamp
+	17, // 7: quantpb.v1.BacktestHandle.enqueued_at:type_name -> google.protobuf.Timestamp
 	0,  // 8: quantpb.v1.BacktestStatus.state:type_name -> quantpb.v1.BacktestState
-	13, // 9: quantpb.v1.BacktestStatus.metrics:type_name -> quantpb.v1.BacktestStatus.MetricsEntry
-	14, // 10: quantpb.v1.BacktestStatus.started_at:type_name -> google.protobuf.Timestamp
-	14, // 11: quantpb.v1.BacktestStatus.finished_at:type_name -> google.protobuf.Timestamp
+	16, // 9: quantpb.v1.BacktestStatus.metrics:type_name -> quantpb.v1.BacktestStatus.MetricsEntry
+	17, // 10: quantpb.v1.BacktestStatus.started_at:type_name -> google.protobuf.Timestamp
+	17, // 11: quantpb.v1.BacktestStatus.finished_at:type_name -> google.protobuf.Timestamp
 	0,  // 12: quantpb.v1.BacktestProgress.state:type_name -> quantpb.v1.BacktestState
-	14, // 13: quantpb.v1.OptimizationRequest.start:type_name -> google.protobuf.Timestamp
-	14, // 14: quantpb.v1.OptimizationRequest.end:type_name -> google.protobuf.Timestamp
-	14, // 15: quantpb.v1.EvaluateRequest.ts:type_name -> google.protobuf.Timestamp
-	1,  // 16: quantpb.v1.SignalDecision.action:type_name -> quantpb.v1.SignalDecision.Action
-	4,  // 17: quantpb.v1.Quant.RunBacktest:input_type -> quantpb.v1.BacktestRequest
-	6,  // 18: quantpb.v1.Quant.GetBacktestStatus:input_type -> quantpb.v1.GetBacktestStatusRequest
-	6,  // 19: quantpb.v1.Quant.StreamBacktestProgress:input_type -> quantpb.v1.GetBacktestStatusRequest
-	9,  // 20: quantpb.v1.Quant.StartOptimization:input_type -> quantpb.v1.OptimizationRequest
-	2,  // 21: quantpb.v1.Quant.IngestNow:input_type -> quantpb.v1.IngestRequest
-	11, // 22: quantpb.v1.Quant.EvaluateSignal:input_type -> quantpb.v1.EvaluateRequest
-	5,  // 23: quantpb.v1.Quant.RunBacktest:output_type -> quantpb.v1.BacktestHandle
-	7,  // 24: quantpb.v1.Quant.GetBacktestStatus:output_type -> quantpb.v1.BacktestStatus
-	8,  // 25: quantpb.v1.Quant.StreamBacktestProgress:output_type -> quantpb.v1.BacktestProgress
-	10, // 26: quantpb.v1.Quant.StartOptimization:output_type -> quantpb.v1.StudyHandle
-	3,  // 27: quantpb.v1.Quant.IngestNow:output_type -> quantpb.v1.IngestAck
-	12, // 28: quantpb.v1.Quant.EvaluateSignal:output_type -> quantpb.v1.SignalDecision
-	23, // [23:29] is the sub-list for method output_type
-	17, // [17:23] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	17, // 13: quantpb.v1.StudyHandle.enqueued_at:type_name -> google.protobuf.Timestamp
+	1,  // 14: quantpb.v1.OptimizationStatus.state:type_name -> quantpb.v1.OptimizationState
+	17, // 15: quantpb.v1.OptimizationStatus.started_at:type_name -> google.protobuf.Timestamp
+	17, // 16: quantpb.v1.OptimizationStatus.finished_at:type_name -> google.protobuf.Timestamp
+	1,  // 17: quantpb.v1.OptimizationProgress.state:type_name -> quantpb.v1.OptimizationState
+	17, // 18: quantpb.v1.EvaluateRequest.ts:type_name -> google.protobuf.Timestamp
+	2,  // 19: quantpb.v1.SignalDecision.action:type_name -> quantpb.v1.SignalDecision.Action
+	5,  // 20: quantpb.v1.Quant.RunBacktest:input_type -> quantpb.v1.BacktestRequest
+	7,  // 21: quantpb.v1.Quant.GetBacktestStatus:input_type -> quantpb.v1.GetBacktestStatusRequest
+	7,  // 22: quantpb.v1.Quant.StreamBacktestProgress:input_type -> quantpb.v1.GetBacktestStatusRequest
+	10, // 23: quantpb.v1.Quant.StartOptimization:input_type -> quantpb.v1.OptimizationRequest
+	11, // 24: quantpb.v1.Quant.GetOptimizationStatus:input_type -> quantpb.v1.StudyHandle
+	11, // 25: quantpb.v1.Quant.StreamOptimizationProgress:input_type -> quantpb.v1.StudyHandle
+	3,  // 26: quantpb.v1.Quant.IngestNow:input_type -> quantpb.v1.IngestRequest
+	14, // 27: quantpb.v1.Quant.EvaluateSignal:input_type -> quantpb.v1.EvaluateRequest
+	6,  // 28: quantpb.v1.Quant.RunBacktest:output_type -> quantpb.v1.BacktestHandle
+	8,  // 29: quantpb.v1.Quant.GetBacktestStatus:output_type -> quantpb.v1.BacktestStatus
+	9,  // 30: quantpb.v1.Quant.StreamBacktestProgress:output_type -> quantpb.v1.BacktestProgress
+	11, // 31: quantpb.v1.Quant.StartOptimization:output_type -> quantpb.v1.StudyHandle
+	12, // 32: quantpb.v1.Quant.GetOptimizationStatus:output_type -> quantpb.v1.OptimizationStatus
+	13, // 33: quantpb.v1.Quant.StreamOptimizationProgress:output_type -> quantpb.v1.OptimizationProgress
+	4,  // 34: quantpb.v1.Quant.IngestNow:output_type -> quantpb.v1.IngestAck
+	15, // 35: quantpb.v1.Quant.EvaluateSignal:output_type -> quantpb.v1.SignalDecision
+	28, // [28:36] is the sub-list for method output_type
+	20, // [20:28] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_quantpb_v1_quant_proto_init() }
@@ -1163,8 +1461,8 @@ func file_quantpb_v1_quant_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_quantpb_v1_quant_proto_rawDesc), len(file_quantpb_v1_quant_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   12,
+			NumEnums:      3,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

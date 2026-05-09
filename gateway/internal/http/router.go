@@ -17,13 +17,15 @@ import (
 // Deps bundles the wiring the router needs. Grouping keeps the constructor
 // signature stable as we add handlers in later phases.
 type Deps struct {
-	OptionRepo       *mongostore.OptionRepo
-	AccountRepo      *mongostore.AccountRepo
-	BacktestRepo     *mongostore.BacktestRepo
-	OrderRepo        *mongostore.OrderRepo
-	ExchangeMetaRepo *mongostore.ExchangeMetaRepo
-	Crypto           *crypto.Service
-	Envelope         *crypto.EnvelopeService
+	OptionRepo          *mongostore.OptionRepo
+	AccountRepo         *mongostore.AccountRepo
+	BacktestRepo        *mongostore.BacktestRepo
+	OrderRepo           *mongostore.OrderRepo
+	ExchangeMetaRepo    *mongostore.ExchangeMetaRepo
+	RecommendationRepo  *mongostore.RecommendationRepo
+	OptimizationRunRepo *mongostore.OptimizationRunRepo
+	Crypto              *crypto.Service
+	Envelope            *crypto.EnvelopeService
 
 	// Phase 2 additions: timescale read access + quant grpc client.
 	// Both are optional in dev — when nil, the market endpoints
@@ -90,15 +92,22 @@ func NewRouter(d Deps) *echo.Echo {
 	}
 	handlers.NewPortfolioHandler(d.AccountRepo, d.Envelope, nil, priceProvider).Register(v1)
 
+	// Phase 6 — AI optimization: recommendations + tune-now endpoints.
+	// Each repo nil → corresponding handler returns 503.
+	handlers.NewRecommendationHandler(d.RecommendationRepo, d.OptionRepo, d.Redis).Register(v1)
+	handlers.NewOptimizationHandler(d.OptimizationRunRepo, d.Quant).Register(v1)
+
 	// WS hub: account upstreams (phase 1) + Redis-backed backtest progress
-	// fan-out (phase 3) + Redis-backed strategy order events (phase 4).
-	// The generic factory is nil when no Redis client is configured; both
+	// fan-out (phase 3) + Redis-backed strategy order events (phase 4) +
+	// optimization study progress (phase 6).
+	// The generic factory is nil when no Redis client is configured; all
 	// subscriptions then fail with a clear error.
 	var genericFactory ws.GenericUpstreamFactory
 	if d.Redis != nil {
 		genericFactory = ws.ComposeUpstreamFactories(map[ws.TopicKind]ws.GenericUpstreamFactory{
-			ws.TopicBacktest: ws.NewRedisBacktestUpstreamFactory(d.Redis, nil),
-			ws.TopicStrategy: ws.NewRedisStrategyUpstreamFactory(d.Redis, nil),
+			ws.TopicBacktest:     ws.NewRedisBacktestUpstreamFactory(d.Redis, nil),
+			ws.TopicStrategy:     ws.NewRedisStrategyUpstreamFactory(d.Redis, nil),
+			ws.TopicOptimization: ws.NewRedisOptimizationUpstreamFactory(d.Redis, nil),
 		})
 	}
 	// Forward orderengine package import to keep build happy when nil.

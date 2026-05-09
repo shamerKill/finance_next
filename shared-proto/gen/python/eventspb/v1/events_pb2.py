@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18\x65ventspb/v1/events.proto\x12\x0b\x65ventspb.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc3\x01\n\rOhlcvIngested\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x11\n\ttimeframe\x18\x03 \x01(\t\x12+\n\x07\x66rom_ts\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12)\n\x05to_ts\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x15\n\rbars_ingested\x18\x06 \x01(\x03\x12\x0e\n\x06run_id\x18\x07 \x01(\t\"F\n\x10StrategyUpserted\x12\x13\n\x0bstrategy_id\x18\x01 \x01(\t\x12\x0f\n\x07version\x18\x02 \x01(\x03\x12\x0c\n\x04kind\x18\x03 \x01(\t\"Z\n\x10\x42\x61\x63ktestProgress\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x10\n\x08progress\x18\x02 \x01(\x01\x12\x15\n\rrecent_equity\x18\x03 \x03(\x01\x12\r\n\x05state\x18\x04 \x01(\x05\"\xfd\x01\n\x11\x42\x61\x63ktestCompleted\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x13\n\x0bstrategy_id\x18\x02 \x01(\t\x12<\n\x07metrics\x18\x03 \x03(\x0b\x32+.eventspb.v1.BacktestCompleted.MetricsEntry\x12\r\n\x05state\x18\x04 \x01(\x05\x12\x15\n\rerror_message\x18\x05 \x01(\t\x12/\n\x0b\x66inished_at\x18\x06 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x1a.\n\x0cMetricsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\x42\x42Z@github.com/finance_next/shared-proto/gen/go/eventspb/v1;eventsv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18\x65ventspb/v1/events.proto\x12\x0b\x65ventspb.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc3\x01\n\rOhlcvIngested\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x11\n\ttimeframe\x18\x03 \x01(\t\x12+\n\x07\x66rom_ts\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12)\n\x05to_ts\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x15\n\rbars_ingested\x18\x06 \x01(\x03\x12\x0e\n\x06run_id\x18\x07 \x01(\t\"F\n\x10StrategyUpserted\x12\x13\n\x0bstrategy_id\x18\x01 \x01(\t\x12\x0f\n\x07version\x18\x02 \x01(\x03\x12\x0c\n\x04kind\x18\x03 \x01(\t\"Z\n\x10\x42\x61\x63ktestProgress\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x10\n\x08progress\x18\x02 \x01(\x01\x12\x15\n\rrecent_equity\x18\x03 \x03(\x01\x12\r\n\x05state\x18\x04 \x01(\x05\"x\n\x15OptimizationSuggested\x12\x13\n\x0bstrategy_id\x18\x01 \x01(\t\x12\x10\n\x08study_id\x18\x02 \x01(\t\x12\x19\n\x11recommendation_id\x18\x03 \x01(\t\x12\x1d\n\x15\x65xpected_sharpe_delta\x18\x04 \x01(\x01\"\xac\x01\n\x14OptimizationProgress\x12\x10\n\x08study_id\x18\x01 \x01(\t\x12\x18\n\x10trials_completed\x18\x02 \x01(\x05\x12\x14\n\x0ctrials_total\x18\x03 \x01(\x05\x12\x12\n\nbest_value\x18\x04 \x01(\x01\x12\r\n\x05state\x18\x05 \x01(\x05\x12\x18\n\x10\x63urrent_cost_usd\x18\x06 \x01(\x01\x12\x15\n\rerror_message\x18\x07 \x01(\t\"\xfd\x01\n\x11\x42\x61\x63ktestCompleted\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x13\n\x0bstrategy_id\x18\x02 \x01(\t\x12<\n\x07metrics\x18\x03 \x03(\x0b\x32+.eventspb.v1.BacktestCompleted.MetricsEntry\x12\r\n\x05state\x18\x04 \x01(\x05\x12\x15\n\rerror_message\x18\x05 \x01(\t\x12/\n\x0b\x66inished_at\x18\x06 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x1a.\n\x0cMetricsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\x42\x42Z@github.com/finance_next/shared-proto/gen/go/eventspb/v1;eventsv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -41,8 +41,12 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_STRATEGYUPSERTED']._serialized_end=342
   _globals['_BACKTESTPROGRESS']._serialized_start=344
   _globals['_BACKTESTPROGRESS']._serialized_end=434
-  _globals['_BACKTESTCOMPLETED']._serialized_start=437
-  _globals['_BACKTESTCOMPLETED']._serialized_end=690
-  _globals['_BACKTESTCOMPLETED_METRICSENTRY']._serialized_start=644
-  _globals['_BACKTESTCOMPLETED_METRICSENTRY']._serialized_end=690
+  _globals['_OPTIMIZATIONSUGGESTED']._serialized_start=436
+  _globals['_OPTIMIZATIONSUGGESTED']._serialized_end=556
+  _globals['_OPTIMIZATIONPROGRESS']._serialized_start=559
+  _globals['_OPTIMIZATIONPROGRESS']._serialized_end=731
+  _globals['_BACKTESTCOMPLETED']._serialized_start=734
+  _globals['_BACKTESTCOMPLETED']._serialized_end=987
+  _globals['_BACKTESTCOMPLETED_METRICSENTRY']._serialized_start=941
+  _globals['_BACKTESTCOMPLETED_METRICSENTRY']._serialized_end=987
 # @@protoc_insertion_point(module_scope)

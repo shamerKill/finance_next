@@ -22,6 +22,9 @@ import redis.asyncio as aioredis
 OHLCV_INGESTED_STREAM = "event.ohlcv.ingested"
 BACKTEST_PROGRESS_STREAM = "event.backtest.progress"
 BACKTEST_COMPLETED_STREAM = "event.backtest.completed"
+# Phase 6 — Optuna study progress + recommendation publication.
+OPTIMIZATION_PROGRESS_STREAM = "event.optimization.progress"
+OPTIMIZATION_SUGGESTED_STREAM = "event.optimization.suggested"
 
 
 async def publish_ohlcv_ingested(
@@ -97,5 +100,62 @@ async def publish_backtest_completed(
     }
     return await client.xadd(
         BACKTEST_COMPLETED_STREAM,
+        {"data": json.dumps(payload)},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 — optimization streams
+# ---------------------------------------------------------------------------
+
+
+async def publish_optimization_progress(
+    client: aioredis.Redis,
+    *,
+    study_id: str,
+    trials_completed: int,
+    trials_total: int,
+    best_value: float,
+    state: int,
+    current_cost_usd: float = 0.0,
+    error_message: str = "",
+) -> str:
+    """Emit a progress update for an in-flight Optuna study.
+
+    ``state`` mirrors :class:`quantpb.v1.OptimizationState` (1=PENDING,
+    2=RUNNING, 3=COMPLETED, 4=FAILED, 5=BUDGET_EXCEEDED).
+    """
+    payload: dict[str, Any] = {
+        "study_id": study_id,
+        "trials_completed": int(trials_completed),
+        "trials_total": int(trials_total),
+        "best_value": float(best_value),
+        "state": int(state),
+        "current_cost_usd": float(current_cost_usd),
+        "error_message": error_message,
+    }
+    return await client.xadd(
+        OPTIMIZATION_PROGRESS_STREAM,
+        {"data": json.dumps(payload)},
+    )
+
+
+async def publish_optimization_suggested(
+    client: aioredis.Redis,
+    *,
+    strategy_id: str,
+    study_id: str,
+    recommendation_id: str,
+    expected_sharpe_delta: float,
+) -> str:
+    """Emit a terminal-state event after a study produces a recommendation."""
+    payload: dict[str, Any] = {
+        "strategy_id": strategy_id,
+        "study_id": study_id,
+        "recommendation_id": recommendation_id,
+        "expected_sharpe_delta": float(expected_sharpe_delta),
+    }
+    return await client.xadd(
+        OPTIMIZATION_SUGGESTED_STREAM,
         {"data": json.dumps(payload)},
     )

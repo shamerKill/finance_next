@@ -268,6 +268,175 @@ func (x *BacktestProgress) GetState() int32 {
 	return 0
 }
 
+// OptimizationSuggested is emitted by the Python quant worker after a study
+// has produced a pending_review recommendation. Consumed by the gateway WS
+// hub and forwarded to subscribed browser sessions on the (kind=optimization,
+// id=studyId) topic.
+type OptimizationSuggested struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	StrategyId       string                 `protobuf:"bytes,1,opt,name=strategy_id,json=strategyId,proto3" json:"strategy_id,omitempty"`
+	StudyId          string                 `protobuf:"bytes,2,opt,name=study_id,json=studyId,proto3" json:"study_id,omitempty"`
+	RecommendationId string                 `protobuf:"bytes,3,opt,name=recommendation_id,json=recommendationId,proto3" json:"recommendation_id,omitempty"`
+	// Expected sharpe delta vs the current strategy params (proposed - current).
+	ExpectedSharpeDelta float64 `protobuf:"fixed64,4,opt,name=expected_sharpe_delta,json=expectedSharpeDelta,proto3" json:"expected_sharpe_delta,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *OptimizationSuggested) Reset() {
+	*x = OptimizationSuggested{}
+	mi := &file_eventspb_v1_events_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OptimizationSuggested) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OptimizationSuggested) ProtoMessage() {}
+
+func (x *OptimizationSuggested) ProtoReflect() protoreflect.Message {
+	mi := &file_eventspb_v1_events_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OptimizationSuggested.ProtoReflect.Descriptor instead.
+func (*OptimizationSuggested) Descriptor() ([]byte, []int) {
+	return file_eventspb_v1_events_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *OptimizationSuggested) GetStrategyId() string {
+	if x != nil {
+		return x.StrategyId
+	}
+	return ""
+}
+
+func (x *OptimizationSuggested) GetStudyId() string {
+	if x != nil {
+		return x.StudyId
+	}
+	return ""
+}
+
+func (x *OptimizationSuggested) GetRecommendationId() string {
+	if x != nil {
+		return x.RecommendationId
+	}
+	return ""
+}
+
+func (x *OptimizationSuggested) GetExpectedSharpeDelta() float64 {
+	if x != nil {
+		return x.ExpectedSharpeDelta
+	}
+	return 0
+}
+
+// OptimizationProgress is emitted during an Optuna study run; useful for the
+// "Tune now" live progress meter on the strategy detail page.
+type OptimizationProgress struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	StudyId         string                 `protobuf:"bytes,1,opt,name=study_id,json=studyId,proto3" json:"study_id,omitempty"`
+	TrialsCompleted int32                  `protobuf:"varint,2,opt,name=trials_completed,json=trialsCompleted,proto3" json:"trials_completed,omitempty"`
+	TrialsTotal     int32                  `protobuf:"varint,3,opt,name=trials_total,json=trialsTotal,proto3" json:"trials_total,omitempty"`
+	BestValue       float64                `protobuf:"fixed64,4,opt,name=best_value,json=bestValue,proto3" json:"best_value,omitempty"`
+	// Mirror of quantpb.v1.OptimizationState (kept as int to avoid cross-package
+	// proto imports between event and rpc packages).
+	State          int32   `protobuf:"varint,5,opt,name=state,proto3" json:"state,omitempty"`
+	CurrentCostUsd float64 `protobuf:"fixed64,6,opt,name=current_cost_usd,json=currentCostUsd,proto3" json:"current_cost_usd,omitempty"`
+	ErrorMessage   string  `protobuf:"bytes,7,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *OptimizationProgress) Reset() {
+	*x = OptimizationProgress{}
+	mi := &file_eventspb_v1_events_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OptimizationProgress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OptimizationProgress) ProtoMessage() {}
+
+func (x *OptimizationProgress) ProtoReflect() protoreflect.Message {
+	mi := &file_eventspb_v1_events_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OptimizationProgress.ProtoReflect.Descriptor instead.
+func (*OptimizationProgress) Descriptor() ([]byte, []int) {
+	return file_eventspb_v1_events_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *OptimizationProgress) GetStudyId() string {
+	if x != nil {
+		return x.StudyId
+	}
+	return ""
+}
+
+func (x *OptimizationProgress) GetTrialsCompleted() int32 {
+	if x != nil {
+		return x.TrialsCompleted
+	}
+	return 0
+}
+
+func (x *OptimizationProgress) GetTrialsTotal() int32 {
+	if x != nil {
+		return x.TrialsTotal
+	}
+	return 0
+}
+
+func (x *OptimizationProgress) GetBestValue() float64 {
+	if x != nil {
+		return x.BestValue
+	}
+	return 0
+}
+
+func (x *OptimizationProgress) GetState() int32 {
+	if x != nil {
+		return x.State
+	}
+	return 0
+}
+
+func (x *OptimizationProgress) GetCurrentCostUsd() float64 {
+	if x != nil {
+		return x.CurrentCostUsd
+	}
+	return 0
+}
+
+func (x *OptimizationProgress) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
 // BacktestCompleted is emitted by the Python quant worker when a backtest
 // reaches a terminal state (COMPLETED or FAILED). Consumers can use this to
 // trigger downstream actions (e.g. AI recommendation re-evaluation).
@@ -287,7 +456,7 @@ type BacktestCompleted struct {
 
 func (x *BacktestCompleted) Reset() {
 	*x = BacktestCompleted{}
-	mi := &file_eventspb_v1_events_proto_msgTypes[3]
+	mi := &file_eventspb_v1_events_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -299,7 +468,7 @@ func (x *BacktestCompleted) String() string {
 func (*BacktestCompleted) ProtoMessage() {}
 
 func (x *BacktestCompleted) ProtoReflect() protoreflect.Message {
-	mi := &file_eventspb_v1_events_proto_msgTypes[3]
+	mi := &file_eventspb_v1_events_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -312,7 +481,7 @@ func (x *BacktestCompleted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BacktestCompleted.ProtoReflect.Descriptor instead.
 func (*BacktestCompleted) Descriptor() ([]byte, []int) {
-	return file_eventspb_v1_events_proto_rawDescGZIP(), []int{3}
+	return file_eventspb_v1_events_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *BacktestCompleted) GetRunId() string {
@@ -379,7 +548,22 @@ const file_eventspb_v1_events_proto_rawDesc = "" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1a\n" +
 	"\bprogress\x18\x02 \x01(\x01R\bprogress\x12#\n" +
 	"\rrecent_equity\x18\x03 \x03(\x01R\frecentEquity\x12\x14\n" +
-	"\x05state\x18\x04 \x01(\x05R\x05state\"\xc6\x02\n" +
+	"\x05state\x18\x04 \x01(\x05R\x05state\"\xb4\x01\n" +
+	"\x15OptimizationSuggested\x12\x1f\n" +
+	"\vstrategy_id\x18\x01 \x01(\tR\n" +
+	"strategyId\x12\x19\n" +
+	"\bstudy_id\x18\x02 \x01(\tR\astudyId\x12+\n" +
+	"\x11recommendation_id\x18\x03 \x01(\tR\x10recommendationId\x122\n" +
+	"\x15expected_sharpe_delta\x18\x04 \x01(\x01R\x13expectedSharpeDelta\"\x83\x02\n" +
+	"\x14OptimizationProgress\x12\x19\n" +
+	"\bstudy_id\x18\x01 \x01(\tR\astudyId\x12)\n" +
+	"\x10trials_completed\x18\x02 \x01(\x05R\x0ftrialsCompleted\x12!\n" +
+	"\ftrials_total\x18\x03 \x01(\x05R\vtrialsTotal\x12\x1d\n" +
+	"\n" +
+	"best_value\x18\x04 \x01(\x01R\tbestValue\x12\x14\n" +
+	"\x05state\x18\x05 \x01(\x05R\x05state\x12(\n" +
+	"\x10current_cost_usd\x18\x06 \x01(\x01R\x0ecurrentCostUsd\x12#\n" +
+	"\rerror_message\x18\a \x01(\tR\ferrorMessage\"\xc6\x02\n" +
 	"\x11BacktestCompleted\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1f\n" +
 	"\vstrategy_id\x18\x02 \x01(\tR\n" +
@@ -405,20 +589,22 @@ func file_eventspb_v1_events_proto_rawDescGZIP() []byte {
 	return file_eventspb_v1_events_proto_rawDescData
 }
 
-var file_eventspb_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_eventspb_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_eventspb_v1_events_proto_goTypes = []any{
 	(*OhlcvIngested)(nil),         // 0: eventspb.v1.OhlcvIngested
 	(*StrategyUpserted)(nil),      // 1: eventspb.v1.StrategyUpserted
 	(*BacktestProgress)(nil),      // 2: eventspb.v1.BacktestProgress
-	(*BacktestCompleted)(nil),     // 3: eventspb.v1.BacktestCompleted
-	nil,                           // 4: eventspb.v1.BacktestCompleted.MetricsEntry
-	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
+	(*OptimizationSuggested)(nil), // 3: eventspb.v1.OptimizationSuggested
+	(*OptimizationProgress)(nil),  // 4: eventspb.v1.OptimizationProgress
+	(*BacktestCompleted)(nil),     // 5: eventspb.v1.BacktestCompleted
+	nil,                           // 6: eventspb.v1.BacktestCompleted.MetricsEntry
+	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
 }
 var file_eventspb_v1_events_proto_depIdxs = []int32{
-	5, // 0: eventspb.v1.OhlcvIngested.from_ts:type_name -> google.protobuf.Timestamp
-	5, // 1: eventspb.v1.OhlcvIngested.to_ts:type_name -> google.protobuf.Timestamp
-	4, // 2: eventspb.v1.BacktestCompleted.metrics:type_name -> eventspb.v1.BacktestCompleted.MetricsEntry
-	5, // 3: eventspb.v1.BacktestCompleted.finished_at:type_name -> google.protobuf.Timestamp
+	7, // 0: eventspb.v1.OhlcvIngested.from_ts:type_name -> google.protobuf.Timestamp
+	7, // 1: eventspb.v1.OhlcvIngested.to_ts:type_name -> google.protobuf.Timestamp
+	6, // 2: eventspb.v1.BacktestCompleted.metrics:type_name -> eventspb.v1.BacktestCompleted.MetricsEntry
+	7, // 3: eventspb.v1.BacktestCompleted.finished_at:type_name -> google.protobuf.Timestamp
 	4, // [4:4] is the sub-list for method output_type
 	4, // [4:4] is the sub-list for method input_type
 	4, // [4:4] is the sub-list for extension type_name
@@ -437,7 +623,7 @@ func file_eventspb_v1_events_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eventspb_v1_events_proto_rawDesc), len(file_eventspb_v1_events_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

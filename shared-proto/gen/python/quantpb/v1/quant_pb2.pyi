@@ -18,11 +18,26 @@ class BacktestState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     RUNNING: _ClassVar[BacktestState]
     COMPLETED: _ClassVar[BacktestState]
     FAILED: _ClassVar[BacktestState]
+
+class OptimizationState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    OPTIMIZATION_STATE_UNSPECIFIED: _ClassVar[OptimizationState]
+    OPT_PENDING: _ClassVar[OptimizationState]
+    OPT_RUNNING: _ClassVar[OptimizationState]
+    OPT_COMPLETED: _ClassVar[OptimizationState]
+    OPT_FAILED: _ClassVar[OptimizationState]
+    OPT_BUDGET_EXCEEDED: _ClassVar[OptimizationState]
 BACKTEST_STATE_UNSPECIFIED: BacktestState
 PENDING: BacktestState
 RUNNING: BacktestState
 COMPLETED: BacktestState
 FAILED: BacktestState
+OPTIMIZATION_STATE_UNSPECIFIED: OptimizationState
+OPT_PENDING: OptimizationState
+OPT_RUNNING: OptimizationState
+OPT_COMPLETED: OptimizationState
+OPT_FAILED: OptimizationState
+OPT_BUDGET_EXCEEDED: OptimizationState
 
 class IngestRequest(_message.Message):
     __slots__ = ("exchange", "symbol", "timeframe", "start", "end")
@@ -130,28 +145,66 @@ class BacktestProgress(_message.Message):
     def __init__(self, run_id: _Optional[str] = ..., progress: _Optional[float] = ..., recent_equity: _Optional[_Iterable[float]] = ..., state: _Optional[_Union[BacktestState, str]] = ..., error_message: _Optional[str] = ...) -> None: ...
 
 class OptimizationRequest(_message.Message):
-    __slots__ = ("strategy_id", "exchange", "symbol", "timeframe", "start", "end", "study_config_json")
+    __slots__ = ("strategy_id", "force", "n_trials_override")
     STRATEGY_ID_FIELD_NUMBER: _ClassVar[int]
-    EXCHANGE_FIELD_NUMBER: _ClassVar[int]
-    SYMBOL_FIELD_NUMBER: _ClassVar[int]
-    TIMEFRAME_FIELD_NUMBER: _ClassVar[int]
-    START_FIELD_NUMBER: _ClassVar[int]
-    END_FIELD_NUMBER: _ClassVar[int]
-    STUDY_CONFIG_JSON_FIELD_NUMBER: _ClassVar[int]
+    FORCE_FIELD_NUMBER: _ClassVar[int]
+    N_TRIALS_OVERRIDE_FIELD_NUMBER: _ClassVar[int]
     strategy_id: str
-    exchange: str
-    symbol: str
-    timeframe: str
-    start: _timestamp_pb2.Timestamp
-    end: _timestamp_pb2.Timestamp
-    study_config_json: str
-    def __init__(self, strategy_id: _Optional[str] = ..., exchange: _Optional[str] = ..., symbol: _Optional[str] = ..., timeframe: _Optional[str] = ..., start: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., end: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., study_config_json: _Optional[str] = ...) -> None: ...
+    force: bool
+    n_trials_override: int
+    def __init__(self, strategy_id: _Optional[str] = ..., force: bool = ..., n_trials_override: _Optional[int] = ...) -> None: ...
 
 class StudyHandle(_message.Message):
-    __slots__ = ("study_id",)
+    __slots__ = ("study_id", "enqueued_at")
     STUDY_ID_FIELD_NUMBER: _ClassVar[int]
+    ENQUEUED_AT_FIELD_NUMBER: _ClassVar[int]
     study_id: str
-    def __init__(self, study_id: _Optional[str] = ...) -> None: ...
+    enqueued_at: _timestamp_pb2.Timestamp
+    def __init__(self, study_id: _Optional[str] = ..., enqueued_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+
+class OptimizationStatus(_message.Message):
+    __slots__ = ("study_id", "strategy_id", "state", "trials_completed", "trials_total", "best_value", "current_cost_usd", "error_message", "started_at", "finished_at", "recommendation_id")
+    STUDY_ID_FIELD_NUMBER: _ClassVar[int]
+    STRATEGY_ID_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    TRIALS_COMPLETED_FIELD_NUMBER: _ClassVar[int]
+    TRIALS_TOTAL_FIELD_NUMBER: _ClassVar[int]
+    BEST_VALUE_FIELD_NUMBER: _ClassVar[int]
+    CURRENT_COST_USD_FIELD_NUMBER: _ClassVar[int]
+    ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    STARTED_AT_FIELD_NUMBER: _ClassVar[int]
+    FINISHED_AT_FIELD_NUMBER: _ClassVar[int]
+    RECOMMENDATION_ID_FIELD_NUMBER: _ClassVar[int]
+    study_id: str
+    strategy_id: str
+    state: OptimizationState
+    trials_completed: int
+    trials_total: int
+    best_value: float
+    current_cost_usd: float
+    error_message: str
+    started_at: _timestamp_pb2.Timestamp
+    finished_at: _timestamp_pb2.Timestamp
+    recommendation_id: str
+    def __init__(self, study_id: _Optional[str] = ..., strategy_id: _Optional[str] = ..., state: _Optional[_Union[OptimizationState, str]] = ..., trials_completed: _Optional[int] = ..., trials_total: _Optional[int] = ..., best_value: _Optional[float] = ..., current_cost_usd: _Optional[float] = ..., error_message: _Optional[str] = ..., started_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., finished_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., recommendation_id: _Optional[str] = ...) -> None: ...
+
+class OptimizationProgress(_message.Message):
+    __slots__ = ("study_id", "trials_completed", "trials_total", "best_value", "state", "current_cost_usd", "error_message")
+    STUDY_ID_FIELD_NUMBER: _ClassVar[int]
+    TRIALS_COMPLETED_FIELD_NUMBER: _ClassVar[int]
+    TRIALS_TOTAL_FIELD_NUMBER: _ClassVar[int]
+    BEST_VALUE_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    CURRENT_COST_USD_FIELD_NUMBER: _ClassVar[int]
+    ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    study_id: str
+    trials_completed: int
+    trials_total: int
+    best_value: float
+    state: OptimizationState
+    current_cost_usd: float
+    error_message: str
+    def __init__(self, study_id: _Optional[str] = ..., trials_completed: _Optional[int] = ..., trials_total: _Optional[int] = ..., best_value: _Optional[float] = ..., state: _Optional[_Union[OptimizationState, str]] = ..., current_cost_usd: _Optional[float] = ..., error_message: _Optional[str] = ...) -> None: ...
 
 class EvaluateRequest(_message.Message):
     __slots__ = ("strategy_id", "exchange", "symbol", "timeframe", "ts")

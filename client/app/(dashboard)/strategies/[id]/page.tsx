@@ -22,6 +22,8 @@ import {
 } from "@/data/type";
 import { useStrategyStream } from "@/data/ws-client";
 
+import TuneNowButton from "./tune-now";
+
 export default function PageStrategyDetail() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
@@ -162,7 +164,11 @@ export default function PageStrategyDetail() {
             {strategy.execSymbol}
           </span>
         </h1>
-        <div className="flex items-center gap-2 text-xs text-default-500">
+        <div className="flex items-center gap-3 text-xs text-default-500">
+          {/* Phase 6 — manual "tune now" button. Calls
+              POST /api/v1/strategies/:id/optimize and shows live progress
+              via the WS optimization topic. */}
+          {id && <TuneNowButton strategyId={id} />}
           <span className={`h-2 w-2 rounded-full ${connected ? "bg-success-500" : "bg-default-300"}`} />
           {connected ? "live stream connected" : "stream idle"}
         </div>

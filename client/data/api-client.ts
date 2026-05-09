@@ -1,5 +1,6 @@
 import {
   TypeAccount,
+  TypeApproveRecommendation,
   TypeBacktest,
   TypeBacktestHandle,
   TypeBacktestTrade,
@@ -10,11 +11,15 @@ import {
   TypeExchange,
   TypeExchangeMeta,
   TypeMainnetStatus,
+  TypeOptimizationRun,
   TypeOption,
   TypeOrderLog,
   TypePortfolioSummary,
   TypePosition,
+  TypeRecommendation,
+  TypeRecommendationStatus,
   TypeSetLive,
+  TypeStudyHandle,
   TypeSubmitOrder,
 } from "./type";
 
@@ -292,6 +297,82 @@ export const getPortfolioSummary = async (): Promise<TypePortfolioSummary> => {
     cache: "no-store",
   });
   return jsonOrThrow<TypePortfolioSummary>(res);
+};
+
+// ---------- Phase 6 — AI recommendations + optimization ----------
+
+export const listRecommendations = async (
+  status?: TypeRecommendationStatus,
+  strategyId?: string,
+): Promise<TypeRecommendation[]> => {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (strategyId) params.set("strategyId", strategyId);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  const res = await fetch(parseUrl(`v1/recommendations${qs}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeRecommendation[]>(res);
+};
+
+export const getRecommendation = async (
+  id: string,
+): Promise<TypeRecommendation> => {
+  const res = await fetch(parseUrl(`v1/recommendations/${id}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeRecommendation>(res);
+};
+
+export const approveRecommendation = async (
+  id: string,
+): Promise<TypeApproveRecommendation> => {
+  const res = await fetch(parseUrl(`v1/recommendations/${id}/approve`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  return jsonOrThrow<TypeApproveRecommendation>(res);
+};
+
+export const rejectRecommendation = async (
+  id: string,
+): Promise<TypeRecommendation> => {
+  const res = await fetch(parseUrl(`v1/recommendations/${id}/reject`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  return jsonOrThrow<TypeRecommendation>(res);
+};
+
+export const startOptimization = async (
+  strategyId: string,
+  body?: { force?: boolean; nTrialsOverride?: number },
+): Promise<TypeStudyHandle> => {
+  const res = await fetch(parseUrl(`v1/strategies/${strategyId}/optimize`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+  return jsonOrThrow<TypeStudyHandle>(res);
+};
+
+export const getOptimization = async (
+  studyId: string,
+): Promise<TypeOptimizationRun> => {
+  const res = await fetch(parseUrl(`v1/optimizations/${studyId}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeOptimizationRun>(res);
+};
+
+export const listOptimizations = async (
+  strategyId?: string,
+): Promise<TypeOptimizationRun[]> => {
+  const qs = strategyId ? `?strategyId=${encodeURIComponent(strategyId)}` : "";
+  const res = await fetch(parseUrl(`v1/optimizations${qs}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeOptimizationRun[]>(res);
 };
 
 // wsUrl returns the gateway's /ws endpoint, derived from the API base URL by

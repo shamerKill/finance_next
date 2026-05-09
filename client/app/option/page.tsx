@@ -1,4 +1,6 @@
-import { Input } from '@nextui-org/react';
+"use client";
+
+import { Input } from '@heroui/react';
 import { FC } from 'react';
 
 const PageOption: FC = () => {

@@ -8,18 +8,13 @@ import { OptionModule } from './routers/option/option.module';
 @Module({
   imports: [
     MongooseModule.forRoot(
-      'mongodb+srv://shamer:l\'mKL1995lin@cluster0.bmqxtzh.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0',
-      {
-        dbName: 'finance'
-      }
+      "mongodb+srv://shamer:l'mKL1995lin@cluster0.bmqxtzh.mongodb.net/finance?retryWrites=true&w=majority&appName=Cluster0",
     ),
     RouterModule.register([
       {
         path: 'v1',
-        children: [
-          OptionModule,
-        ],
-      }
+        children: [OptionModule],
+      },
     ]),
     OptionModule,
   ],

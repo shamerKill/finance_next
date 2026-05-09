@@ -15,15 +15,16 @@
 ## 2. 技术栈
 
 **前端 `client/`**
-- Next.js 14.2（App Router）· React 18 · TypeScript 5
-- NextUI 2.3 · Tailwind CSS 3.4 · Framer Motion 11
-- ESLint
+- Next.js 16（App Router, Turbopack）· React 19 · TypeScript 5.6
+- HeroUI 2.8（原 NextUI） · Tailwind CSS 4（CSS-first 配置）· Framer Motion 12
+- ESLint 9（flat config，`eslint.config.mjs`）
 
 **后端 `server/`**
-- NestJS 10 · TypeScript 5
-- Mongoose 8（MongoDB Atlas）
+- NestJS 11 · TypeScript 6
+- Mongoose 9（MongoDB Atlas）
 - class-validator / class-transformer（DTO 校验）
-- Jest + Supertest
+- Jest 30 + Supertest 7
+- ESLint 9（flat config，`eslint.config.mjs`）
 
 ## 3. 目录结构
 

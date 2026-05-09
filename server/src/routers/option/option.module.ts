@@ -9,8 +9,8 @@ import { Option, optionSchema } from './entities/option.entity';
     MongooseModule.forFeature([
       {
         name: Option.name,
-        schema: optionSchema
-      }
+        schema: optionSchema,
+      },
     ]),
   ],
   controllers: [OptionController],

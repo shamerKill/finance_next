@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Put } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Delete,
+  Put,
+} from '@nestjs/common';
 import { OptionService } from './option.service';
 import { CreateOptionDto } from './dto/create-option.dto';
 import { UpdateOptionDto } from './dto/update-option.dto';
@@ -12,7 +20,7 @@ export class OptionController {
     const doc = await this.optionService.create(createOptionDto);
     return {
       message: '创建成功',
-      value: {name: doc.name}
+      value: { name: doc.name },
     };
   }
 
@@ -27,7 +35,10 @@ export class OptionController {
   }
 
   @Put(':id')
-  async update(@Param('id') id: string, @Body() updateOptionDto: UpdateOptionDto) {
+  async update(
+    @Param('id') id: string,
+    @Body() updateOptionDto: UpdateOptionDto,
+  ) {
     return await this.optionService.update(id, updateOptionDto);
   }
 

@@ -1,5 +1,6 @@
-import { Button } from "@nextui-org/react";
-import Image from "next/image";
+"use client";
+
+import { Button } from "@heroui/react";
 import Link from "next/link";
 
 export default function Home() {

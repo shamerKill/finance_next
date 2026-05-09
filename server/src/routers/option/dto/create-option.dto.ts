@@ -1,4 +1,14 @@
-import { Length, Max, Min, IsInt, IsNotEmpty, IsNumber, IsBoolean, ArrayNotEmpty, IsEmail } from 'class-validator';
+import {
+  Length,
+  Max,
+  Min,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsBoolean,
+  ArrayNotEmpty,
+  IsEmail,
+} from 'class-validator';
 
 export class CreateOptionDto {
   @Length(3, 8, { message: '名字长度为3-8' })

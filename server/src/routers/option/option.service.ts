@@ -7,9 +7,7 @@ import { OptionDocument } from './entities/option.entity';
 
 @Injectable()
 export class OptionService {
-  constructor(
-    @InjectModel('Option') private option: Model<OptionDocument>
-  ) {}
+  constructor(@InjectModel('Option') private option: Model<OptionDocument>) {}
   async create(createOptionDto: CreateOptionDto) {
     const newOption = new this.option(createOptionDto);
     const doc = await newOption.save();
@@ -22,22 +20,25 @@ export class OptionService {
   }
 
   findOne(id: string) {
-    return this.option.findOne({_id: id}).exec();
+    return this.option.findOne({ _id: id }).exec();
   }
 
   async update(id: string, updateOptionDto: UpdateOptionDto) {
     const _res = await this.findOne(id);
     if (_res === null) throw new Error('Option not found');
-    const res = await this.option.updateOne({_id: id}, {
-      $set: updateOptionDto
-    });
+    const res = await this.option.updateOne(
+      { _id: id },
+      {
+        $set: updateOptionDto,
+      },
+    );
     if (res.acknowledged) return this.findOne(id);
     throw new Error('Update failed');
   }
 
   async remove(id: string) {
-    const res = await this.option.deleteOne({_id: id});
-    if (res.acknowledged) return {success: true};
+    const res = await this.option.deleteOne({ _id: id });
+    if (res.acknowledged) return { success: true };
     throw new Error('Delete failed');
   }
 }

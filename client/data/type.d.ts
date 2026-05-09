@@ -225,3 +225,41 @@ export type TypeEquityPoint = {
   drawdown: number;
   position: number;
 };
+
+// ---------- Phase 5 — exchange_meta + portfolio summary ----------
+
+export type TypeExchangeMeta = {
+  id: string;
+  exchange: TypeExchange;
+  canonicalSymbol: string;
+  nativeSymbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+  contractType: "spot" | "linear-perp" | string;
+  pricePrecision: number;
+  qtyPrecision: number;
+  minNotionalUsd: number;
+  takerFeeRate: number;
+  makerFeeRate: number;
+  lastUpdated: string;
+};
+
+export type TypePortfolioExchangeBreakdown = {
+  exchange: TypeExchange;
+  totalUsd: number;
+  accountIds: string[];
+};
+
+export type TypePortfolioAssetBreakdown = {
+  asset: string;
+  qty: number;
+  usdValue: number;
+};
+
+export type TypePortfolioSummary = {
+  totalUsd: number;
+  perExchange: TypePortfolioExchangeBreakdown[];
+  perAsset: TypePortfolioAssetBreakdown[];
+  generatedAt: string;
+  notes?: string[];
+};

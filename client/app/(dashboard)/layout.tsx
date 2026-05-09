@@ -13,6 +13,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <Link className="hover:text-primary" href="/accounts">
             Accounts
           </Link>
+          <Link className="hover:text-primary" href="/portfolio">
+            Portfolio
+          </Link>
           <Link className="hover:text-primary" href="/strategies">
             Strategies
           </Link>

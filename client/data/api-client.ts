@@ -7,9 +7,12 @@ import {
   TypeCreateAccount,
   TypeCreateBacktest,
   TypeEquityPoint,
+  TypeExchange,
+  TypeExchangeMeta,
   TypeMainnetStatus,
   TypeOption,
   TypeOrderLog,
+  TypePortfolioSummary,
   TypePosition,
   TypeSetLive,
   TypeSubmitOrder,
@@ -266,6 +269,29 @@ export const getMainnetStatus = async (
     cache: "no-store",
   });
   return jsonOrThrow<TypeMainnetStatus>(res);
+};
+
+// ---------- Phase 5 — exchange meta + cross-exchange portfolio ----------
+
+export const getExchangeMeta = async (
+  exchange?: TypeExchange,
+  symbol?: string,
+): Promise<TypeExchangeMeta | TypeExchangeMeta[]> => {
+  const params = new URLSearchParams();
+  if (exchange) params.set("exchange", exchange);
+  if (symbol) params.set("symbol", symbol);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  const res = await fetch(parseUrl(`v1/exchange/meta${qs}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeExchangeMeta | TypeExchangeMeta[]>(res);
+};
+
+export const getPortfolioSummary = async (): Promise<TypePortfolioSummary> => {
+  const res = await fetch(parseUrl("v1/portfolio/summary"), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypePortfolioSummary>(res);
 };
 
 // wsUrl returns the gateway's /ws endpoint, derived from the API base URL by

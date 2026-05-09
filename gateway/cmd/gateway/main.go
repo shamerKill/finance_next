@@ -16,6 +16,7 @@ import (
 
 	"github.com/finance_next/gateway/internal/config"
 	"github.com/finance_next/gateway/internal/crypto"
+	"github.com/finance_next/gateway/internal/exchange/meta"
 	gwhttp "github.com/finance_next/gateway/internal/http"
 	"github.com/finance_next/gateway/internal/orderengine"
 	"github.com/finance_next/gateway/internal/quantclient"
@@ -81,6 +82,16 @@ func main() {
 	if err := orderRepo.EnsureIndexes(connectCtx); err != nil {
 		logger.Warn("ensure order indexes failed", "err", err)
 	}
+	metaRepo := mongostore.NewExchangeMetaRepo(db)
+	if err := metaRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure exchange_meta indexes failed", "err", err)
+	}
+	// Phase 5: refresh `exchange_meta` from each venue's public catalog
+	// at startup, but only when the cached rows are >24h old (or empty).
+	// We run this in a goroutine so a slow upstream doesn't block boot;
+	// the order engine doesn't *yet* require the meta rows but the next
+	// sub-task (precision/min-notional validation) will.
+	go meta.New(metaRepo, logger).RefreshIfStale(rootCtx)
 
 	envelope := crypto.NewEnvelope(cryptoSvc)
 
@@ -154,17 +165,18 @@ func main() {
 	}
 
 	e := gwhttp.NewRouter(gwhttp.Deps{
-		OptionRepo:   optRepo,
-		AccountRepo:  acctRepo,
-		BacktestRepo: bktRepo,
-		OrderRepo:    orderRepo,
-		Crypto:       cryptoSvc,
-		Envelope:     envelope,
-		Timescale:    tsStore,
-		Quant:        quantCli,
-		AdminKey:     cfg.AdminKey,
-		Redis:        redisClient,
-		OrderEngine:  orderEngine,
+		OptionRepo:       optRepo,
+		AccountRepo:      acctRepo,
+		BacktestRepo:     bktRepo,
+		OrderRepo:        orderRepo,
+		ExchangeMetaRepo: metaRepo,
+		Crypto:           cryptoSvc,
+		Envelope:         envelope,
+		Timescale:        tsStore,
+		Quant:            quantCli,
+		AdminKey:         cfg.AdminKey,
+		Redis:            redisClient,
+		OrderEngine:      orderEngine,
 	})
 
 	addr := ":" + cfg.Port

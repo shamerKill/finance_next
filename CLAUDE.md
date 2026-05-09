@@ -44,6 +44,7 @@ finance_next/
 │   │   │   ├── api-list/             # 策略列表（async server component）
 │   │   │   ├── markets/              # OHLCV chart (lightweight-charts)
 │   │   │   ├── backtests/            # Phase 3：列表/新建/详情（含 equity 图 + 实时进度 WS）
+│   │   │   ├── portfolio/            # Phase 5：跨交易所余额 / 资产汇总（server component）
 │   │   │   └── option/page.tsx       # 期权策略表单页
 │   │   └── list/                     # 占位，功能未实现
 │   ├── data/
@@ -60,14 +61,20 @@ finance_next/
 │       ├── config/                   # 加载 env（含 godotenv 本地 .env）
 │       ├── crypto/                   # AES-256-GCM + 信封加密（golden vector 测试）
 │       ├── domain/                   # Option / Account / Order / DTO 类型
-│       ├── exchange/                 # 抽象 ReadOnlyClient + binance/ adapter（client.go 只读 + orders.go 执行）
+│       ├── exchange/                 # 抽象 ReadOnlyClient/OrderClient/Adapter
+│       │   ├── exchange.go           # 共享类型 (OrderRequest/Result/OpenOrder) + Adapter 接口
+│       │   ├── binance/              # Binance 只读 + USDM 下单（testnet 默认）
+│       │   ├── okx/                  # OKX v5 REST 适配器（demo header / mainnet gate 共享）
+│       │   ├── bybit/                # Bybit unified-trading v5 适配器
+│       │   ├── symbol/               # canonical "BTC/USDT:USDT" 归一化（idempotent property tests）
+│       │   └── meta/                 # 启动时 exchange_meta 刷新 job（>24h staleness）
 │       ├── ws/                       # 单进程 WS hub（topic 模型：account / backtest / strategy）+ Redis Streams 消费
-│       ├── orderengine/              # Phase 4：Redis stream 消费 + 风控闸 + 30s reconcile loop + mainnet token gate
-│       ├── store/{mongo,timescale}/  # mongo (options/accounts/backtest_results/order_log) + timescale (ohlcv 读 + equity_curve 读)
+│       ├── orderengine/              # Phase 4：Redis stream 消费 + 风控闸 + 30s reconcile loop + mainnet token gate（venue-aware factory）
+│       ├── store/{mongo,timescale}/  # mongo (options/accounts/backtest_results/order_log/exchange_meta) + timescale (ohlcv 读 + equity_curve 读)
 │       ├── quantclient/              # gRPC client → Python quant worker
 │       └── http/
 │           ├── router.go             # Echo 路由 + middleware
-│           └── handlers/             # option.go + account.go + market.go + backtest.go + strategy.go
+│           └── handlers/             # option.go + account.go + market.go + backtest.go + strategy.go + exchange_meta.go + portfolio.go
 ├── quant/                            # Phase 2 Python 量化 worker（uv 管理）
 │   ├── pyproject.toml                # uv-managed deps (fastapi/grpcio/ccxt/akshare/asyncpg/arq)
 │   ├── Dockerfile                    # uv:python3.12-bookworm-slim
@@ -180,6 +187,12 @@ docker compose -f infra/docker-compose.yml up --build
 | POST   | `/api/v1/admin/mainnet/confirm`                 | admin token 确认；body `{token}`；成功后开启 1 小时 mainnet 窗口                            |
 | GET    | `/api/v1/admin/mainnet/status`                  | admin gate 状态查询（envEnabled / mainnetAllowed / pendingTokenCount）                |
 
+**Exchange Meta + Portfolio**（`gateway/internal/http/handlers/exchange_meta.go` + `portfolio.go`，phase 5）
+| 方法     | 路径                              | 说明                                                                                 |
+| ------ | ------------------------------- | ---------------------------------------------------------------------------------- |
+| GET    | `/api/v1/exchange/meta`         | `exchange_meta` 列表；`?exchange=&symbol=` 过滤；symbol 为空时返回该 exchange 全部              |
+| GET    | `/api/v1/portfolio/summary`     | 跨账户余额汇总：`{totalUsd, perExchange[], perAsset (top 10)[], notes[]}`，USD 估值走 Timescale 最近 close（`<asset>USDT`）|
+
 WS（phase 3 扩展 topic 模型 + phase 4 增加 strategy）：
 - 现有 `{type:"subscribe", accountId:"..."}` 仍兼容（默认 topic=`account`）。
 - `{type:"subscribe", topic:"backtest", id:"<runId>"}` — gateway 订阅 Redis Streams `event.backtest.progress` / `event.backtest.completed`，按 runId 过滤后扇出。
@@ -206,6 +219,19 @@ DTO 校验由 `go-playground/validator/v10` 在 handler 内执行（POST/PUT 请
 设置 `Content-Type: application/json`。`api-list` 页面是 async server
 component，直接在服务端调用 `getOptions()`。`option/page.tsx` 仅有表单 UI，
 尚未接 POST 提交。
+
+**多交易所账户（Phase 5）**：`POST /api/v1/accounts` 现在接受 `exchange ∈
+{binance, okx, bybit}`。**OKX 账户的 `passphrase` 字段为必填**（OKX
+API key 创建时设的 passphrase；信封加密保存）；Bybit/Binance 不需要。
+权限探测按 venue 走对应路径（binance: `/api/v3/account.canWithdraw`；
+okx: `/api/v5/account/config`，无 level 视为 fail-closed；bybit:
+`/v5/user/query-api`，`permissions.Wallet` 含 `Withdraw…` 视为
+canWithdraw=true，解析失败 fail-closed）。
+
+**符号归一化**：`gateway/internal/exchange/symbol` 提供
+`CanonicalSymbol "BTC/USDT:USDT"` 与 `ToBinance/ToOKX/ToBybit` +
+`FromX` 反向映射；ccxt 风格的 unified market id。Quant worker 的
+`quant/data/symbols.py` 与之 lock-step（`to_native()`）。
 
 ## 7. 安全与配置
 
@@ -320,7 +346,27 @@ component，直接在服务端调用 `getOptions()`。`option/page.tsx` 仅有�
         （Live toggle / 风控编辑 / WS 实时订单流 / mainnet 警告条）；`ws-client.ts` 加
         `useStrategyStream` hook
       - admin endpoints `/admin/mainnet/{request-token,confirm,status}`（参考 §5、§8）
+- [x] **Phase 5**：OKX + Bybit 适配器 + 跨交易所基础设施
+      - `gateway/internal/exchange/exchange.go` 提升 `OrderClient` / `Adapter` 接口
+        + 共享 `OrderRequest/OrderResult/OpenOrder` 类型；`ErrMainnetGateDenied` sentinel
+      - `gateway/internal/exchange/okx/`：v5 REST 适配器（client+sign+demo header /
+        readonly probe-config / orders 受同一 mainnet gate；passphrase 必填）
+      - `gateway/internal/exchange/bybit/`：unified-trading v5 适配器
+        （HMAC-SHA256 sign / wallet-balance / position/list / query-api 的
+        `permissions.Wallet` 检测）
+      - `gateway/internal/exchange/symbol/`：canonical `BTC/USDT:USDT` 形态 +
+        `ToBinance/ToOKX/ToBybit/FromX`；idempotent property tests
+      - `gateway/internal/store/mongo/exchange_meta_repo.go` + `internal/exchange/meta/refresh.go`：
+        启动时刷 binance/okx/bybit `exchangeInfo` / `instruments` / `instruments-info`，
+        24h staleness gate；`GET /api/v1/exchange/meta` 直读
+      - 订单引擎 `OrderClientFactory(venue, mode, key, secret, passphrase)`：按 `domain.Exchange`
+        分发到三个适配器，**共用同一个 `TokenStore`**（mainnet 开关三方共享）
+      - 账户创建按 venue 分别探权限；OKX 强制 passphrase；前端 `accounts/new`
+        条件展示 passphrase 字段
+      - `GET /api/v1/portfolio/summary`：跨账户 USD 汇总（best-effort 走 Timescale
+        最近 close）；UI `(dashboard)/portfolio`
+      - `quant/data/symbols.py` 同步加 canonical 形态 + `to_native()`
 - [ ] 期权配置表单接通 POST 提交
 - [ ] `client/app/list/` 实现
-- [ ] **Phase 5+**：OKX/Bybit / AI 优化（详见
+- [ ] **Phase 6+**：AI 优化循环 / 加固（详见
       `/root/.claude/plans/vectorized-waddling-hoare.md`）

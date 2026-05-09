@@ -99,7 +99,7 @@ func (e *Engine) reconcileAccount(ctx context.Context, accountID string, locals 
 	// closed for writes we don't want to *read* mainnet either, since
 	// reading still requires production credentials. So we resolve mode
 	// per row and skip rows we can't observe.
-	apiKey, secret, err := e.decryptAccount(ctx, accountID)
+	apiKey, secret, passphrase, venue, err := e.decryptAccount(ctx, accountID)
 	if err != nil {
 		return err
 	}
@@ -122,7 +122,7 @@ func (e *Engine) reconcileAccount(ctx context.Context, accountID string, locals 
 		if len(symbols) == 0 {
 			continue
 		}
-		adapter, err := e.deps.Factory(ctx, mode, apiKey, secret)
+		adapter, err := e.deps.Factory(ctx, venue, mode, apiKey, secret, passphrase)
 		if err != nil {
 			e.log.Warn("orderengine reconcile: build adapter failed", "mode", mode, "err", err)
 			continue
@@ -186,7 +186,7 @@ func (e *Engine) reconcileMissingLocal(ctx context.Context, adapter OrderAdapter
 		"transactTime": got.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	})
 	if _, err := e.deps.OrderRepo.UpdateStatus(ctx, l.ClientOrderID, mongostore.FillUpdate{
-		Status:          got.Status,
+		Status:          domain.OrderStatus(got.Status),
 		ExchangeOrderID: got.ExchangeOrderID,
 		Filled:          got.ExecutedQty,
 		AvgFillPrice:    got.AvgFillPrice,
@@ -195,7 +195,7 @@ func (e *Engine) reconcileMissingLocal(ctx context.Context, adapter OrderAdapter
 		e.log.Warn("orderengine reconcile: terminal update failed", "clientOrderId", l.ClientOrderID, "err", err)
 	}
 	// Publish a synthetic event so the UI sees the state flip.
-	e.publishRaw(ctx, "event.order."+orderEventSuffix(got.Status), map[string]any{
+	e.publishRaw(ctx, "event.order."+orderEventSuffix(domain.OrderStatus(got.Status)), map[string]any{
 		"strategyId":      l.StrategyID,
 		"clientOrderId":   got.ClientOrderID,
 		"exchangeOrderId": got.ExchangeOrderID,

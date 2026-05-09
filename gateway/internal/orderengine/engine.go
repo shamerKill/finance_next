@@ -45,7 +45,10 @@ import (
 
 	"github.com/finance_next/gateway/internal/crypto"
 	"github.com/finance_next/gateway/internal/domain"
+	"github.com/finance_next/gateway/internal/exchange"
 	"github.com/finance_next/gateway/internal/exchange/binance"
+	"github.com/finance_next/gateway/internal/exchange/bybit"
+	"github.com/finance_next/gateway/internal/exchange/okx"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	"github.com/redis/go-redis/v9"
 )
@@ -87,24 +90,24 @@ var (
 	ErrAccountNotConfigured = errors.New("orderengine: strategy has no live.accountId configured")
 )
 
-// OrderClientFactory builds a binance.OrderClient (or compatible
-// adapter) for a given account + mode. The default factory is wired in
-// New(); tests inject a mock so they don't need a real Binance host.
+// OrderClientFactory builds an exchange-specific order adapter for a
+// given account + mode. Phase 5 introduces the venue parameter so the
+// engine routes to the right adapter (binance / okx / bybit). The
+// default factory wires the three production constructors. Tests inject
+// a fake so they don't need a real exchange host.
 type OrderClientFactory func(
 	ctx context.Context,
+	venue domain.Exchange,
 	mode domain.LiveMode,
-	apiKey, secretKey string,
+	apiKey, secretKey, passphrase string,
 ) (OrderAdapter, error)
 
-// OrderAdapter is the slimmed interface the engine consumes — exactly
-// what binance.OrderClient implements. Kept as an interface so tests can
-// substitute a fake without dialing httptest.
-type OrderAdapter interface {
-	PlaceOrder(ctx context.Context, req binance.OrderRequest) (*binance.OrderResult, error)
-	CancelOrder(ctx context.Context, symbol, clientOrderID string) error
-	GetOpenOrders(ctx context.Context, symbol string) ([]binance.OpenOrder, error)
-	GetOrder(ctx context.Context, symbol, clientOrderID string) (*binance.OpenOrder, error)
-}
+// OrderAdapter is the slimmed interface the engine consumes. It is an
+// alias for [exchange.OrderClient] — kept as a separate name in this
+// package so tests + the order engine can refer to "OrderAdapter" for
+// readability. Every venue's order client (binance, okx, bybit)
+// implements this.
+type OrderAdapter = exchange.OrderClient
 
 // Deps bundles every dependency Engine needs. Keep this as a single
 // struct so wiring in cmd/gateway/main.go stays compact.
@@ -384,20 +387,20 @@ func (e *Engine) processCommand(ctx context.Context, cmd domain.SubmitOrderComma
 	}
 
 	// ---- Build adapter & submit -------------------------------------
-	apiKey, secret, err := e.decryptAccount(ctx, opt.Live.AccountID)
+	apiKey, secret, passphrase, venue, err := e.decryptAccount(ctx, opt.Live.AccountID)
 	if err != nil {
 		_ = e.markRejected(ctx, clientOID, err)
 		return nil, err
 	}
-	adapter, err := e.deps.Factory(ctx, opt.Live.Mode, apiKey, secret)
+	adapter, err := e.deps.Factory(ctx, venue, opt.Live.Mode, apiKey, secret, passphrase)
 	if err != nil {
 		_ = e.markRejected(ctx, clientOID, err)
 		return nil, err
 	}
-	res, err := adapter.PlaceOrder(ctx, binance.OrderRequest{
+	res, err := adapter.PlaceOrder(ctx, exchange.OrderRequest{
 		Symbol:        cmd.Symbol,
-		Side:          cmd.Side,
-		Type:          cmd.Type,
+		Side:          exchange.OrderSide(cmd.Side),
+		Type:          exchange.OrderType(cmd.Type),
 		Quantity:      cmd.Qty,
 		Price:         cmd.Price,
 		ClientOrderID: clientOID,
@@ -407,7 +410,7 @@ func (e *Engine) processCommand(ctx context.Context, cmd domain.SubmitOrderComma
 		return nil, err
 	}
 	updated, err := e.deps.OrderRepo.UpdateStatus(ctx, clientOID, mongostore.FillUpdate{
-		Status:          res.Status,
+		Status:          domain.OrderStatus(res.Status),
 		ExchangeOrderID: res.ExchangeOrderID,
 		Filled:          res.ExecutedQty,
 		AvgFillPrice:    res.AvgFillPrice,
@@ -460,7 +463,7 @@ func (e *Engine) publishRejection(ctx context.Context, cmd domain.SubmitOrderCom
 }
 
 // publishOrderEvent emits a filled/partial event with the result fields.
-func (e *Engine) publishOrderEvent(ctx context.Context, eventType string, log *domain.OrderLog, res *binance.OrderResult) {
+func (e *Engine) publishOrderEvent(ctx context.Context, eventType string, log *domain.OrderLog, res *exchange.OrderResult) {
 	payload := map[string]any{
 		"strategyId":      log.StrategyID,
 		"clientOrderId":   log.ClientOrderID,
@@ -519,30 +522,55 @@ func (e *Engine) deriveClientOrderID(cmd domain.SubmitOrderCommand) string {
 	return hex.EncodeToString(digest)[:32]
 }
 
-func (e *Engine) decryptAccount(ctx context.Context, accountID string) (string, string, error) {
+func (e *Engine) decryptAccount(ctx context.Context, accountID string) (apiKey, secret, passphrase string, venue domain.Exchange, err error) {
 	a, err := e.deps.AccountRepo.FindByID(ctx, accountID)
 	if err != nil {
-		return "", "", fmt.Errorf("load account: %w", err)
+		return "", "", "", "", fmt.Errorf("load account: %w", err)
 	}
-	apiKey, err := e.deps.Envelope.DecryptForAccount(a.DEKCiphertext, a.APIKeyCiphertext)
+	apiKey, err = e.deps.Envelope.DecryptForAccount(a.DEKCiphertext, a.APIKeyCiphertext)
 	if err != nil {
-		return "", "", fmt.Errorf("decrypt apiKey: %w", err)
+		return "", "", "", "", fmt.Errorf("decrypt apiKey: %w", err)
 	}
-	secret, err := e.deps.Envelope.DecryptForAccount(a.DEKCiphertext, a.SecretKeyCiphertext)
+	secret, err = e.deps.Envelope.DecryptForAccount(a.DEKCiphertext, a.SecretKeyCiphertext)
 	if err != nil {
-		return "", "", fmt.Errorf("decrypt secretKey: %w", err)
+		return "", "", "", "", fmt.Errorf("decrypt secretKey: %w", err)
 	}
-	return apiKey, secret, nil
+	if a.PassphraseCiphertext != "" {
+		passphrase, err = e.deps.Envelope.DecryptForAccount(a.DEKCiphertext, a.PassphraseCiphertext)
+		if err != nil {
+			return "", "", "", "", fmt.Errorf("decrypt passphrase: %w", err)
+		}
+	}
+	venue = a.Exchange
+	if !venue.IsValid() {
+		return "", "", "", "", fmt.Errorf("account %s has unrecognised exchange %q", accountID, a.Exchange)
+	}
+	return apiKey, secret, passphrase, venue, nil
 }
 
-// defaultOrderClientFactory wraps binance.NewOrderClient with the gate.
+// defaultOrderClientFactory builds the venue-specific adapter wired to
+// the same TokenStore. Phase 5 added the venue parameter so OKX + Bybit
+// share the *same* mainnet gate as Binance — there is exactly one
+// TokenStore per process; opening it opens it for all three.
 func defaultOrderClientFactory(gate *TokenStore) OrderClientFactory {
-	return func(ctx context.Context, mode domain.LiveMode, apiKey, secretKey string) (OrderAdapter, error) {
-		var bgate binance.MainnetGate = binance.AlwaysDenyGate
+	return func(ctx context.Context, venue domain.Exchange, mode domain.LiveMode, apiKey, secretKey, passphrase string) (OrderAdapter, error) {
+		var allowed func() bool = func() bool { return false }
 		if gate != nil {
-			bgate = binance.MainnetGateFunc(gate.Allowed)
+			allowed = gate.Allowed
 		}
-		return binance.NewOrderClient(mode, bgate, apiKey, secretKey), nil
+		switch venue {
+		case domain.ExchangeBinance:
+			bgate := binance.MainnetGateFunc(allowed)
+			return binance.NewOrderClient(mode, bgate, apiKey, secretKey), nil
+		case domain.ExchangeOKX:
+			ogate := okx.MainnetGateFunc(allowed)
+			return okx.NewOrderClient(mode, ogate, apiKey, secretKey, passphrase), nil
+		case domain.ExchangeBybit:
+			bgate := bybit.MainnetGateFunc(allowed)
+			return bybit.NewOrderClient(mode, bgate, apiKey, secretKey), nil
+		default:
+			return nil, fmt.Errorf("orderengine: venue %q has no order adapter wired", venue)
+		}
 	}
 }
 

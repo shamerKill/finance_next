@@ -1,19 +1,23 @@
-// Package exchange defines the read-only abstraction the gateway uses to talk
-// to upstream venues (Binance for phase 1; OKX/Bybit will be wired in phase 5).
+// Package exchange defines the venue-agnostic abstractions the gateway uses
+// to talk to upstream venues (Binance, OKX, Bybit).
 //
-// The interface intentionally exposes only the few read paths the dashboard
-// needs:
-//   - ProbePermissions  (called once on credential add to detect canWithdraw)
-//   - GetBalances       (spot + USDM wallet snapshot)
-//   - GetPositions      (USDM open positions)
-//   - StreamUserData    (long-lived event channel multiplexed by the WS hub)
+// The interfaces intentionally split between read-only paths (used by the
+// dashboard view of balances/positions) and order placement (used by the
+// Phase 4+ order engine). Adapters that only ever serve the dashboard can
+// implement [ReadOnlyClient]; adapters that also place orders implement
+// [Adapter] = [ReadOnlyClient] + [OrderClient].
 //
-// Order placement / cancellation is deliberately *not* on this interface — that
-// path is gated by phase 4. Adding it later means a separate Trading interface
-// composed at the call site, so accounts that are read-only stay that way.
+// Phase 5 promotes the order interface up here so OKX + Bybit + Binance
+// can be selected by a registry in the order engine without compile-time
+// dependencies on Binance-specific types.
 package exchange
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"time"
+)
 
 // Permissions describes the API-key scopes a venue reports back. The exact wire
 // shape varies per exchange; ProbePermissions normalises them.
@@ -75,3 +79,75 @@ type ReadOnlyClient interface {
 	GetPositions(ctx context.Context) ([]Position, error)
 	StreamUserData(ctx context.Context) (UserDataStream, error)
 }
+
+// OrderSide is "BUY" or "SELL"; mirrors domain.OrderSide string values.
+type OrderSide string
+
+// OrderType is "MARKET" or "LIMIT"; mirrors domain.OrderType.
+type OrderType string
+
+// OrderStatus is the gateway-internal lifecycle state. Values match
+// domain.OrderStatus (lower-case) so the engine's mapping is a no-op cast.
+type OrderStatus string
+
+// OrderRequest is the venue-agnostic input to PlaceOrder. Symbols are
+// venue-native at this boundary (e.g. "BTCUSDT" for binance/bybit,
+// "BTC-USDT-SWAP" for okx) — the order engine translates from canonical
+// before calling.
+type OrderRequest struct {
+	Symbol        string
+	Side          OrderSide
+	Type          OrderType
+	Quantity      float64
+	Price         float64 // ignored for MARKET
+	ClientOrderID string  // <=36 chars; deterministic upstream
+	ReduceOnly    bool
+}
+
+// OrderResult is the normalised PlaceOrder response. Raw is the verbatim
+// upstream payload, stashed verbatim on the audit log.
+type OrderResult struct {
+	ExchangeOrderID string
+	ClientOrderID   string
+	Status          OrderStatus
+	ExecutedQty     float64
+	AvgFillPrice    float64
+	TransactTime    time.Time
+	Raw             json.RawMessage
+}
+
+// OpenOrder is the reconcile-loop view of an order — only the fields
+// needed to diff against the local order_log.
+type OpenOrder struct {
+	ClientOrderID   string
+	ExchangeOrderID string
+	Symbol          string
+	Status          OrderStatus
+	ExecutedQty     float64
+	AvgFillPrice    float64
+	UpdatedAt       time.Time
+}
+
+// OrderClient places, cancels, and inspects orders. Mainnet/testnet
+// gating is the responsibility of the implementation — the engine simply
+// builds an adapter for the strategy's [domain.LiveMode] and uses it.
+type OrderClient interface {
+	PlaceOrder(ctx context.Context, req OrderRequest) (*OrderResult, error)
+	CancelOrder(ctx context.Context, symbol, clientOrderID string) error
+	GetOpenOrders(ctx context.Context, symbol string) ([]OpenOrder, error)
+	GetOrder(ctx context.Context, symbol, clientOrderID string) (*OpenOrder, error)
+}
+
+// Adapter composes both interfaces; the live order engine uses this.
+// Most adapters implement both; ReadOnlyClient remains acceptable for the
+// account/dashboard path which never places orders.
+type Adapter interface {
+	ReadOnlyClient
+	OrderClient
+}
+
+// ErrMainnetGateDenied is the canonical error returned by an adapter
+// when an order would target mainnet but the configured gate refuses.
+// All adapters share this sentinel so the engine + reconcile loop can
+// match on it without per-venue casts.
+var ErrMainnetGateDenied = errors.New("exchange: mainnet trading not enabled (env + confirm token required)")

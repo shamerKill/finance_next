@@ -37,6 +37,20 @@ import (
 	"github.com/adshao/go-binance/v2/futures"
 
 	"github.com/finance_next/gateway/internal/domain"
+	"github.com/finance_next/gateway/internal/exchange"
+)
+
+// Type aliases to the exchange package so the binance adapter stays the
+// canonical owner of its on-the-wire fields while the order engine + tests
+// can reference either name. Phase 5 introduced shared types; these
+// aliases preserve binance.* call sites elsewhere in the tree.
+type (
+	// OrderRequest is an alias for exchange.OrderRequest.
+	OrderRequest = exchange.OrderRequest
+	// OrderResult is an alias for exchange.OrderResult.
+	OrderResult = exchange.OrderResult
+	// OpenOrder is an alias for exchange.OpenOrder.
+	OpenOrder = exchange.OpenOrder
 )
 
 // Public testnet endpoints (the *only* production-style hosts this adapter
@@ -140,31 +154,6 @@ func (c *OrderClient) guard() error {
 	return nil
 }
 
-// OrderRequest is the network-agnostic input to PlaceOrder.
-type OrderRequest struct {
-	Symbol        string
-	Side          domain.OrderSide
-	Type          domain.OrderType
-	Quantity      float64
-	Price         float64 // ignored for MARKET
-	ClientOrderID string  // <=36 chars; deterministic upstream
-	// ReduceOnly, if true, sets the futures reduce-only flag — used by
-	// the engine when placing exit orders.
-	ReduceOnly bool
-}
-
-// OrderResult is the normalised PlaceOrder response. We include the raw
-// response so the caller can stash it on the audit log verbatim.
-type OrderResult struct {
-	ExchangeOrderID string
-	ClientOrderID   string
-	Status          domain.OrderStatus
-	ExecutedQty     float64
-	AvgFillPrice    float64
-	TransactTime    time.Time
-	Raw             json.RawMessage
-}
-
 // PlaceOrder sends a futures-USDM order and waits for the ack response
 // (NewOrderRespType=RESULT — Binance returns whatever fills happened
 // synchronously).
@@ -172,10 +161,12 @@ func (c *OrderClient) PlaceOrder(ctx context.Context, req OrderRequest) (*OrderR
 	if err := c.guard(); err != nil {
 		return nil, err
 	}
-	if !req.Side.IsValid() {
+	dSide := domain.OrderSide(req.Side)
+	dType := domain.OrderType(req.Type)
+	if !dSide.IsValid() {
 		return nil, ErrUnsupportedSide
 	}
-	if !req.Type.IsValid() {
+	if !dType.IsValid() {
 		return nil, fmt.Errorf("binance: unsupported order type %q", req.Type)
 	}
 	if req.Quantity <= 0 {
@@ -187,8 +178,8 @@ func (c *OrderClient) PlaceOrder(ctx context.Context, req OrderRequest) (*OrderR
 
 	svc := c.futures.NewCreateOrderService().
 		Symbol(req.Symbol).
-		Side(futuresSide(req.Side)).
-		Type(futuresType(req.Type)).
+		Side(futuresSide(dSide)).
+		Type(futuresType(dType)).
 		Quantity(strconv.FormatFloat(req.Quantity, 'f', -1, 64)).
 		NewOrderResponseType(futures.NewOrderRespTypeRESULT)
 	if req.ClientOrderID != "" {
@@ -197,7 +188,7 @@ func (c *OrderClient) PlaceOrder(ctx context.Context, req OrderRequest) (*OrderR
 	if req.ReduceOnly {
 		svc = svc.ReduceOnly(true)
 	}
-	if req.Type == domain.OrderTypeLimit {
+	if dType == domain.OrderTypeLimit {
 		if req.Price <= 0 {
 			return nil, errors.New("binance: LIMIT order requires price > 0")
 		}
@@ -238,18 +229,6 @@ func (c *OrderClient) CancelOrder(ctx context.Context, symbol, clientOrderID str
 		OrigClientOrderID(clientOrderID).
 		Do(ctx)
 	return err
-}
-
-// OpenOrder is the reconcile-loop view of an order — only the fields
-// needed to diff against the local order_log.
-type OpenOrder struct {
-	ClientOrderID   string
-	ExchangeOrderID string
-	Symbol          string
-	Status          domain.OrderStatus
-	ExecutedQty     float64
-	AvgFillPrice    float64
-	UpdatedAt       time.Time
 }
 
 // GetOpenOrders returns all currently open futures orders for symbol. An
@@ -335,23 +314,24 @@ func futuresType(t domain.OrderType) futures.OrderType {
 	return futures.OrderTypeMarket
 }
 
-// mapStatus converts Binance's stringly-typed status to our domain enum.
-// Unknown statuses fall through to "unknown" — the reconcile loop will
-// re-query.
-func mapStatus(s string) domain.OrderStatus {
+// mapStatus converts Binance's stringly-typed status to our domain enum
+// (returned as exchange.OrderStatus, the wire-shared type — string values
+// are identical to domain.OrderStatus). Unknown statuses fall through to
+// "unknown" — the reconcile loop will re-query.
+func mapStatus(s string) exchange.OrderStatus {
 	switch strings.ToUpper(s) {
 	case "NEW":
-		return domain.OrderStatusNew
+		return exchange.OrderStatus(domain.OrderStatusNew)
 	case "PARTIALLY_FILLED":
-		return domain.OrderStatusPartial
+		return exchange.OrderStatus(domain.OrderStatusPartial)
 	case "FILLED":
-		return domain.OrderStatusFilled
+		return exchange.OrderStatus(domain.OrderStatusFilled)
 	case "CANCELED", "CANCELLED", "EXPIRED":
-		return domain.OrderStatusCanceled
+		return exchange.OrderStatus(domain.OrderStatusCanceled)
 	case "REJECTED":
-		return domain.OrderStatusRejected
+		return exchange.OrderStatus(domain.OrderStatusRejected)
 	}
-	return domain.OrderStatusUnknown
+	return exchange.OrderStatus(domain.OrderStatusUnknown)
 }
 
 // SetUseTestnetGlobal flips the go-binance package-level testnet flag.

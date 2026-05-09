@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/finance_next/gateway/internal/domain"
+	"github.com/finance_next/gateway/internal/exchange"
 )
 
 // allowAll is a MainnetGate that always says yes — used to exercise the
@@ -70,15 +71,15 @@ func TestPlaceOrder_Testnet_HappyPath(t *testing.T) {
 
 	res, err := c.PlaceOrder(ctx, OrderRequest{
 		Symbol:        "BTCUSDT",
-		Side:          domain.OrderSideBuy,
-		Type:          domain.OrderTypeMarket,
+		Side:          exchange.OrderSide(domain.OrderSideBuy),
+		Type:          exchange.OrderType(domain.OrderTypeMarket),
 		Quantity:      0.001,
 		ClientOrderID: "abcdef0123456789abcdef0123456789",
 	})
 	if err != nil {
 		t.Fatalf("PlaceOrder: %v", err)
 	}
-	if res.Status != domain.OrderStatusFilled {
+	if res.Status != exchange.OrderStatus(domain.OrderStatusFilled) {
 		t.Errorf("expected status filled, got %q", res.Status)
 	}
 	if res.ExchangeOrderID != "1234567" {
@@ -106,8 +107,8 @@ func TestPlaceOrder_Rejected_InsufficientMargin(t *testing.T) {
 	defer cancel()
 	_, err := c.PlaceOrder(ctx, OrderRequest{
 		Symbol:   "BTCUSDT",
-		Side:     domain.OrderSideBuy,
-		Type:     domain.OrderTypeMarket,
+		Side:     exchange.OrderSide(domain.OrderSideBuy),
+		Type:     exchange.OrderType(domain.OrderTypeMarket),
 		Quantity: 1000,
 	})
 	if err == nil {
@@ -131,8 +132,8 @@ func TestPlaceOrder_UnknownSymbol(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := c.PlaceOrder(ctx, OrderRequest{
-		Symbol: "DOESNOTEXIST", Side: domain.OrderSideBuy,
-		Type: domain.OrderTypeMarket, Quantity: 1,
+		Symbol: "DOESNOTEXIST", Side: exchange.OrderSide(domain.OrderSideBuy),
+		Type: exchange.OrderType(domain.OrderTypeMarket), Quantity: 1,
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -158,8 +159,8 @@ func TestPlaceOrder_MainnetGateClosed(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := c.PlaceOrder(ctx, OrderRequest{
-		Symbol: "BTCUSDT", Side: domain.OrderSideBuy,
-		Type: domain.OrderTypeMarket, Quantity: 0.001,
+		Symbol: "BTCUSDT", Side: exchange.OrderSide(domain.OrderSideBuy),
+		Type: exchange.OrderType(domain.OrderTypeMarket), Quantity: 0.001,
 	})
 	if err == nil {
 		t.Fatal("expected ErrMainnetGateDenied, got nil")
@@ -192,8 +193,8 @@ func TestPlaceOrder_MainnetGateOpenAllowsCall(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := c.PlaceOrder(ctx, OrderRequest{
-		Symbol: "BTCUSDT", Side: domain.OrderSideBuy,
-		Type: domain.OrderTypeMarket, Quantity: 0.001,
+		Symbol: "BTCUSDT", Side: exchange.OrderSide(domain.OrderSideBuy),
+		Type: exchange.OrderType(domain.OrderTypeMarket), Quantity: 0.001,
 		ClientOrderID: "x",
 	})
 	if err != nil {
@@ -205,8 +206,8 @@ func TestPlaceOrder_MainnetGateOpenAllowsCall(t *testing.T) {
 func TestPlaceOrder_LimitRequiresPrice(t *testing.T) {
 	c := NewOrderClient(domain.LiveModeTestnet, AlwaysDenyGate, "k", "s")
 	_, err := c.PlaceOrder(context.Background(), OrderRequest{
-		Symbol: "BTCUSDT", Side: domain.OrderSideBuy,
-		Type: domain.OrderTypeLimit, Quantity: 0.1,
+		Symbol: "BTCUSDT", Side: exchange.OrderSide(domain.OrderSideBuy),
+		Type: exchange.OrderType(domain.OrderTypeLimit), Quantity: 0.1,
 	})
 	if err == nil {
 		t.Fatal("expected error for LIMIT without price")
@@ -217,8 +218,8 @@ func TestPlaceOrder_LimitRequiresPrice(t *testing.T) {
 func TestPlaceOrder_ClientOrderIDLength(t *testing.T) {
 	c := NewOrderClient(domain.LiveModeTestnet, AlwaysDenyGate, "k", "s")
 	_, err := c.PlaceOrder(context.Background(), OrderRequest{
-		Symbol: "BTCUSDT", Side: domain.OrderSideBuy,
-		Type: domain.OrderTypeMarket, Quantity: 0.1,
+		Symbol: "BTCUSDT", Side: exchange.OrderSide(domain.OrderSideBuy),
+		Type: exchange.OrderType(domain.OrderTypeMarket), Quantity: 0.1,
 		ClientOrderID: strings.Repeat("a", 64),
 	})
 	if err == nil {
@@ -284,14 +285,14 @@ func TestGetOpenOrders_Testnet(t *testing.T) {
 // TestMapStatus covers the ordering-of-cases — important because Binance
 // occasionally introduces new statuses that we should funnel to "unknown".
 func TestMapStatus(t *testing.T) {
-	cases := map[string]domain.OrderStatus{
-		"NEW":              domain.OrderStatusNew,
-		"PARTIALLY_FILLED": domain.OrderStatusPartial,
-		"FILLED":           domain.OrderStatusFilled,
-		"CANCELED":         domain.OrderStatusCanceled,
-		"EXPIRED":          domain.OrderStatusCanceled,
-		"REJECTED":         domain.OrderStatusRejected,
-		"BRANDNEW":         domain.OrderStatusUnknown,
+	cases := map[string]exchange.OrderStatus{
+		"NEW":              exchange.OrderStatus(domain.OrderStatusNew),
+		"PARTIALLY_FILLED": exchange.OrderStatus(domain.OrderStatusPartial),
+		"FILLED":           exchange.OrderStatus(domain.OrderStatusFilled),
+		"CANCELED":         exchange.OrderStatus(domain.OrderStatusCanceled),
+		"EXPIRED":          exchange.OrderStatus(domain.OrderStatusCanceled),
+		"REJECTED":         exchange.OrderStatus(domain.OrderStatusRejected),
+		"BRANDNEW":         exchange.OrderStatus(domain.OrderStatusUnknown),
 	}
 	for in, want := range cases {
 		if got := mapStatus(in); got != want {

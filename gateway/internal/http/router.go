@@ -17,12 +17,13 @@ import (
 // Deps bundles the wiring the router needs. Grouping keeps the constructor
 // signature stable as we add handlers in later phases.
 type Deps struct {
-	OptionRepo   *mongostore.OptionRepo
-	AccountRepo  *mongostore.AccountRepo
-	BacktestRepo *mongostore.BacktestRepo
-	OrderRepo    *mongostore.OrderRepo
-	Crypto       *crypto.Service
-	Envelope     *crypto.EnvelopeService
+	OptionRepo       *mongostore.OptionRepo
+	AccountRepo      *mongostore.AccountRepo
+	BacktestRepo     *mongostore.BacktestRepo
+	OrderRepo        *mongostore.OrderRepo
+	ExchangeMetaRepo *mongostore.ExchangeMetaRepo
+	Crypto           *crypto.Service
+	Envelope         *crypto.EnvelopeService
 
 	// Phase 2 additions: timescale read access + quant grpc client.
 	// Both are optional in dev — when nil, the market endpoints
@@ -79,6 +80,15 @@ func NewRouter(d Deps) *echo.Echo {
 	// Strategy endpoints (Phase 4). Mounts /strategies/:id/orders +
 	// /strategies/:id/live + /admin/mainnet/* (admin-gated).
 	handlers.NewStrategyHandler(d.OptionRepo, d.OrderRepo, d.OrderEngine, d.AdminKey).Register(v1)
+
+	// Phase 5: exchange_meta read endpoint + cross-exchange portfolio
+	// summary. Both gracefully 503 when their repos are nil.
+	handlers.NewExchangeMetaHandler(d.ExchangeMetaRepo).Register(v1)
+	var priceProvider handlers.PriceProvider
+	if d.Timescale != nil {
+		priceProvider = handlers.NewTimescalePriceProvider(d.Timescale)
+	}
+	handlers.NewPortfolioHandler(d.AccountRepo, d.Envelope, nil, priceProvider).Register(v1)
 
 	// WS hub: account upstreams (phase 1) + Redis-backed backtest progress
 	// fan-out (phase 3) + Redis-backed strategy order events (phase 4).

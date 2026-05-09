@@ -8,8 +8,8 @@ import { TypeExchange } from "@/data/type";
 
 const EXCHANGES: { key: TypeExchange; label: string; supported: boolean }[] = [
   { key: "binance", label: "Binance", supported: true },
-  { key: "okx", label: "OKX (phase 5)", supported: false },
-  { key: "bybit", label: "Bybit (phase 5)", supported: false },
+  { key: "okx", label: "OKX (passphrase required)", supported: true },
+  { key: "bybit", label: "Bybit", supported: true },
 ];
 
 export default function NewAccountPage() {

@@ -66,6 +66,30 @@ func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
+// LatestClose returns the most recent `close` for the given (exchange,
+// symbol, timeframe). Returns 0 + ErrNoLatestClose when no row exists.
+// Used by Phase 5's portfolio summary to convert per-asset balances to
+// USD via the matching `<asset>USDT` pair (best-effort).
+func (s *Store) LatestClose(ctx context.Context, exchange, symbol, timeframe string) (float64, error) {
+	const q = `
+SELECT close FROM ohlcv
+WHERE exchange = $1 AND symbol = $2 AND timeframe = $3
+ORDER BY ts DESC LIMIT 1`
+	var c float64
+	err := s.pool.QueryRow(ctx, q, exchange, symbol, timeframe).Scan(&c)
+	if err != nil {
+		// pgx returns its own ErrNoRows; surface a stable sentinel for callers.
+		if err.Error() == "no rows in result set" {
+			return 0, ErrNoLatestClose
+		}
+		return 0, err
+	}
+	return c, nil
+}
+
+// ErrNoLatestClose is returned by LatestClose when no row matches.
+var ErrNoLatestClose = errors.New("timescale: no close price available")
+
 // Query returns OHLCV rows in [start, end) ascending by ts, capped at limit.
 //
 // We accept the timeframe as a string and let the SQL filter on it directly.

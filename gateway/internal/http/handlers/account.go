@@ -10,6 +10,8 @@ import (
 	"github.com/finance_next/gateway/internal/domain"
 	"github.com/finance_next/gateway/internal/exchange"
 	"github.com/finance_next/gateway/internal/exchange/binance"
+	"github.com/finance_next/gateway/internal/exchange/bybit"
+	"github.com/finance_next/gateway/internal/exchange/okx"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
@@ -20,15 +22,18 @@ import (
 // binance.NewClient (etc., when more venues land).
 type ClientFactory func(exch domain.Exchange, apiKey, secretKey, passphrase string) (exchange.ReadOnlyClient, error)
 
-// DefaultClientFactory builds production exchange clients. Phase 1 only
-// supports Binance; the other branches return a clear error so unsupported
-// venues fail loudly at runtime rather than silently no-op.
-func DefaultClientFactory(exch domain.Exchange, apiKey, secretKey, _ string) (exchange.ReadOnlyClient, error) {
+// DefaultClientFactory builds production exchange read-only clients.
+// Phase 5 adds OKX and Bybit. AShare remains a phase 7+ placeholder.
+func DefaultClientFactory(exch domain.Exchange, apiKey, secretKey, passphrase string) (exchange.ReadOnlyClient, error) {
 	switch exch {
 	case domain.ExchangeBinance:
 		return binance.NewClient(apiKey, secretKey), nil
-	case domain.ExchangeOKX, domain.ExchangeBybit, domain.ExchangeAShare:
-		return nil, fmt.Errorf("exchange %q not supported in phase 1", exch)
+	case domain.ExchangeOKX:
+		return okx.NewReadOnly(apiKey, secretKey, passphrase)
+	case domain.ExchangeBybit:
+		return bybit.NewReadOnly(apiKey, secretKey), nil
+	case domain.ExchangeAShare:
+		return nil, fmt.Errorf("exchange %q not supported until phase 7", exch)
 	default:
 		return nil, fmt.Errorf("unknown exchange %q", exch)
 	}

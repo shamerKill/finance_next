@@ -17,7 +17,9 @@ import (
 	"github.com/finance_next/gateway/internal/config"
 	"github.com/finance_next/gateway/internal/crypto"
 	gwhttp "github.com/finance_next/gateway/internal/http"
+	"github.com/finance_next/gateway/internal/quantclient"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
+	tsstore "github.com/finance_next/gateway/internal/store/timescale"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
@@ -72,11 +74,37 @@ func main() {
 
 	envelope := crypto.NewEnvelope(cryptoSvc)
 
+	// ---- Phase 2 wiring: Timescale pool + quant gRPC client (best-effort) ----
+	var tsStore *tsstore.Store
+	var tsPool interface{ Close() }
+	if cfg.TimescaleDSN != "" {
+		pool, err := tsstore.Connect(rootCtx, cfg.TimescaleDSN)
+		if err != nil {
+			// Non-fatal: log + continue. Market endpoints will return 503.
+			logger.Warn("timescale connect failed; market endpoints disabled", "err", err)
+		} else {
+			tsStore = tsstore.New(pool)
+			tsPool = pool
+			logger.Info("timescale connected")
+		}
+	}
+
+	var quantCli quantclient.Client
+	if cfg.QuantGRPCAddr != "" {
+		// Lazy: don't block startup on the quant worker being up. The first
+		// admin call will dial.
+		quantCli = quantclient.NewLazy(cfg.QuantGRPCAddr)
+		logger.Info("quant grpc client configured (lazy)", "addr", cfg.QuantGRPCAddr)
+	}
+
 	e := gwhttp.NewRouter(gwhttp.Deps{
 		OptionRepo:  optRepo,
 		AccountRepo: acctRepo,
 		Crypto:      cryptoSvc,
 		Envelope:    envelope,
+		Timescale:   tsStore,
+		Quant:       quantCli,
+		AdminKey:    cfg.AdminKey,
 	})
 
 	addr := ":" + cfg.Port
@@ -102,6 +130,14 @@ func main() {
 	defer shutdownCancel()
 	if err := e.Shutdown(shutdownCtx); err != nil {
 		logger.Error("echo shutdown error", "err", err)
+	}
+	if quantCli != nil {
+		if err := quantCli.Close(); err != nil {
+			logger.Error("quant grpc close error", "err", err)
+		}
+	}
+	if tsPool != nil {
+		tsPool.Close()
 	}
 	if err := client.Disconnect(shutdownCtx); err != nil {
 		logger.Error("mongo disconnect error", "err", err)

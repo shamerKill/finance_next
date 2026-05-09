@@ -49,20 +49,42 @@ finance_next/
 │   │   ├── api-client.ts             # REST fetch 封装（env 驱动 baseUrl）
 │   │   └── ws-client.ts              # WebSocket 客户端 + useAccountStream hook
 │   ├── next.config.mjs · tailwind.config.ts · tsconfig.json
-└── gateway/
-    ├── go.mod
-    ├── .env.example                  # MONGODB_URI / ENCRYPTION_KEY / PORT
-    ├── cmd/gateway/main.go           # bootstrap：Echo on :3001，graceful shutdown
-    └── internal/
-        ├── config/                   # 加载 env（含 godotenv 本地 .env）
-        ├── crypto/                   # AES-256-GCM + 信封加密（golden vector 测试）
-        ├── domain/                   # Option / Account / DTO 类型
-        ├── exchange/                 # 抽象 ReadOnlyClient + binance/ adapter
-        ├── ws/                       # 单进程 WS hub + Echo /ws handler
-        ├── store/mongo/              # options 与 accounts 集合 CRUD
-        └── http/
-            ├── router.go             # Echo 路由 + middleware
-            └── handlers/             # option.go + account.go
+├── gateway/
+│   ├── go.mod                        # `replace` 拉取 ../shared-proto 为本地模块
+│   ├── Dockerfile                    # 多阶段静态构建（golang:1.25-alpine → alpine）
+│   ├── .env.example                  # MONGODB_URI / ENCRYPTION_KEY / PORT / TIMESCALE_DSN / QUANT_GRPC_ADDR / ADMIN_KEY / REDIS_URL
+│   ├── cmd/gateway/main.go           # bootstrap：Echo on :3001，graceful shutdown
+│   └── internal/
+│       ├── config/                   # 加载 env（含 godotenv 本地 .env）
+│       ├── crypto/                   # AES-256-GCM + 信封加密（golden vector 测试）
+│       ├── domain/                   # Option / Account / DTO 类型
+│       ├── exchange/                 # 抽象 ReadOnlyClient + binance/ adapter
+│       ├── ws/                       # 单进程 WS hub + Echo /ws handler
+│       ├── store/{mongo,timescale}/  # mongo (options/accounts) + timescale (ohlcv 读)
+│       ├── quantclient/              # gRPC client → Python quant worker
+│       └── http/
+│           ├── router.go             # Echo 路由 + middleware
+│           └── handlers/             # option.go + account.go + market.go
+├── quant/                            # Phase 2 Python 量化 worker（uv 管理）
+│   ├── pyproject.toml                # uv-managed deps (fastapi/grpcio/ccxt/akshare/asyncpg/arq)
+│   ├── Dockerfile                    # uv:python3.12-bookworm-slim
+│   ├── src/quant/
+│   │   ├── main.py                   # FastAPI healthz + grpc.aio bootstrap
+│   │   ├── grpc_server.py            # QuantServicer (impls quant.v1.Quant)
+│   │   ├── ratelimit.py              # async TokenBucket + 每交易所 registry
+│   │   ├── data/{ccxt_source,akshare_source,timescale,symbols}.py
+│   │   ├── workers/{ingest,settings}.py  # Arq 任务 + WorkerSettings
+│   │   └── events/redis_stream.py    # OhlcvIngested 发布
+│   └── tests/                        # 离线运行：respx + fakeredis + 模块替换
+├── shared-proto/                     # protobuf 单一来源（Go + Python 生成代码已检入）
+│   ├── quantpb/v1/quant.proto        # gRPC 服务（IngestNow Phase 2 落地）
+│   ├── eventspb/v1/events.proto      # Redis Stream payload schema
+│   ├── buf.yaml + buf.gen.yaml + gen-python.sh  # Go 用 buf；Python 用 grpc_tools.protoc
+│   └── gen/{go,python}/              # 检入的生成代码
+├── infra/
+│   ├── docker-compose.yml            # mongo / redis / timescale / gateway / quant
+│   └── timescale/{001_init,002_hypertables}.sql  # 扩展 + 表 + 连续聚合
+└── go.work                           # 仓库根 Go workspace（gateway + shared-proto）
 ```
 
 ## 4. 常用命令
@@ -81,6 +103,22 @@ go run ./cmd/gateway        # 开发（读取 gateway/.env 或仓库根 .env）
 go build ./cmd/gateway      # 编译
 go test ./...               # 单测（含 crypto golden vector）
 go vet ./...                # 静态检查
+
+# Python quant worker（Phase 2）
+cd quant
+uv sync --extra dev                                  # 安装依赖
+uv run python -m quant.main                          # 启 FastAPI :8000 + gRPC :50051
+uv run arq quant.workers.settings.WorkerSettings     # Arq 后台任务（独立进程）
+uv run pytest -q                                     # 单测（离线 mock）
+uv run ruff check .                                  # lint
+
+# protobuf 代码生成（修改 shared-proto/*.proto 后跑）
+cd shared-proto
+buf generate                                         # Go 输出到 gen/go/
+./gen-python.sh                                      # Python 输出到 gen/python/
+
+# 整套 docker 栈
+docker compose -f infra/docker-compose.yml up --build
 ```
 
 ## 5. 数据模型与 API
@@ -112,6 +150,12 @@ go vet ./...                # 静态检查
 | GET    | `/api/v1/accounts/:id/positions`    | 调 Binance USDM `/fapi/v2/positionRisk`            |
 | GET    | `/ws`                               | 浏览器 WS：`subscribe`/`unsubscribe`/`ping`，扇出 Binance user-data |
 
+**Market 资源**（`gateway/internal/http/handlers/market.go`，phase 2）
+| 方法     | 路径                       | 说明                                                       |
+| ------ | ------------------------ | -------------------------------------------------------- |
+| GET    | `/api/v1/market/ohlcv`   | 直读 Timescale；query：exchange/symbol/timeframe/start/end；上限 100k 根 |
+| POST   | `/api/v1/market/ingest`  | 调 Quant gRPC 触发 OHLCV 回填；header `X-Admin-Key` 鉴权；`ADMIN_KEY` 未配置时 404 |
+
 **Option 字段**（以 `CreateOptionDto` 为准，`client/data/type.d.ts` 与之对应）
 - `name`（3-8 字符，唯一）
 - `positionLevel`（杠杆，1-125）
@@ -141,6 +185,14 @@ component，直接在服务端调用 `getOptions()`。`option/page.tsx` 仅有�
   - `ENCRYPTION_KEY` — 32 字节十六进制（64 字符）。生成：
     `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
   - `PORT` — HTTP 监听端口（默认 3001）
+  - `TIMESCALE_DSN` — `postgres://app:app@host:5432/finance`；为空时
+    `/api/v1/market/ohlcv` 返回 503
+  - `QUANT_GRPC_ADDR` — Python quant worker 的 gRPC 地址（如
+    `quant:50051`）；为空时 `/api/v1/market/ingest` 返回 503
+  - `ADMIN_KEY` — `/api/v1/market/ingest` 的静态鉴权 key；**为空时整个端点返回
+    404**（藏起来）；非空时调用方需带 `X-Admin-Key` header
+  - `REDIS_URL` — `redis://[:pwd@]host:port[/db]`；预留给 Phase 4 订单引擎和
+    Phase 6 事件流
 - **凭证加密**：`gateway/internal/crypto/crypto.go` 提供 AES-256-GCM 封装；
   `option` handler 在 create / update 时透明加密 `userApiKey` 与
   `userSecretKey`，密文格式 `base64(iv).base64(tag).base64(ciphertext)`，
@@ -166,6 +218,13 @@ component，直接在服务端调用 `getOptions()`。`option/page.tsx` 仅有�
 - [x] **Phase 0**：迁移到 Go gateway（Echo + mongo-driver v2）；
       crypto byte-compat golden vector；删除 `server/`；
       `client/data/api-client.ts` 替代 mock 假切换
+- [x] **Phase 2**：Python quant worker + 行情入库
+      - `shared-proto/` + buf 代码生成（Go + Python 检入 `gen/`）
+      - `infra/docker-compose.yml` + TimescaleDB init SQL（hypertables + 5m/1h 连续聚合）
+      - `quant/` Python 服务（FastAPI + grpc.aio + Arq + asyncpg）
+      - ccxt + AKShare 入库 + 每交易所 token-bucket 速率控制
+      - gateway `/api/v1/market/ohlcv` 直读 Timescale；admin `/market/ingest` 调 Quant.IngestNow
+      - UI `(dashboard)/markets` + lightweight-charts
 - [x] **Phase 1**：Binance 只读账户视图
       - `accounts` 集合 + 信封加密（per-account DEK + master KEK）
       - `gateway/internal/exchange/binance/` 只读 adapter（spot account / 余额 / USDM positionRisk）
@@ -174,5 +233,5 @@ component，直接在服务端调用 `getOptions()`。`option/page.tsx` 仅有�
       - `client/app/(dashboard)/accounts/` 列表/创建/详情；`ws-client.ts` 指数退避重连
 - [ ] 期权配置表单接通 POST 提交
 - [ ] `client/app/list/` 实现
-- [ ] **Phase 2+**：Python quant worker / 行情入库 / 回测 / 实盘 / AI 优化（详见
+- [ ] **Phase 3+**：回测引擎 / 实盘执行 / 多交易所 / AI 优化（详见
       `/root/.claude/plans/vectorized-waddling-hoare.md`）

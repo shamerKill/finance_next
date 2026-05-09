@@ -1,0 +1,40 @@
+// Copyright finance_next.
+//
+// Schemas for Redis Stream payloads. Redis itself is untyped (XADD takes
+// arbitrary k/v field maps), but pinning a proto schema gives us a single
+// place to evolve the wire format and lets producers/consumers serialize
+// via the standard protobuf binary encoding (or JSON via protojson when
+// human-debuggability matters more than throughput).
+
+syntax = "proto3";
+
+package eventspb.v1;
+
+option go_package = "github.com/finance_next/shared-proto/gen/go/eventspb/v1;eventsv1";
+
+import "google/protobuf/timestamp.proto";
+
+// OhlcvIngested is emitted by the Python quant worker after a chunk of
+// OHLCV rows has been persisted to TimescaleDB. Consumers (e.g. live
+// strategy runtime in Phase 4) use this to know fresh data is available.
+message OhlcvIngested {
+  string exchange = 1;
+  string symbol = 2;
+  string timeframe = 3;
+  google.protobuf.Timestamp from_ts = 4;
+  google.protobuf.Timestamp to_ts = 5;
+  int64 bars_ingested = 6;
+  // Opaque ingest run id (matches IngestAck.run_id when triggered by RPC).
+  string run_id = 7;
+}
+
+// StrategyUpserted is emitted by the Go gateway whenever a strategy is
+// created or updated (including via approved AI recommendations).
+// Phase 6 wires this; defined here so the wire format is locked in early.
+message StrategyUpserted {
+  string strategy_id = 1;
+  // Monotonic version; see Mongo `strategies.currentVersion`.
+  int64 version = 2;
+  // Strategy kind discriminator (e.g. "grid_dca").
+  string kind = 3;
+}

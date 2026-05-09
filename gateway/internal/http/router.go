@@ -4,7 +4,9 @@ package http
 import (
 	"github.com/finance_next/gateway/internal/crypto"
 	"github.com/finance_next/gateway/internal/http/handlers"
+	"github.com/finance_next/gateway/internal/quantclient"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
+	"github.com/finance_next/gateway/internal/store/timescale"
 	"github.com/finance_next/gateway/internal/ws"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -17,6 +19,13 @@ type Deps struct {
 	AccountRepo *mongostore.AccountRepo
 	Crypto      *crypto.Service
 	Envelope    *crypto.EnvelopeService
+
+	// Phase 2 additions: timescale read access + quant grpc client.
+	// Both are optional in dev — when nil, the market endpoints
+	// respond with 503 (or 404 for the admin-gated ingest path).
+	Timescale *timescale.Store
+	Quant     quantclient.Client
+	AdminKey  string
 }
 
 // NewRouter wires up middleware, the /api/v1 group, /ws, and resource handlers.
@@ -45,6 +54,10 @@ func NewRouter(d Deps) *echo.Echo {
 	handlers.NewOptionHandler(d.OptionRepo, d.Crypto).Register(v1)
 	accountHandler := handlers.NewAccountHandler(d.AccountRepo, d.Envelope, nil)
 	accountHandler.Register(v1)
+
+	// Market endpoints (Phase 2). Mount unconditionally; the handler itself
+	// returns 503 when its dependencies aren't configured.
+	handlers.NewMarketHandler(d.Timescale, d.Quant, d.AdminKey).Register(v1)
 
 	hub := ws.NewHub(accountHandler.UpstreamFactoryFor(), nil)
 	wsHandler := ws.NewHandler(hub, nil)

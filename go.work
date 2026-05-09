@@ -1,0 +1,12 @@
+// Repo-wide Go workspace: composes the gateway service and the shared-proto
+// generated stubs into a single module graph for local development and CI.
+// Both modules ship independently in production (Dockerfiles build each from
+// its own context); the workspace just removes the need for vendoring or a
+// `replace` directive in go.mod when iterating locally.
+
+go 1.25.0
+
+use (
+	./gateway
+	./shared-proto
+)

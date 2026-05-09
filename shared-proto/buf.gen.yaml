@@ -1,0 +1,22 @@
+# Buf code generation config.
+#
+# We generate Go and Python stubs into committed `gen/{go,python}` so that
+# downstream services don't need a protoc toolchain to build. Regenerate via
+# `cd shared-proto && buf generate` whenever .proto files change.
+#
+# Plugins are resolved as local binaries. Required toolchain (PATH-resolved):
+#   - protoc-gen-go        (go install google.golang.org/protobuf/cmd/protoc-gen-go@latest)
+#   - protoc-gen-go-grpc   (go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest)
+#   - python3 -m grpc_tools.protoc  (pip install grpcio-tools)
+# Python generation is run separately via the `gen-python.sh` helper because
+# buf does not bundle a Python plugin.
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: gen/go
+    opt:
+      - paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: gen/go
+    opt:
+      - paths=source_relative

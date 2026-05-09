@@ -1,0 +1,28 @@
+# Project-root ignores. Subprojects keep their own .gitignore for tooling
+# specifics (gateway/.gitignore covers the Go build artefact, etc.).
+
+# go.work.sum is environment-specific; the workspace itself is committed.
+go.work.sum
+
+# Python: virtualenvs, caches, build artefacts.
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/*.egg-info/
+quant/.venv/
+quant/dist/
+quant/build/
+
+# Compiled bytecode anywhere in the tree.
+*.pyc
+*.pyo
+
+# Per-developer local overrides.
+.env
+.env.local
+.env.*.local
+
+# Editor scratch.
+.vscode/
+.idea/
+*.swp

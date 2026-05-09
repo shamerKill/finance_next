@@ -1,0 +1,120 @@
+# Phase 2 dev orchestration.
+#
+# Brings up the full local stack: Mongo + Redis + TimescaleDB + Go gateway +
+# Python quant. Run from the repo root:
+#
+#   docker compose -f infra/docker-compose.yml up --build
+#
+# The compose file reads MONGODB_URI / ENCRYPTION_KEY from a project-root
+# `.env` file (NOT committed). REDIS_URL and TIMESCALE_DSN are pinned to
+# the in-network service names — they're dev-only defaults, not secrets.
+#
+# Quant's gRPC port (50051) is intentionally NOT exposed; the gateway calls
+# it over the docker network. The FastAPI healthcheck is exposed on 8000
+# for debugging.
+
+# ---------------------------------------------------------------------------
+# Yaml anchors are intentionally NOT used here — explicitness > DRY for ops.
+# ---------------------------------------------------------------------------
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: fn_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: fn_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  timescale:
+    image: timescale/timescaledb:latest-pg16
+    container_name: fn_timescale
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: finance
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      # Init scripts run alphabetically on first boot only.
+      - ./timescale:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d finance"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: gateway/Dockerfile
+    container_name: fn_gateway
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      timescale:
+        condition: service_healthy
+    environment:
+      # Required: pulled from project-root .env via compose's env_file.
+      MONGODB_URI: ${MONGODB_URI}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      # Dev defaults; safe to commit because they're container-local.
+      REDIS_URL: redis://redis:6379/0
+      TIMESCALE_DSN: postgres://app:app@timescale:5432/finance
+      QUANT_GRPC_ADDR: quant:50051
+      # Admin endpoint is gated by a static header. Leave unset to disable.
+      ADMIN_KEY: ${ADMIN_KEY:-}
+      PORT: "3001"
+    ports:
+      - "3001:3001"
+
+  quant:
+    build:
+      context: ..
+      dockerfile: quant/Dockerfile
+    container_name: fn_quant
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      timescale:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      TIMESCALE_DSN: postgres://app:app@timescale:5432/finance
+      GRPC_PORT: "50051"
+      HTTP_PORT: "8000"
+    # Only the FastAPI debug port is published; gRPC stays internal.
+    ports:
+      - "8000:8000"
+
+volumes:
+  mongo_data:
+  redis_data:
+  timescale_data:

@@ -1,0 +1,150 @@
+// Copyright finance_next.
+//
+// Quant service contract between the Go gateway and the Python quant worker.
+// This file is the SINGLE source of truth for the inter-service RPCs; both
+// languages consume generated stubs (committed under shared-proto/gen/).
+//
+// Phase 2 fully wires up `IngestNow`. Other RPCs are placeholders defined
+// here with minimal field-sets so later phases (3 backtest, 6 optimization,
+// 4 signal evaluation) can flesh out request/response shapes without breaking
+// wire compatibility — adding fields to a `message` is a forwards-compatible
+// change in protobuf as long as field numbers are stable.
+
+syntax = "proto3";
+
+package quantpb.v1;
+
+option go_package = "github.com/finance_next/shared-proto/gen/go/quantpb/v1;quantv1";
+
+import "google/protobuf/timestamp.proto";
+
+// Quant is the gRPC contract exposed by the Python worker.
+service Quant {
+  // Phase 3: launch a vectorbt backtest run.
+  rpc RunBacktest(BacktestRequest) returns (BacktestHandle);
+
+  // Phase 3: poll a backtest run's progress / result summary.
+  rpc GetBacktestStatus(GetBacktestStatusRequest) returns (BacktestStatus);
+
+  // Phase 6: launch an Optuna study.
+  rpc StartOptimization(OptimizationRequest) returns (StudyHandle);
+
+  // Phase 2: synchronously trigger an OHLCV ingest range.
+  // Implementation chunks the request via ccxt `since`+`limit` and upserts
+  // into TimescaleDB's `ohlcv` hypertable using ON CONFLICT DO NOTHING.
+  rpc IngestNow(IngestRequest) returns (IngestAck);
+
+  // Phase 4: ask Python to evaluate a strategy signal for a given bar.
+  rpc EvaluateSignal(EvaluateRequest) returns (SignalDecision);
+}
+
+// ---- Phase 2 (IngestNow) ----------------------------------------------------
+
+message IngestRequest {
+  // Exchange identifier. Phase 2 supports: "binance", "okx", "bybit",
+  // "ashare" (AKShare).
+  string exchange = 1;
+  // Trading symbol in exchange-native form, e.g. "BTCUSDT" for Binance USDT-M.
+  // For ashare, this is a 6-digit ticker like "600519".
+  string symbol = 2;
+  // ccxt-style timeframe string: "1m" | "5m" | "1h" | "1d".
+  string timeframe = 3;
+  // Inclusive start timestamp of the requested ingest window.
+  google.protobuf.Timestamp start = 4;
+  // Exclusive end timestamp.
+  google.protobuf.Timestamp end = 5;
+}
+
+message IngestAck {
+  // Opaque server-assigned identifier for this ingest run; surface in logs.
+  string run_id = 1;
+  // Total number of OHLCV rows actually written (excludes ON CONFLICT skips).
+  int64 bars_ingested = 2;
+  // Earliest bar ts actually persisted (may differ from request start when
+  // the exchange has no history that far back).
+  google.protobuf.Timestamp from_ts = 3;
+  // Latest bar ts persisted.
+  google.protobuf.Timestamp to_ts = 4;
+}
+
+// ---- Phase 3 placeholders (RunBacktest / GetBacktestStatus) ----------------
+
+message BacktestRequest {
+  string strategy_id = 1;        // Mongo strategies._id (string form)
+  string exchange = 2;
+  string symbol = 3;
+  string timeframe = 4;
+  google.protobuf.Timestamp start = 5;
+  google.protobuf.Timestamp end = 6;
+  // params is a free-form JSON blob bound to the strategy schema; serialized
+  // here to avoid re-defining every strategy's schema in proto.
+  string params_json = 7;
+}
+
+message BacktestHandle {
+  string run_id = 1;
+}
+
+message GetBacktestStatusRequest {
+  string run_id = 1;
+}
+
+message BacktestStatus {
+  string run_id = 1;
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    PENDING = 1;
+    RUNNING = 2;
+    SUCCEEDED = 3;
+    FAILED = 4;
+  }
+  State state = 2;
+  // 0..1 progress fraction; only meaningful while RUNNING.
+  double progress = 3;
+  // Free-form error message when state == FAILED.
+  string error = 4;
+}
+
+// ---- Phase 6 placeholders (StartOptimization) ------------------------------
+
+message OptimizationRequest {
+  string strategy_id = 1;
+  string exchange = 2;
+  string symbol = 3;
+  string timeframe = 4;
+  google.protobuf.Timestamp start = 5;
+  google.protobuf.Timestamp end = 6;
+  // Optuna study config as JSON: trial budget, search space, pruner config.
+  string study_config_json = 7;
+}
+
+message StudyHandle {
+  string study_id = 1;
+}
+
+// ---- Phase 4 placeholders (EvaluateSignal) ---------------------------------
+
+message EvaluateRequest {
+  string strategy_id = 1;
+  string exchange = 2;
+  string symbol = 3;
+  string timeframe = 4;
+  // Latest bar at which to evaluate (closed bar, no look-ahead).
+  google.protobuf.Timestamp ts = 5;
+}
+
+message SignalDecision {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    HOLD = 1;
+    OPEN_LONG = 2;
+    OPEN_SHORT = 3;
+    CLOSE = 4;
+    ADD_POSITION = 5;
+  }
+  Action action = 1;
+  // Optional sizing hint (fraction of allocated margin or qty).
+  double size = 2;
+  // Free-form rationale (logged for audit, surfaced in UI).
+  string reason = 3;
+}

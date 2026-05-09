@@ -65,6 +65,40 @@ export const getPositions = async (id: string): Promise<TypePosition[]> => {
   return jsonOrThrow<TypePosition[]>(res);
 };
 
+// ---------- Market data (phase 2) ----------
+
+export type TypeOhlcvBar = {
+  exchange: string;
+  symbol: string;
+  timeframe: string;
+  time: string; // RFC3339
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+export const getOhlcv = async (
+  exchange: string,
+  symbol: string,
+  timeframe: string,
+  start: Date,
+  end: Date,
+): Promise<TypeOhlcvBar[]> => {
+  const params = new URLSearchParams({
+    exchange,
+    symbol,
+    timeframe,
+    start: start.toISOString(),
+    end: end.toISOString(),
+  });
+  const res = await fetch(parseUrl(`v1/market/ohlcv?${params.toString()}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeOhlcvBar[]>(res);
+};
+
 // wsUrl returns the gateway's /ws endpoint, derived from the API base URL by
 // swapping http→ws and stripping the /api suffix.
 export function wsUrl(): string {

@@ -1,0 +1,24 @@
+# Buf module config for the finance_next protobuf single-source-of-truth.
+#
+# Conventions follow buf v2: explicit module name + lint/breaking presets.
+# We use STANDARD lint without enum-prefix enforcement (our enums prefer
+# bare values like HOLD/OPEN_LONG which are clearer in code).
+version: v2
+modules:
+  - path: .
+lint:
+  use:
+    - STANDARD
+  except:
+    - ENUM_VALUE_PREFIX
+    - ENUM_ZERO_VALUE_SUFFIX
+    - PACKAGE_VERSION_SUFFIX
+    # The plan fixes the service/message names (Quant, BacktestRequest, etc.)
+    # to match the Inter-service contract spec verbatim. Suppress buf's
+    # auto-naming opinion so generated code matches the plan.
+    - SERVICE_SUFFIX
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+breaking:
+  use:
+    - FILE

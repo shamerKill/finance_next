@@ -34,14 +34,20 @@
 finance_next/
 ├── client/
 │   ├── app/                          # Next App Router
-│   │   ├── page.tsx                  # 首页（导航到 api-list）
+│   │   ├── page.tsx                  # 首页（链接到 dashboard）
 │   │   ├── layout.tsx                # 全局 NextUI Provider + 字体
-│   │   ├── option/page.tsx           # 期权策略表单页
-│   │   ├── api-list/                 # 策略列表（async server component）
+│   │   ├── (dashboard)/              # 路由组：共享侧栏 layout
+│   │   │   ├── layout.tsx
+│   │   │   ├── accounts/page.tsx     # 账户列表
+│   │   │   ├── accounts/new/page.tsx # 添加账户表单
+│   │   │   ├── accounts/[id]/        # 账户详情 + 实时事件流
+│   │   │   ├── api-list/             # 策略列表（async server component）
+│   │   │   └── option/page.tsx       # 期权策略表单页
 │   │   └── list/                     # 占位，功能未实现
 │   ├── data/
-│   │   ├── type.d.ts                 # TypeOption 等共享类型
-│   │   └── api-client.ts             # fetch 封装（env 驱动 baseUrl）
+│   │   ├── type.d.ts                 # TypeOption / TypeAccount 等共享类型
+│   │   ├── api-client.ts             # REST fetch 封装（env 驱动 baseUrl）
+│   │   └── ws-client.ts              # WebSocket 客户端 + useAccountStream hook
 │   ├── next.config.mjs · tailwind.config.ts · tsconfig.json
 └── gateway/
     ├── go.mod
@@ -49,12 +55,14 @@ finance_next/
     ├── cmd/gateway/main.go           # bootstrap：Echo on :3001，graceful shutdown
     └── internal/
         ├── config/                   # 加载 env（含 godotenv 本地 .env）
-        ├── crypto/                   # AES-256-GCM（含 golden vector 测试）
-        ├── domain/                   # Option / DTO 类型
-        ├── store/mongo/option_repo.go# options 集合 CRUD
+        ├── crypto/                   # AES-256-GCM + 信封加密（golden vector 测试）
+        ├── domain/                   # Option / Account / DTO 类型
+        ├── exchange/                 # 抽象 ReadOnlyClient + binance/ adapter
+        ├── ws/                       # 单进程 WS hub + Echo /ws handler
+        ├── store/mongo/              # options 与 accounts 集合 CRUD
         └── http/
             ├── router.go             # Echo 路由 + middleware
-            └── handlers/option.go    # /api/v1/option 处理器
+            └── handlers/             # option.go + account.go
 ```
 
 ## 4. 常用命令
@@ -92,6 +100,17 @@ go vet ./...                # 静态检查
 | POST   | `/api/v1/option`    | 创建，返回 `{ message, value: { name } }` |
 | PUT    | `/api/v1/option/:id`| 更新                                |
 | DELETE | `/api/v1/option/:id`| 删除                                |
+
+**Account 资源**（`gateway/internal/http/handlers/account.go`，phase 1）
+| 方法     | 路径                                  | 说明                                                |
+| ------ | ----------------------------------- | ------------------------------------------------- |
+| GET    | `/api/v1/accounts`                  | 当前 user 列表（phase 7 前 userId="default"）            |
+| POST   | `/api/v1/accounts`                  | 创建：探权限 → 拒 `canWithdraw` → 信封加密入库                  |
+| GET    | `/api/v1/accounts/:id`              | 详情（不含密文）                                          |
+| DELETE | `/api/v1/accounts/:id`              | 删除                                                |
+| GET    | `/api/v1/accounts/:id/balances`     | 调 Binance 实时余额                                    |
+| GET    | `/api/v1/accounts/:id/positions`    | 调 Binance USDM `/fapi/v2/positionRisk`            |
+| GET    | `/ws`                               | 浏览器 WS：`subscribe`/`unsubscribe`/`ping`，扇出 Binance user-data |
 
 **Option 字段**（以 `CreateOptionDto` 为准，`client/data/type.d.ts` 与之对应）
 - `name`（3-8 字符，唯一）
@@ -147,9 +166,13 @@ component，直接在服务端调用 `getOptions()`。`option/page.tsx` 仅有�
 - [x] **Phase 0**：迁移到 Go gateway（Echo + mongo-driver v2）；
       crypto byte-compat golden vector；删除 `server/`；
       `client/data/api-client.ts` 替代 mock 假切换
+- [x] **Phase 1**：Binance 只读账户视图
+      - `accounts` 集合 + 信封加密（per-account DEK + master KEK）
+      - `gateway/internal/exchange/binance/` 只读 adapter（spot account / 余额 / USDM positionRisk）
+      - 创建账户时 `ProbePermissions` 探权限，`canWithdraw=true` 直接 4xx 拒绝
+      - `gateway/internal/ws/` 单进程 hub + `/ws` Echo 端点（phase 7 多副本时再分布式化）
+      - `client/app/(dashboard)/accounts/` 列表/创建/详情；`ws-client.ts` 指数退避重连
 - [ ] 期权配置表单接通 POST 提交
 - [ ] `client/app/list/` 实现
-- [ ] **Phase 1**：Binance 只读账户视图（accounts 集合 + 信封加密 +
-      user-data WS 扇出）
 - [ ] **Phase 2+**：Python quant worker / 行情入库 / 回测 / 实盘 / AI 优化（详见
       `/root/.claude/plans/vectorized-waddling-hoare.md`）

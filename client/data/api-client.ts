@@ -1,12 +1,22 @@
-import { TypeOption } from "./type";
+import { TypeAccount, TypeBalance, TypeCreateAccount, TypeOption, TypePosition } from "./type";
 
 // Base URL is env-driven so the client can talk to the Go gateway in dev
 // (default :3001) or to a deployed gateway via NEXT_PUBLIC_API_URL in prod.
 const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
 const parseUrl = (path: string) => baseUrl + `/${path}`.replace("//", "/");
 
+async function jsonOrThrow<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`HTTP ${res.status}: ${text}`);
+  }
+  return (await res.json()) as T;
+}
+
+// ---------- Options (legacy strategy resource) ----------
+
 export const getOptions = async () => {
-  const res = await fetch(parseUrl("v1/option"));
+  const res = await fetch(parseUrl("v1/option"), { cache: "no-store" });
   return await res.json();
 };
 
@@ -18,3 +28,49 @@ export const createOption = async (option: TypeOption) => {
   });
   return await res.json();
 };
+
+// ---------- Accounts (phase 1) ----------
+
+export const listAccounts = async (): Promise<TypeAccount[]> => {
+  const res = await fetch(parseUrl("v1/accounts"), { cache: "no-store" });
+  return jsonOrThrow<TypeAccount[]>(res);
+};
+
+export const getAccount = async (id: string): Promise<TypeAccount> => {
+  const res = await fetch(parseUrl(`v1/accounts/${id}`), { cache: "no-store" });
+  return jsonOrThrow<TypeAccount>(res);
+};
+
+export const createAccount = async (input: TypeCreateAccount): Promise<TypeAccount> => {
+  const res = await fetch(parseUrl("v1/accounts"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return jsonOrThrow<TypeAccount>(res);
+};
+
+export const deleteAccount = async (id: string): Promise<void> => {
+  const res = await fetch(parseUrl(`v1/accounts/${id}`), { method: "DELETE" });
+  await jsonOrThrow<{ success: boolean }>(res);
+};
+
+export const getBalances = async (id: string): Promise<TypeBalance[]> => {
+  const res = await fetch(parseUrl(`v1/accounts/${id}/balances`), { cache: "no-store" });
+  return jsonOrThrow<TypeBalance[]>(res);
+};
+
+export const getPositions = async (id: string): Promise<TypePosition[]> => {
+  const res = await fetch(parseUrl(`v1/accounts/${id}/positions`), { cache: "no-store" });
+  return jsonOrThrow<TypePosition[]>(res);
+};
+
+// wsUrl returns the gateway's /ws endpoint, derived from the API base URL by
+// swapping http→ws and stripping the /api suffix.
+export function wsUrl(): string {
+  const u = new URL(baseUrl);
+  u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+  // Drop "/api" suffix if present; /ws lives at the gateway root.
+  u.pathname = u.pathname.replace(/\/api\/?$/, "") + "/ws";
+  return u.toString();
+}

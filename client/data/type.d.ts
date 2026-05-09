@@ -28,3 +28,53 @@ export type TypeOption = {
   userApiKey: string;
   userSecretKey: string;
 }
+
+// ---------- Account / exchange types (phase 1) ----------
+
+export type TypeExchange = "binance" | "okx" | "bybit" | "a_share";
+
+export type TypePermissions = {
+  canTrade: boolean;
+  canDeposit: boolean;
+  canWithdraw: boolean;
+};
+
+export type TypeAccount = {
+  id: string;
+  userId: string;
+  exchange: TypeExchange;
+  label: string;
+  email: string;
+  permissions: TypePermissions;
+  lastSnapshotAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TypeCreateAccount = {
+  exchange: TypeExchange;
+  label: string;
+  email: string;
+  apiKey: string;
+  secretKey: string;
+  passphrase?: string;
+};
+
+export type TypeBalance = {
+  asset: string;
+  free: string;
+  locked: string;
+  wallet: string;
+};
+
+export type TypePosition = {
+  symbol: string;
+  positionSide: string;
+  positionAmt: string;
+  entryPrice: string;
+  markPrice: string;
+  unrealizedProfit: string;
+  leverage: string;
+  liquidationPrice: string;
+  marginType: string;
+};

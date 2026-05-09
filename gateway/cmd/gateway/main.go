@@ -60,13 +60,24 @@ func main() {
 		os.Exit(1)
 	}
 	db := client.Database(dbName)
-	repo := mongostore.NewOptionRepo(db)
-	if err := repo.EnsureIndexes(connectCtx); err != nil {
+	optRepo := mongostore.NewOptionRepo(db)
+	if err := optRepo.EnsureIndexes(connectCtx); err != nil {
 		// Non-fatal: indexes may already exist or the user may not have privileges.
-		logger.Warn("ensure indexes failed", "err", err)
+		logger.Warn("ensure option indexes failed", "err", err)
+	}
+	acctRepo := mongostore.NewAccountRepo(db)
+	if err := acctRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure account indexes failed", "err", err)
 	}
 
-	e := gwhttp.NewRouter(repo, cryptoSvc)
+	envelope := crypto.NewEnvelope(cryptoSvc)
+
+	e := gwhttp.NewRouter(gwhttp.Deps{
+		OptionRepo:  optRepo,
+		AccountRepo: acctRepo,
+		Crypto:      cryptoSvc,
+		Envelope:    envelope,
+	})
 
 	addr := ":" + cfg.Port
 	srvErr := make(chan error, 1)

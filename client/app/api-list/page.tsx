@@ -1,4 +1,4 @@
-import { getOptions } from '@/data/data';
+import { getOptions } from '@/data/api-client';
 import { FC } from 'react';
 
 export const dynamic = 'force-dynamic';

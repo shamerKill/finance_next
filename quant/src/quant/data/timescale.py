@@ -139,6 +139,41 @@ async def query_range(
 # ---------------------------------------------------------------------------
 
 
+_QUERY_RECENT_SQL = """
+SELECT ts, open, high, low, close, volume
+FROM ohlcv
+WHERE exchange = $1 AND symbol = $2 AND timeframe = $3
+ORDER BY ts DESC
+LIMIT $4
+"""
+
+
+async def query_recent_ohlcv(
+    *,
+    exchange: str,
+    symbol: str,
+    timeframe: str,
+    limit: int = 250,
+) -> Any:
+    """Return the most recent ``limit`` OHLCV bars as a pandas DataFrame.
+
+    Used by the Phase 4 strategy runtime to score signals against the
+    latest bar. We ORDER BY ts DESC + LIMIT so the index path is
+    cheap, then reverse to ascending in pandas.
+    """
+    import pandas as pd
+
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(_QUERY_RECENT_SQL, exchange, symbol, timeframe, limit)
+    if not rows:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    df = pd.DataFrame([dict(r) for r in rows])
+    df = df.iloc[::-1].reset_index(drop=True)
+    df = df.set_index(pd.DatetimeIndex(df["ts"], name="ts"))
+    return df[["open", "high", "low", "close", "volume"]]
+
+
 async def fetch_ohlcv(
     exchange: str,
     symbol: str,

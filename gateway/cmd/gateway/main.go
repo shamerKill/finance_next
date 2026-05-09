@@ -17,6 +17,7 @@ import (
 	"github.com/finance_next/gateway/internal/config"
 	"github.com/finance_next/gateway/internal/crypto"
 	gwhttp "github.com/finance_next/gateway/internal/http"
+	"github.com/finance_next/gateway/internal/orderengine"
 	"github.com/finance_next/gateway/internal/quantclient"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	tsstore "github.com/finance_next/gateway/internal/store/timescale"
@@ -76,6 +77,10 @@ func main() {
 	if err := bktRepo.EnsureIndexes(connectCtx); err != nil {
 		logger.Warn("ensure backtest indexes failed", "err", err)
 	}
+	orderRepo := mongostore.NewOrderRepo(db)
+	if err := orderRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure order indexes failed", "err", err)
+	}
 
 	envelope := crypto.NewEnvelope(cryptoSvc)
 
@@ -114,16 +119,52 @@ func main() {
 		}
 	}
 
+	// ---- Phase 4 wiring: order engine + reconcile loop --------------------
+	// The engine is started only when Redis is configured (its job queue is
+	// the Redis stream). Otherwise we skip — the strategy endpoints will
+	// 503 cleanly. Mainnet remains gated even when env enabled until an
+	// admin POSTs /admin/mainnet/confirm with a valid token.
+	mainnetEnvEnabled := os.Getenv("MAINNET_TRADING_ENABLED") == "true"
+	gate := orderengine.NewTokenStore(mainnetEnvEnabled, logger)
+	if mainnetEnvEnabled {
+		logger.Warn("MAINNET_TRADING_ENABLED=true — mainnet allowed once an admin confirms a token")
+	} else {
+		logger.Info("mainnet trading disabled (set MAINNET_TRADING_ENABLED=true to opt in; testnet is always available)")
+	}
+
+	var orderEngine *orderengine.Engine
+	if redisClient != nil {
+		orderEngine = orderengine.New(orderengine.Deps{
+			Redis:       redisClient,
+			OrderRepo:   orderRepo,
+			OptionRepo:  optRepo,
+			AccountRepo: acctRepo,
+			Envelope:    envelope,
+			Gate:        gate,
+			Log:         logger,
+		})
+		go func() {
+			if err := orderEngine.Start(rootCtx); err != nil && !errors.Is(err, context.Canceled) {
+				logger.Error("order engine stopped", "err", err)
+			}
+		}()
+		logger.Info("order engine started", "workers", 4, "stream", orderengine.CommandSubmitStream)
+	} else {
+		logger.Info("order engine disabled (no REDIS_URL)")
+	}
+
 	e := gwhttp.NewRouter(gwhttp.Deps{
 		OptionRepo:   optRepo,
 		AccountRepo:  acctRepo,
 		BacktestRepo: bktRepo,
+		OrderRepo:    orderRepo,
 		Crypto:       cryptoSvc,
 		Envelope:     envelope,
 		Timescale:    tsStore,
 		Quant:        quantCli,
 		AdminKey:     cfg.AdminKey,
 		Redis:        redisClient,
+		OrderEngine:  orderEngine,
 	})
 
 	addr := ":" + cfg.Port

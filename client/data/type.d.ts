@@ -27,7 +27,88 @@ export type TypeOption = {
   userEmail: string;
   userApiKey: string;
   userSecretKey: string;
+  // Phase 4 additions. Both optional so legacy docs validate. The
+  // gateway treats missing `live` as `enabled=false`; missing `risk`
+  // causes order submissions to be REJECTED — there are no silent
+  // defaults.
+  id?: string;
+  risk?: TypeRiskCaps;
+  live?: TypeLiveConfig;
 }
+
+// Phase 4 — strategy-level risk caps. All three fields are mandatory at
+// runtime; the gateway refuses to size orders when any is zero/missing.
+export type TypeRiskCaps = {
+  maxPositionUsd: number;
+  maxLeverage: number;
+  dailyLossCapUsd: number;
+};
+
+// Phase 4 — per-strategy live execution toggle. `mode="testnet"` is the
+// default; switching to `mainnet` requires the admin mainnet gate to be
+// open server-side.
+export type TypeLiveMode = "testnet" | "mainnet";
+export type TypeLiveConfig = {
+  enabled: boolean;
+  mode: TypeLiveMode;
+  accountId?: string;
+  startedAt?: string | null;
+};
+
+// Phase 4 — order log row. Wire shape matches gateway/internal/domain/order.go.
+export type TypeOrderStatus =
+  | "new"
+  | "partial"
+  | "filled"
+  | "canceled"
+  | "rejected"
+  | "unknown";
+export type TypeOrderSide = "BUY" | "SELL";
+export type TypeOrderType = "MARKET" | "LIMIT";
+
+export type TypeOrderLog = {
+  id: string;
+  clientOrderId: string;
+  exchangeOrderId?: string;
+  strategyId: string;
+  accountId: string;
+  symbol: string;
+  side: TypeOrderSide;
+  type: TypeOrderType;
+  qty: number;
+  price?: number;
+  filled: number;
+  avgFillPrice: number;
+  status: TypeOrderStatus;
+  mode: TypeLiveMode;
+  realisedPnlUsd: number;
+  submittedAt: string;
+  lastEventAt: string;
+};
+
+export type TypeSetLive = {
+  enabled?: boolean;
+  accountId?: string;
+  mode?: TypeLiveMode;
+};
+
+export type TypeSubmitOrder = {
+  accountId: string;
+  symbol: string;
+  side: TypeOrderSide;
+  type: TypeOrderType;
+  qty: number;
+  price?: number;
+  markPrice?: number;
+  idempotencyKey?: string;
+};
+
+export type TypeMainnetStatus = {
+  envEnabled: boolean;
+  mainnetAllowed: boolean;
+  confirmExpiresAt?: string;
+  pendingTokenCount: number;
+};
 
 // ---------- Account / exchange types (phase 1) ----------
 

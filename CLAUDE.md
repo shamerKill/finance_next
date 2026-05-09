@@ -55,18 +55,19 @@ finance_next/
 │   ├── go.mod                        # `replace` 拉取 ../shared-proto 为本地模块
 │   ├── Dockerfile                    # 多阶段静态构建（golang:1.25-alpine → alpine）
 │   ├── .env.example                  # MONGODB_URI / ENCRYPTION_KEY / PORT / TIMESCALE_DSN / QUANT_GRPC_ADDR / ADMIN_KEY / REDIS_URL
-│   ├── cmd/gateway/main.go           # bootstrap：Echo on :3001，graceful shutdown
+│   ├── cmd/gateway/main.go           # bootstrap：Echo on :3001，graceful shutdown，启动 orderengine
 │   └── internal/
 │       ├── config/                   # 加载 env（含 godotenv 本地 .env）
 │       ├── crypto/                   # AES-256-GCM + 信封加密（golden vector 测试）
-│       ├── domain/                   # Option / Account / DTO 类型
-│       ├── exchange/                 # 抽象 ReadOnlyClient + binance/ adapter
-│       ├── ws/                       # 单进程 WS hub（topic 模型：account / backtest）+ Redis Streams 消费
-│       ├── store/{mongo,timescale}/  # mongo (options/accounts/backtest_results) + timescale (ohlcv 读 + equity_curve 读)
+│       ├── domain/                   # Option / Account / Order / DTO 类型
+│       ├── exchange/                 # 抽象 ReadOnlyClient + binance/ adapter（client.go 只读 + orders.go 执行）
+│       ├── ws/                       # 单进程 WS hub（topic 模型：account / backtest / strategy）+ Redis Streams 消费
+│       ├── orderengine/              # Phase 4：Redis stream 消费 + 风控闸 + 30s reconcile loop + mainnet token gate
+│       ├── store/{mongo,timescale}/  # mongo (options/accounts/backtest_results/order_log) + timescale (ohlcv 读 + equity_curve 读)
 │       ├── quantclient/              # gRPC client → Python quant worker
 │       └── http/
 │           ├── router.go             # Echo 路由 + middleware
-│           └── handlers/             # option.go + account.go + market.go + backtest.go
+│           └── handlers/             # option.go + account.go + market.go + backtest.go + strategy.go
 ├── quant/                            # Phase 2 Python 量化 worker（uv 管理）
 │   ├── pyproject.toml                # uv-managed deps (fastapi/grpcio/ccxt/akshare/asyncpg/arq)
 │   ├── Dockerfile                    # uv:python3.12-bookworm-slim
@@ -76,6 +77,7 @@ finance_next/
 │   │   ├── ratelimit.py              # async TokenBucket + 每交易所 registry
 │   │   ├── data/{ccxt_source,akshare_source,timescale,symbols,mongo}.py
 │   │   ├── strategies/{base,grid_dca}.py  # Phase 3：抽象策略 + 信号→portfolio 模拟器（带 shift(1) 防 look-ahead）
+│   │   ├── runtime/runtime.py        # Phase 4：长生命周期 asyncio 任务，每分钟扫 live=true 策略并发 command.order.submit
 │   │   ├── workers/{ingest,backtest,settings}.py  # Arq 任务 + WorkerSettings
 │   │   └── events/redis_stream.py    # OhlcvIngested + BacktestProgress/Completed 发布
 │   └── tests/                        # 离线运行：respx + fakeredis + 模块替换
@@ -168,9 +170,20 @@ docker compose -f infra/docker-compose.yml up --build
 | GET    | `/api/v1/backtests/:id/equity`    | 直读 Timescale `equity_curve`，上限 50k 点                                       |
 | GET    | `/api/v1/backtests/:id/trades`    | 直返 head doc 中的 trades 数组                                                   |
 
-WS（phase 3 扩展 topic 模型）：
+**Strategy 资源**（`gateway/internal/http/handlers/strategy.go`，phase 4）
+| 方法     | 路径                                              | 说明                                                                           |
+| ------ | ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| GET    | `/api/v1/strategies/:id/orders`                 | `order_log` 列表（按 strategyId）；`?limit=&before=` 分页                              |
+| POST   | `/api/v1/strategies/:id/live`                   | toggle live；`{enabled, accountId?, mode?}`；切 mainnet 需 gate 已开启                |
+| POST   | `/api/v1/strategies/:id/live/submit-order`      | admin 手动下单（`X-Admin-Key`），写 Redis Stream `command.order.submit`               |
+| POST   | `/api/v1/admin/mainnet/request-token`           | admin token 申请；返回前缀 hint，**完整 token 仅打印到 stderr**（"EMAIL CONFIRMATION REQUIRED"）|
+| POST   | `/api/v1/admin/mainnet/confirm`                 | admin token 确认；body `{token}`；成功后开启 1 小时 mainnet 窗口                            |
+| GET    | `/api/v1/admin/mainnet/status`                  | admin gate 状态查询（envEnabled / mainnetAllowed / pendingTokenCount）                |
+
+WS（phase 3 扩展 topic 模型 + phase 4 增加 strategy）：
 - 现有 `{type:"subscribe", accountId:"..."}` 仍兼容（默认 topic=`account`）。
-- 新格式 `{type:"subscribe", topic:"backtest", id:"<runId>"}`，gateway 订阅 Redis Streams `event.backtest.progress` / `event.backtest.completed`，按 runId 过滤后扇出。
+- `{type:"subscribe", topic:"backtest", id:"<runId>"}` — gateway 订阅 Redis Streams `event.backtest.progress` / `event.backtest.completed`，按 runId 过滤后扇出。
+- `{type:"subscribe", topic:"strategy", id:"<strategyId>"}` — gateway 订阅 Redis Stream `events`（订单事件），按 strategyId 过滤推 `event.order.{filled|rejected|canceled|updated}`。
 
 **Option 字段**（以 `CreateOptionDto` 为准，`client/data/type.d.ts` 与之对应）
 - `name`（3-8 字符，唯一）
@@ -215,6 +228,15 @@ component，直接在服务端调用 `getOptions()`。`option/page.tsx` 仅有�
   - `ARQ_REDIS_URL`（quant 端 Phase 3 新增，可选）— 配置后 gRPC `RunBacktest`
     走 Arq 后台队列；未配置则在 grpc.aio 同进程内 `asyncio.ensure_future` 跑回测
     （单机 dev 友好，生产应启 `arq quant.workers.settings.WorkerSettings`）
+  - `MAINNET_TRADING_ENABLED`（gateway，Phase 4 新增）— 必须为字面量 `true`
+    才允许尝试 Binance mainnet 下单。**默认未设 = 永远只走 testnet**。即使
+    设为 true，仍需 admin 走完 token request → confirm 流程（见 §8 安全说明）。
+  - `QUANT_RUNTIME_DISABLED`（quant 端，Phase 4 新增，可选）— `true` 时
+    `quant.runtime` 长生命周期任务不启动；测试和冷启动时使用。
+  - **测试网默认**：gateway 的 Binance 订单适配器 (`exchange/binance/orders.go`)
+    构造时根据 `Live.Mode` 把 `futures.BaseURL` pin 到
+    `https://testnet.binancefuture.com`（mainnet 需要 env+token gate 同时开
+    启才会 pin 到 `https://fapi.binance.com`）。
 - **凭证加密**：`gateway/internal/crypto/crypto.go` 提供 AES-256-GCM 封装；
   `option` handler 在 create / update 时透明加密 `userApiKey` 与
   `userSecretKey`，密文格式 `base64(iv).base64(tag).base64(ciphertext)`，
@@ -229,6 +251,20 @@ component，直接在服务端调用 `getOptions()`。`option/page.tsx` 仅有�
 - **`option/page.tsx`** 表单尚未接通 POST 提交。
 - **集成测试**：仓库目前缺少端到端 e2e（Phase 0 仅单测覆盖 crypto byte
   兼容性）；建议 Phase 1 起补 supertest-style 黑盒测试。
+- **Mainnet 安全契约**（Phase 4，硬要求）：Binance 真实账户下单需要 **三**
+  道开关全部打开 — (1) 策略 `live.mode == "mainnet"`、(2) env
+  `MAINNET_TRADING_ENABLED=true`、(3) admin 通过 `/admin/mainnet/request-token`
+  → `/admin/mainnet/confirm` 走完 token 流程并在 1 小时窗口内。任何一项缺失，
+  `gateway/internal/exchange/binance/orders.go` 的 `OrderClient.guard()` 直接
+  返回 `ErrMainnetGateDenied`，不会触达交易所。**默认 testnet-only**；测试网
+  端点写死在 `TestnetFuturesREST = https://testnet.binancefuture.com`。
+- **风控闸**（Phase 4，硬要求）：策略 `risk` 三项（`maxPositionUsd` /
+  `maxLeverage` / `dailyLossCapUsd`）任一缺失或 ≤0，`orderengine.processCommand`
+  直接以 `ErrRiskMissing` 拒绝并发 `event.order.rejected`，不会回退到默认值。
+- **token 生成行为**：`/admin/mainnet/request-token` 不在 HTTP 响应中返回
+  完整 token，只返回 8 字符前缀 hint。完整 token 通过日志 stderr 打印（关键字
+  `EMAIL CONFIRMATION REQUIRED`），运维需从日志拷贝后调 `/confirm`。Phase 7
+  会替换为真实邮件发信。
 
 ## 9. 当前进度 / TODO
 
@@ -265,7 +301,26 @@ component，直接在服务端调用 `getOptions()`。`option/page.tsx` 仅有�
         `internal/ws/redis_backtest.go` 消费 Redis Streams 扇出
       - `client/app/(dashboard)/backtests/{page,new,[id]}.tsx`：列表 + 表单 + 详情（lightweight-charts
         equity 曲线 + trade 表 + `useBacktestStream` 实时进度）
+- [x] **Phase 4**：Binance testnet 实盘执行
+      - `gateway/internal/exchange/binance/orders.go`：USDM 下单 / 取消 / `GetOpenOrders` / `GetOrder`；
+        构造时按 `LiveMode` pin BaseURL，**默认 testnet**；mainnet path 受 `MainnetGate.Allowed()` 守门
+      - `gateway/internal/store/mongo/order_repo.go`：`order_log` 集合 + 三索引（unique
+        clientOrderId / strategy_submittedAt / account_status）+ 幂等 Insert
+      - `gateway/internal/orderengine/`：4-worker 池消费 Redis Stream `command.order.submit`；
+        风控闸（`maxPositionUsd` / `maxLeverage` / `dailyLossCapUsd` 都强制必填）；
+        sha256-32hex `clientOrderId`；30 秒 reconcile loop（`ListOpenForAccount` × 交易所 diff，
+        local-but-not-remote → mark unknown → `GetOrder` 终态）；mainnet `TokenStore`
+        （request 10min TTL → confirm 1h 窗口）
+      - WS `redis_strategy.go` + `(kind=strategy, id=strategyId)` topic；订单事件经 Redis
+        Stream `events` → 浏览器
+      - `quant/runtime/runtime.py`：长生命周期 asyncio 任务，每分钟扫 `live.enabled=true` 策略，
+        对最新 OHLCV 跑 `grid_dca.signals()`，新 bar 出 entry/exit 时发 `command.order.submit`，
+        `idempotencyKey="<strat>:<kind>:<symbol>:<bar_ts>"`；`QUANT_RUNTIME_DISABLED=true` 关闭
+      - UI `client/app/(dashboard)/strategies/{page,[id]/page}.tsx`：列表（含 Live 徽章）+ 详情
+        （Live toggle / 风控编辑 / WS 实时订单流 / mainnet 警告条）；`ws-client.ts` 加
+        `useStrategyStream` hook
+      - admin endpoints `/admin/mainnet/{request-token,confirm,status}`（参考 §5、§8）
 - [ ] 期权配置表单接通 POST 提交
 - [ ] `client/app/list/` 实现
-- [ ] **Phase 4+**：实盘执行 / 多交易所 / AI 优化（详见
+- [ ] **Phase 5+**：OKX/Bybit / AI 优化（详见
       `/root/.claude/plans/vectorized-waddling-hoare.md`）

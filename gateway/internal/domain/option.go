@@ -14,6 +14,50 @@ type CreatePosition struct {
 	LossAddRate float64 `json:"lossAddRate" bson:"lossAddRate" validate:"gte=0"`
 }
 
+// LiveMode discriminates execution against testnet vs. live mainnet.
+//
+// Phase 4 default is "testnet"; the gateway's order engine refuses to call
+// mainnet endpoints unless `MAINNET_TRADING_ENABLED=true` AND a confirmed
+// mainnet token is in memory. See gateway/internal/orderengine.
+type LiveMode string
+
+const (
+	LiveModeTestnet LiveMode = "testnet"
+	LiveModeMainnet LiveMode = "mainnet"
+)
+
+// IsValid reports whether m is a recognised live mode.
+func (m LiveMode) IsValid() bool {
+	switch m {
+	case LiveModeTestnet, LiveModeMainnet:
+		return true
+	}
+	return false
+}
+
+// RiskCaps holds the strategy-level risk parameters consulted by the order
+// engine before any exchange call. All three fields are MANDATORY when
+// `live.enabled=true`; missing values cause orders to be rejected (the engine
+// MUST NOT pick "sensible defaults" silently per Phase 4 spec).
+type RiskCaps struct {
+	// MaxPositionUsd: hard cap on `qty * mark_price` for a single submission.
+	MaxPositionUsd float64 `json:"maxPositionUsd" bson:"maxPositionUsd" validate:"gt=0"`
+	// MaxLeverage: cap on (notional + existing notional) / wallet balance.
+	MaxLeverage float64 `json:"maxLeverage" bson:"maxLeverage" validate:"gt=0"`
+	// DailyLossCapUsd: if today's realised PnL drops below `-DailyLossCapUsd`,
+	// further submissions are rejected until the next UTC day. >0.
+	DailyLossCapUsd float64 `json:"dailyLossCapUsd" bson:"dailyLossCapUsd" validate:"gt=0"`
+}
+
+// LiveConfig is the per-strategy execution toggle. Missing/empty equals
+// `Enabled=false` (no exchange calls).
+type LiveConfig struct {
+	Enabled   bool       `json:"enabled" bson:"enabled"`
+	Mode      LiveMode   `json:"mode" bson:"mode"`
+	AccountID string     `json:"accountId,omitempty" bson:"accountId,omitempty"`
+	StartedAt *time.Time `json:"startedAt,omitempty" bson:"startedAt,omitempty"`
+}
+
 // CreateOptionDTO mirrors NestJS CreateOptionDto exactly.
 //
 // Note: createCostOrderInProfit uses *bool because validator/v10 has no
@@ -71,4 +115,15 @@ type Option struct {
 	UserAPIKey    string    `json:"-" bson:"userApiKey"`
 	UserSecretKey string    `json:"-" bson:"userSecretKey"`
 	CreateTime    time.Time `json:"createTime" bson:"createTime"`
+
+	// Phase 4 additions. Both pointer-typed so legacy docs without these
+	// fields decode cleanly: `Risk == nil` & `Live == nil` is treated as
+	// "no risk caps configured" / "live disabled" respectively.
+	Risk *RiskCaps   `json:"risk,omitempty" bson:"risk,omitempty"`
+	Live *LiveConfig `json:"live,omitempty" bson:"live,omitempty"`
+}
+
+// LiveEnabled is a nil-safe accessor.
+func (o *Option) LiveEnabled() bool {
+	return o.Live != nil && o.Live.Enabled
 }

@@ -7,8 +7,12 @@ import {
   TypeCreateAccount,
   TypeCreateBacktest,
   TypeEquityPoint,
+  TypeMainnetStatus,
   TypeOption,
+  TypeOrderLog,
   TypePosition,
+  TypeSetLive,
+  TypeSubmitOrder,
 } from "./type";
 
 // Base URL is env-driven so the client can talk to the Go gateway in dev
@@ -152,6 +156,116 @@ export const getTrades = async (id: string): Promise<TypeBacktestTrade[]> => {
     cache: "no-store",
   });
   return jsonOrThrow<TypeBacktestTrade[]>(res);
+};
+
+// ---------- Strategies / live execution (phase 4) ----------
+
+// `getStrategies` is just an alias for the legacy /option list — the
+// underlying Mongo collection is the same. Phase 6 will fork the data
+// model.
+export const getStrategies = async (): Promise<TypeOption[]> => {
+  const res = await fetch(parseUrl("v1/option"), { cache: "no-store" });
+  return jsonOrThrow<TypeOption[]>(res);
+};
+
+export const getStrategy = async (id: string): Promise<TypeOption> => {
+  const res = await fetch(parseUrl(`v1/option/${id}`), { cache: "no-store" });
+  return jsonOrThrow<TypeOption>(res);
+};
+
+export const getOrders = async (
+  strategyId: string,
+  limit = 50,
+): Promise<TypeOrderLog[]> => {
+  const res = await fetch(
+    parseUrl(`v1/strategies/${strategyId}/orders?limit=${limit}`),
+    { cache: "no-store" },
+  );
+  return jsonOrThrow<TypeOrderLog[]>(res);
+};
+
+export const setLive = async (
+  strategyId: string,
+  body: TypeSetLive,
+): Promise<TypeOption> => {
+  const res = await fetch(parseUrl(`v1/strategies/${strategyId}/live`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<TypeOption>(res);
+};
+
+// Risk caps live on the Option document; the existing PUT /option/:id
+// endpoint already supports updating arbitrary fields. We expose a
+// dedicated wrapper for clarity.
+export const setRisk = async (
+  strategyId: string,
+  risk: TypeOption["risk"],
+): Promise<TypeOption> => {
+  const res = await fetch(parseUrl(`v1/option/${strategyId}`), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ risk }),
+  });
+  return jsonOrThrow<TypeOption>(res);
+};
+
+// Admin-only manual order submission. Requires the `X-Admin-Key`
+// header — same auth pattern as /market/ingest.
+export const submitOrder = async (
+  strategyId: string,
+  adminKey: string,
+  body: TypeSubmitOrder,
+): Promise<{ streamId: string }> => {
+  const res = await fetch(
+    parseUrl(`v1/strategies/${strategyId}/live/submit-order`),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Admin-Key": adminKey,
+      },
+      body: JSON.stringify(body),
+    },
+  );
+  return jsonOrThrow<{ streamId: string }>(res);
+};
+
+// ---- Mainnet enable flow (admin) -----------------------------------
+
+export const requestMainnetToken = async (
+  adminKey: string,
+): Promise<{ message: string; tokenHint: string; ttlSec: number }> => {
+  const res = await fetch(parseUrl("v1/admin/mainnet/request-token"), {
+    method: "POST",
+    headers: { "X-Admin-Key": adminKey },
+  });
+  return jsonOrThrow<{ message: string; tokenHint: string; ttlSec: number }>(
+    res,
+  );
+};
+
+export const confirmMainnetToken = async (
+  adminKey: string,
+  token: string,
+): Promise<TypeMainnetStatus> => {
+  const res = await fetch(parseUrl("v1/admin/mainnet/confirm"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Admin-Key": adminKey },
+    body: JSON.stringify({ token }),
+  });
+  return jsonOrThrow<TypeMainnetStatus>(res);
+};
+
+export const getMainnetStatus = async (
+  adminKey: string,
+): Promise<TypeMainnetStatus> => {
+  const res = await fetch(parseUrl("v1/admin/mainnet/status"), {
+    headers: { "X-Admin-Key": adminKey },
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeMainnetStatus>(res);
 };
 
 // wsUrl returns the gateway's /ws endpoint, derived from the API base URL by

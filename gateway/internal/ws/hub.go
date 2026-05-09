@@ -37,6 +37,9 @@ const (
 	TopicAccount TopicKind = "account"
 	// TopicBacktest: backtest progress events (phase 3).
 	TopicBacktest TopicKind = "backtest"
+	// (TopicStrategy is defined in redis_strategy.go — phase 4 — with
+	// the same string constant the browser sends. Keep its definition
+	// next to its consumer for readability.)
 )
 
 // topicKey is the hub-internal map key.
@@ -180,7 +183,10 @@ func (h *Hub) Subscribe(ctx context.Context, sessionID string, kind TopicKind, i
 				return errors.New("ws: account upstream factory not configured")
 			}
 			acctStream, err = h.acctFactory(newCtx, id)
-		case TopicBacktest:
+		case TopicBacktest, TopicStrategy:
+			// Generic-stream topics. The composed generic factory in
+			// router.go dispatches by kind; we only enforce that *some*
+			// factory exists.
 			if h.genericFactory == nil {
 				cancel()
 				return errors.New("ws: generic upstream factory not configured")
@@ -218,6 +224,11 @@ func (h *Hub) SubscribeAccount(ctx context.Context, sessionID, accountID string)
 // SubscribeBacktest binds a session to a backtest run id.
 func (h *Hub) SubscribeBacktest(ctx context.Context, sessionID, runID string) error {
 	return h.Subscribe(ctx, sessionID, TopicBacktest, runID)
+}
+
+// SubscribeStrategy binds a session to a strategy id for live order events.
+func (h *Hub) SubscribeStrategy(ctx context.Context, sessionID, strategyID string) error {
+	return h.Subscribe(ctx, sessionID, TopicStrategy, strategyID)
 }
 
 // Unsubscribe is the inverse of Subscribe.
@@ -308,9 +319,13 @@ func (h *Hub) handleUpstreamEnd(tk topicKey, up *upstream, cause error) {
 	up.stopped = true
 	notifType := "account.upstream_closed"
 	idField := "accountId"
-	if tk.Kind == TopicBacktest {
+	switch tk.Kind {
+	case TopicBacktest:
 		notifType = "backtest.upstream_closed"
 		idField = "runId"
+	case TopicStrategy:
+		notifType = "strategy.upstream_closed"
+		idField = "strategyId"
 	}
 	for sessionID := range up.subs {
 		s, ok := h.sessions[sessionID]

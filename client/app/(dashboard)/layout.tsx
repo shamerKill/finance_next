@@ -13,8 +13,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <Link className="hover:text-primary" href="/accounts">
             Accounts
           </Link>
-          <Link className="hover:text-primary" href="/api-list">
+          <Link className="hover:text-primary" href="/strategies">
             Strategies
+          </Link>
+          <Link className="hover:text-primary" href="/api-list">
+            Strategies (legacy)
           </Link>
           <Link className="hover:text-primary" href="/option">
             New Strategy

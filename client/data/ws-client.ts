@@ -12,7 +12,7 @@ import { wsUrl } from "./api-client";
 // "account.event", accountId, payload}) so existing consumers continue to
 // work. New backtest envelopes use {type, topic, id, payload}.
 
-export type WsTopic = "account" | "backtest";
+export type WsTopic = "account" | "backtest" | "strategy";
 
 export type WsEvent = {
   // Examples: "account.event", "account.upstream_closed", "backtest.progress",
@@ -216,4 +216,30 @@ export function useBacktestStream(
   }, [runId, bufferSize]);
 
   return { events, last: events[0] ?? null, progress, state, completed };
+}
+
+// Phase 4: subscribe to live order events for a strategy. Each envelope
+// has `type: "event.order.{filled|rejected|canceled|updated}"` and a
+// payload matching the gateway's order-event shape.
+export function useStrategyStream(
+  strategyId: string | null | undefined,
+  bufferSize = 50,
+) {
+  const [events, setEvents] = useState<WsEvent[]>([]);
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    if (!strategyId) return;
+    const off = getClient().subscribe("strategy", strategyId, (ev) => {
+      if (ev.type.startsWith("event.order.")) setConnected(true);
+      if (ev.type === "strategy.upstream_closed") setConnected(false);
+      setEvents((prev) => [ev, ...prev].slice(0, bufferSize));
+    });
+    return () => {
+      off();
+      setConnected(false);
+    };
+  }, [strategyId, bufferSize]);
+
+  return { events, last: events[0] ?? null, connected };
 }

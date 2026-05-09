@@ -4,6 +4,7 @@ package http
 import (
 	"github.com/finance_next/gateway/internal/crypto"
 	"github.com/finance_next/gateway/internal/http/handlers"
+	"github.com/finance_next/gateway/internal/orderengine"
 	"github.com/finance_next/gateway/internal/quantclient"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	"github.com/finance_next/gateway/internal/store/timescale"
@@ -19,6 +20,7 @@ type Deps struct {
 	OptionRepo   *mongostore.OptionRepo
 	AccountRepo  *mongostore.AccountRepo
 	BacktestRepo *mongostore.BacktestRepo
+	OrderRepo    *mongostore.OrderRepo
 	Crypto       *crypto.Service
 	Envelope     *crypto.EnvelopeService
 
@@ -33,6 +35,11 @@ type Deps struct {
 	// Optional — when nil, browsers can still POST a backtest and poll
 	// status; only live progress streaming is unavailable.
 	Redis *redis.Client
+
+	// Phase 4: order engine for /strategies/:id/* endpoints. Optional —
+	// when nil, the new endpoints return 503 / 404. The cmd wires it
+	// alongside the workers + reconcile loop.
+	OrderEngine *orderengine.Engine
 }
 
 // NewRouter wires up middleware, the /api/v1 group, /ws, and resource handlers.
@@ -69,13 +76,23 @@ func NewRouter(d Deps) *echo.Echo {
 	// Backtest endpoints (Phase 3). Each dep nil → handler returns 503.
 	handlers.NewBacktestHandler(d.BacktestRepo, d.Timescale, d.Quant).Register(v1)
 
+	// Strategy endpoints (Phase 4). Mounts /strategies/:id/orders +
+	// /strategies/:id/live + /admin/mainnet/* (admin-gated).
+	handlers.NewStrategyHandler(d.OptionRepo, d.OrderRepo, d.OrderEngine, d.AdminKey).Register(v1)
+
 	// WS hub: account upstreams (phase 1) + Redis-backed backtest progress
-	// fan-out (phase 3). The generic factory is nil when no Redis client
-	// is configured; backtest subscriptions then fail with a clear error.
+	// fan-out (phase 3) + Redis-backed strategy order events (phase 4).
+	// The generic factory is nil when no Redis client is configured; both
+	// subscriptions then fail with a clear error.
 	var genericFactory ws.GenericUpstreamFactory
 	if d.Redis != nil {
-		genericFactory = ws.NewRedisBacktestUpstreamFactory(d.Redis, nil)
+		genericFactory = ws.ComposeUpstreamFactories(map[ws.TopicKind]ws.GenericUpstreamFactory{
+			ws.TopicBacktest: ws.NewRedisBacktestUpstreamFactory(d.Redis, nil),
+			ws.TopicStrategy: ws.NewRedisStrategyUpstreamFactory(d.Redis, nil),
+		})
 	}
+	// Forward orderengine package import to keep build happy when nil.
+	_ = orderengine.CommandSubmitStream
 	hub := ws.NewHubFull(accountHandler.UpstreamFactoryFor(), genericFactory, nil)
 	wsHandler := ws.NewHandler(hub, nil)
 	e.GET("/ws", wsHandler.Handle)

@@ -27,6 +27,7 @@ from quant.config import get_settings  # noqa: E402
 from quant.data import mongo as mongo_data  # noqa: E402
 from quant.data import timescale  # noqa: E402
 from quant.grpc_server import serve as serve_grpc  # noqa: E402
+from quant.runtime import run_runtime  # noqa: E402
 
 log = logging.getLogger("quant.main")
 
@@ -64,12 +65,34 @@ async def lifespan(app: FastAPI):
         arq_pool=arq_pool,
     )
 
+    # Phase 4: long-lived strategy runtime that emits order commands to
+    # Redis Stream `command.order.submit` based on signals computed off
+    # the latest Timescale OHLCV. Runs only when both Mongo and a real
+    # Timescale pool are available, AND `QUANT_RUNTIME_DISABLED` isn't set.
+    runtime = None
+    if mongo_db is not None:
+        async def _ohlcv_fetcher(exchange: str, symbol: str, timeframe: str, n: int):  # noqa: E501
+            return await timescale.query_recent_ohlcv(
+                exchange=exchange, symbol=symbol, timeframe=timeframe, limit=n
+            )
+
+        poll = float(os.getenv("QUANT_RUNTIME_POLL_SEC", "60"))
+        runtime = await run_runtime(
+            mongo_db=mongo_db,
+            redis_client=redis_client,
+            ohlcv_fetcher=_ohlcv_fetcher,
+            poll_interval=poll,
+        )
+
     app.state.redis = redis_client
     app.state.grpc_server = grpc_server
     app.state.arq_pool = arq_pool
+    app.state.runtime = runtime
     try:
         yield
     finally:
+        if runtime is not None:
+            await runtime.stop()
         await grpc_server.stop(grace=2.0)
         if arq_pool is not None:
             await arq_pool.aclose()

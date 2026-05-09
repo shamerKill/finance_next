@@ -33,7 +33,7 @@ export class CreateOptionDto {
   stopProfitRate: number;
   // 止损比例
   @IsNumber()
-  stopProiftRate: number;
+  stopLossRate: number;
   // 补仓后止盈降低比例
   @IsNumber()
   profitRateAfterAtAddPosition: number;

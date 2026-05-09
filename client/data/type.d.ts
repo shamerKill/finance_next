@@ -11,7 +11,7 @@ export type TypeOption = {
   // 止盈比例
   stopProfitRate: number;
   // 止损比例
-  stopProiftRate: number;
+  stopLossRate: number;
   // 补仓后止盈降低比例
   profitRateAfterAtAddPosition: number;
   // 到止盈之后是否创建保本订单

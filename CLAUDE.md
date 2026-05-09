@@ -100,7 +100,7 @@ yarn format
 - `openPositionStopTime`（开仓未成交停止时间，分钟）
 - `execSymbol`（交易对，如 `BTCUSDT`）
 - `orderGroupMargin`（订单组保证金）
-- `stopProfitRate` / `stopProiftRate`（止盈/止损 — `stopProiftRate` 拼写错误，见 §7）
+- `stopProfitRate` / `stopLossRate`（止盈/止损比例）
 - `profitRateAfterAtAddPosition`（补仓后止盈降低比例）
 - `createCostOrderInProfit`（止盈后是否创建保本单）
 - `createPositions: [{ marginRate, lossAddRate }]`（分批开仓/补仓配置）
@@ -114,30 +114,33 @@ DTO 校验由 `app.useGlobalPipes(new ValidationPipe())` 在请求层生效。
 `data-mock` 与 `data-real` 间切换。`api-list` 页面是 async server component，
 直接在服务端调用 `getOptions()`。`option/page.tsx` 仅有表单 UI，尚未接 POST 提交。
 
-## 7. 注意事项 / 已知问题
+## 7. 安全与配置
 
-- **MongoDB 连接串硬编码**：`server/src/app.module.ts:11` 含明文账号密码，
-  务必迁至环境变量。
-- **Mongoose Schema 不完整**：`server/src/routers/option/entities/option.entity.ts`
-  当前只声明 `name`、`createTime` 两个字段；其余字段写入 Mongo 时不受
-  Schema 校验、无索引、无默认值。后续应把 DTO 中的所有字段补到 Schema。
-- **拼写错误协议化**：`stopProiftRate`（应为 `stopProfitRate2` / `stopLossRate`）
-  在 DTO、`TypeOption` 中一致存在 —— 修复时必须前后端同步替换。
+- **环境变量**（`server/.env`，参考 `server/.env.example`）：
+  - `MONGODB_URI` — 完整 Mongo 连接串（含库名）
+  - `ENCRYPTION_KEY` — 32 字节十六进制（64 字符）。生成：
+    `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+- **凭证加密**：`server/src/common/crypto.service.ts` 提供 AES-256-GCM
+  封装；`OptionService` 在 create / update 时透明加密 `userApiKey` 与
+  `userSecretKey`，密文格式 `iv.tag.ciphertext`（base64 三段）。
+- **接口防泄露**：`option.entity.ts` 的 `toJSON.transform` 主动剥除
+  `userApiKey` / `userSecretKey`，GET 接口永不返回密钥（即便已加密）。
+
+## 8. 注意事项 / 已知问题
+
 - **mock 形同虚设**：`client/data/data-mock.ts` 与 `data-real.ts` 实现一致，
   开发态切换目前没有任何离线效果。
 - **POST 缺显式 Content-Type**：`client/data/data-real.ts:10` 的 fetch
   未设置 `Content-Type: application/json`，目前依赖 NestJS 默认 JSON 解析。
-- **API Key/Secret 明文入库**：`userApiKey` / `userSecretKey` 直接保存到 Mongo，
-  无加密层。
 - **`client/app/list/`** 为占位目录。
 
-## 8. 当前进度 / TODO
+## 9. 当前进度 / TODO
 
 - [x] Option CRUD（Controller / Service / DTO 校验）
 - [x] 前端期权配置表单 UI
 - [x] 前端策略列表 server component
-- [ ] 补全 `option.entity.ts` Schema
+- [x] 补全 `option.entity.ts` Schema（含 `createPositions` 子文档）
+- [x] 凭证加密 + 环境变量化连接串
 - [ ] 期权配置表单接通 POST 提交
 - [ ] `client/app/list/` 实现
 - [ ] 订单执行 / 账户管理 / 自动化下单
-- [ ] 凭证加密 + 环境变量化连接串

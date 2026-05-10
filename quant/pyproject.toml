@@ -39,6 +39,11 @@ dependencies = [
     # rides on the existing httpx dependency.
     "yfinance>=0.2",
     "feedparser>=6.0",
+    # Phase 9: Polymarket WS subscriber. We use the maintained
+    # `websockets` library for its pure-Python client + clean async
+    # iterator API — anyio/httpx-ws would also work but `websockets`
+    # ships smaller wheels.
+    "websockets>=12",
 ]
 
 [project.optional-dependencies]

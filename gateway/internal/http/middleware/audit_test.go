@@ -162,6 +162,61 @@ func TestAudit_ResourceClassification(t *testing.T) {
 	}
 }
 
+// TestAudit_Phase9_ScrubsWalletKeys asserts the Phase 9 additions to the
+// scrub list — privateKey / mnemonic / seed — never reach the audit
+// store. This is the single hardest security boundary of the wallet
+// layer; if anyone removes a scrub pattern, this test fails loudly.
+func TestAudit_Phase9_ScrubsWalletKeys(t *testing.T) {
+	w := &fakeWriter{}
+	mw, err := New(Config{Writer: w, BufferSize: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go mw.Start(ctx)
+
+	e := echo.New()
+	e.Use(mw.Middleware())
+	e.POST("/api/v1/wallets", func(c echo.Context) error {
+		return c.JSON(201, map[string]string{"id": "abc"})
+	})
+
+	body := `{"label":"primary","privateKey":"0xdeadbeef0123","mnemonic":"abandon abandon abandon","seed":"0xfeedcafe","nested":{"privateKeyCiphertext":"ct","ok":1}}`
+	req := httptest.NewRequest("POST", "/api/v1/wallets", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if len(w.all()) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	entries := w.all()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	got := string(entries[0].Payload)
+	for _, leaked := range []string{"deadbeef", "abandon", "feedcafe", `"ct"`} {
+		if strings.Contains(got, leaked) {
+			t.Errorf("payload leaked sensitive value %q; got %s", leaked, got)
+		}
+	}
+	for _, want := range []string{
+		`"privateKey":"[redacted]"`,
+		`"mnemonic":"[redacted]"`,
+		`"seed":"[redacted]"`,
+		`"privateKeyCiphertext":"[redacted]"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %s in scrubbed payload; got %s", want, got)
+		}
+	}
+}
+
 func TestAudit_NonJSONBodyRedacted(t *testing.T) {
 	out := sanitizePayload([]byte("not-json"))
 	if !strings.Contains(string(out), "non-json") {

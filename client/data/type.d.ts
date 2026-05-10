@@ -352,3 +352,122 @@ export type TypeNewsItem = {
   sentiment: number;
   symbols: string[];
 };
+
+// ---------- Phase 9 — Polymarket prediction-market vertical ----------
+
+export type TypePredictionMarket = {
+  source: string;
+  marketId: string;
+  conditionId?: string;
+  question: string;
+  endDate?: string;
+  category?: string;
+  tags?: string[];
+  createdAt: string;
+};
+
+export type TypePredictionQuote = {
+  source: string;
+  marketId: string;
+  tokenId: string;
+  ts: string;
+  mid?: number;
+  last?: number;
+  bid?: number;
+  ask?: number;
+  volume24h?: number;
+};
+
+export type TypePredictionTrade = {
+  source: string;
+  marketId: string;
+  tokenId: string;
+  ts: string;
+  side: string;
+  price: number;
+  size: number;
+  txHash: string;
+};
+
+export type TypeWallet = {
+  id: string;
+  userId: string;
+  label: string;
+  address: string;
+  usdcBalanceCached?: number;
+  usdcAllowanceCached?: number;
+  cachedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TypeWalletBalance = {
+  balanceUsdc: number;
+  allowanceUsdc: number;
+  fetchedAt: string;
+};
+
+export type TypeWalletPosition = {
+  tokenId: string;
+  marketId?: string;
+  outcome?: string;
+  balance: number;
+  updatedAt: string;
+};
+
+export type TypeCreateWallet = {
+  label: string;
+  privateKey: string;
+  expectedAddress?: string;
+};
+
+export type TypePredictionRisk = {
+  maxNotionalUsd: number;
+  maxOpenMarkets: number;
+  maxSlippageBps: number;
+  dailyLossCapUsd: number;
+};
+
+export type TypePredictionStrategy = {
+  id: string;
+  userId: string;
+  name: string;
+  marketId: string;
+  outcome: "YES" | "NO";
+  risk: TypePredictionRisk;
+  live: { enabled: boolean; mode?: string; walletId?: string };
+  params?: unknown;
+  currentVersion: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TypeCreatePredictionStrategy = {
+  name: string;
+  marketId: string;
+  outcome: "YES" | "NO";
+  risk: TypePredictionRisk;
+  params?: unknown;
+};
+
+export type TypePredictionOrder = {
+  id: string;
+  clientOrderId: string;
+  strategyId: string;
+  walletId: string;
+  marketId: string;
+  tokenId: string;
+  outcome: "YES" | "NO";
+  side: "BUY" | "SELL";
+  price: number;
+  size: number;
+  midAtSubmit?: number;
+  slippageBps?: number;
+  status: string;
+  exchangeOrderId?: string;
+  filled?: number;
+  avgFillPrice?: number;
+  realisedPnlUsd?: number;
+  submittedAt: string;
+  lastEventAt: string;
+};

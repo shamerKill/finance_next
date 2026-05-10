@@ -46,6 +46,9 @@ finance_next/
 │   │   │   ├── backtests/            # Phase 3：列表/新建/详情（含 equity 图 + 实时进度 WS）
 │   │   │   ├── portfolio/            # Phase 5：跨交易所余额 / 资产汇总（server component）
 │   │   │   ├── data-explorer/        # Phase 8：equities / futures / macro / onchain / news 浏览页
+│   │   │   ├── wallets/              # Phase 9：Polygon 钱包 CRUD + 强警告表单 + bounded approve
+│   │   │   ├── prediction/markets/   # Phase 9：Polymarket 列表 + 详情（orderbook + 最近 trades）
+│   │   │   ├── prediction/strategies/ # Phase 9：预测策略 CRUD + live toggle + 订单流
 │   │   │   └── option/page.tsx       # 期权策略表单页
 │   │   └── list/                     # 占位，功能未实现
 │   ├── data/
@@ -72,12 +75,15 @@ finance_next/
 │       ├── ws/                       # 单进程 WS hub（topic 模型：account / backtest / strategy）+ Redis Streams 消费
 │       ├── orderengine/              # Phase 4：Redis stream 消费 + 风控闸 + 30s reconcile loop + mainnet token gate（venue-aware factory）；Phase 7 在风控闸前加 portfolio kill switch + 跨策略 cap
 │       ├── observability/            # Phase 7：进程内 Prometheus 计数器/直方图 + tracer 接口（默认 stdout/noop）
-│       ├── store/{mongo,timescale}/  # mongo (options/accounts/backtest_results/order_log/exchange_meta/system_state/portfolio_limits/audit) + timescale (ohlcv/equity_curve 读 + Phase 8: macro/onchain/news 读)
+│       ├── store/{mongo,timescale}/  # mongo (options/accounts/backtest_results/order_log/exchange_meta/system_state/portfolio_limits/audit + Phase 9: polygon_wallets/prediction_strategies/prediction_orders) + timescale (ohlcv/equity_curve 读 + Phase 8: macro/onchain/news 读 + Phase 9: prediction_markets/quotes/trades 读)
 │       ├── quantclient/              # gRPC client → Python quant worker
+│       ├── wallet/polygon/           # Phase 9：Polygon wallet 包（私钥 envelope 加密 + USDC bounded approve + RPC 接口；NoopRPC 默认，POLYGON_RPC_URL 设置时 EthClientRPC 通过 ethclient/abi 调用 USDC.balanceOf/allowance/approve + 60s receipt poll）
+│       ├── prediction/polymarket/    # Phase 9：CLOB REST 客户端 + EIP-712 typed-data signer（golden vector 测试）+ 3-gate（共享 Phase 4 TokenStore）
+│       ├── prediction/engine/        # Phase 9：独立 worker pool 消费 Redis Stream `command.prediction.submit`；kill switch + maxNotionalUsd / maxOpenMarkets / maxSlippageBps + portfolio cap + mainnet 3-gate；30s reconcile
 │       └── http/
 │           ├── router.go             # Echo 路由 + middleware（Phase 7：HTTP 直方图 + audit 中间件 + /metrics endpoint）
-│           ├── middleware/audit.go   # Phase 7 异步 audit middleware（缓冲通道 + 敏感字段脱敏 + 溢出计数）
-│           └── handlers/             # option.go + account.go + market.go + backtest.go + strategy.go + exchange_meta.go + portfolio.go + recommendation.go + optimization.go + admin.go (Phase 7：halt/resume/system-state/portfolio-limits/audit) + data_explorer.go (Phase 8：equities/futures/macro/onchain/news + admin/ingest/*)
+│           ├── middleware/audit.go   # Phase 7 异步 audit middleware（缓冲通道 + 敏感字段脱敏 + 溢出计数；Phase 9：scrub list 加 privateKey/mnemonic/seed）
+│           └── handlers/             # option.go + account.go + market.go + backtest.go + strategy.go + exchange_meta.go + portfolio.go + recommendation.go + optimization.go + admin.go (Phase 7：halt/resume/system-state/portfolio-limits/audit) + data_explorer.go (Phase 8：equities/futures/macro/onchain/news + admin/ingest/*) + wallet.go + prediction.go + prediction_strategy.go (Phase 9)
 ├── quant/                            # Phase 2 Python 量化 worker（uv 管理）
 │   ├── pyproject.toml                # uv-managed deps (fastapi/grpcio/ccxt/akshare/asyncpg/arq)
 │   ├── Dockerfile                    # uv:python3.12-bookworm-slim
@@ -91,7 +97,8 @@ finance_next/
 │   │   ├── data/macro/{fred,akshare_cn}.py                           # Phase 8：FRED + CN 宏观
 │   │   ├── data/onchain/{defillama,etherscan,blockchain_info,glassnode_stub,nansen_stub}.py  # Phase 8
 │   │   ├── data/news/{cryptopanic,akshare_cn,rss_aggregator,sentiment}.py  # Phase 8
-│   │   ├── strategies/{base,grid_dca}.py  # Phase 3：抽象策略 + 信号→portfolio 模拟器（带 shift(1) 防 look-ahead）
+│   │   ├── data/prediction/{polymarket_gamma,polymarket_clob,polymarket_ws,types}.py  # Phase 9：Gamma 元数据 + CLOB REST + WS
+│   │   ├── strategies/{base,grid_dca,polymarket_event}.py  # Phase 3：抽象策略 + 信号→portfolio 模拟器（带 shift(1) 防 look-ahead）+ Phase 9 Polymarket 示例
 │   │   ├── runtime/{runtime,extended_consumer}.py  # Phase 4 long-lived runtime + Phase 8 admin-ingest stream consumer
 │   │   ├── ai/{claude_client,cost_ledger,optimizer,prompts,extended_context}.py  # Phase 6 + Phase 8 extended context
 │   │   ├── workers/{ingest,backtest,optimize,settings,extended_ingest}.py  # Arq 任务 + WorkerSettings + daily/hourly cron
@@ -104,7 +111,7 @@ finance_next/
 │   └── gen/{go,python}/              # 检入的生成代码
 ├── infra/
 │   ├── docker-compose.yml            # mongo / redis / timescale / gateway / quant
-│   ├── timescale/{001_init,002_hypertables,003_extended_data}.sql  # 扩展 + 表 + 连续聚合 + Phase 8 macro/onchain/news 表
+│   ├── timescale/{001_init,002_hypertables,003_extended_data,004_prediction}.sql  # 扩展 + 表 + 连续聚合 + Phase 8 macro/onchain/news 表 + Phase 9 prediction_markets/quotes/trades
 │   ├── grafana/dashboards/{gateway,quant}.json    # Phase 7：committed Grafana JSON exports
 │   ├── k8s/                          # Phase 7：Deployments / StatefulSets / Ingress / HPA / kustomization.yaml（finance-next-secrets 仅占位 example）
 │   └── scripts/                      # Phase 7：backup-{mongo,timescale}.sh + restore-* + README（commit-only，**不会自动跑**）
@@ -257,6 +264,32 @@ WS（phase 3 扩展 topic 模型 + phase 4 增加 strategy + phase 6 增加 opti
 
 DTO 校验由 `go-playground/validator/v10` 在 handler 内执行（POST/PUT 请求）。
 
+**Polymarket / Polygon 钱包 (Phase 9)**（`gateway/internal/http/handlers/wallet.go` + `prediction.go` + `prediction_strategy.go`）
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET    | `/api/v1/wallets`                    | Polygon 钱包列表（NO ciphertext） |
+| POST   | `/api/v1/wallets`                    | 创建：验证私钥派生地址 → envelope 加密入库 |
+| GET    | `/api/v1/wallets/:id`                | 详情（NO ciphertext） |
+| DELETE | `/api/v1/wallets/:id`                | 删除 |
+| GET    | `/api/v1/wallets/:id/balance`        | 实时 USDC 余额 + allowance（Polygon RPC） |
+| GET    | `/api/v1/wallets/:id/positions`      | CTF 1155 outcome token 持仓 |
+| POST   | `/api/v1/wallets/:id/approve`        | admin (`X-Admin-Key`) bounded approve；上限 = `portfolio_limits.maxOpenNotionalUsd`；零 cap = 拒；**infinite approve 不可能** |
+| GET    | `/api/v1/prediction/markets`         | Timescale 直读；`?category=&active=&limit=&offset=` |
+| GET    | `/api/v1/prediction/markets/:id`     | 单 market 详情 |
+| GET    | `/api/v1/prediction/quotes`          | `?token_id=&start=&end=`；prediction_quotes 直读 |
+| GET    | `/api/v1/prediction/trades`          | `?market_id=&limit=`；prediction_trades 直读 |
+| GET    | `/api/v1/prediction/strategies`      | 列表 |
+| POST   | `/api/v1/prediction/strategies`      | 创建（risk 三项 + outcome YES/NO 必填） |
+| GET    | `/api/v1/prediction/strategies/:id`  | 详情 |
+| PUT    | `/api/v1/prediction/strategies/:id`  | 更新 |
+| DELETE | `/api/v1/prediction/strategies/:id`  | 删除 |
+| POST   | `/api/v1/prediction/strategies/:id/live`              | toggle live；`{enabled, walletId, mode:"mainnet"}`；Polymarket 无 testnet |
+| POST   | `/api/v1/prediction/strategies/:id/live/submit-order` | admin manual submit；XADD `command.prediction.submit` |
+| GET    | `/api/v1/prediction/strategies/:id/orders`            | `prediction_orders` 列表 |
+| POST   | `/api/v1/admin/ingest/prediction`    | admin XADD `command.ingest.prediction`（同 Phase 8 模式） |
+
+WS：`{type:"subscribe", topic:"prediction_strategy", id:"<strategyId>"}` — gateway 订阅 Redis Stream `events`，过滤 `event.prediction_order.{filled|rejected|canceled|updated}` + `strategyId` 匹配。
+
 ## 6. 前端数据访问
 
 `client/data/api-client.ts` 是唯一的 fetch 封装；baseUrl 走
@@ -358,6 +391,22 @@ canWithdraw=true，解析失败 fail-closed）。
       `POLYGON_API_KEY`（`equities/polygon_stub.py`）、
       `GLASSNODE_API_KEY`、`NANSEN_API_KEY`（`onchain/{glassnode,nansen}_stub.py`）。
       未设时构造时即抛 `ErrAPIKeyNotConfigured`，整合 SDK 的步骤见 §8 ops
+  - **Phase 9 新增 env**（Polymarket 预测市场垂直；gateway 直接读取）：
+    - `POLYGON_RPC_URL` (default `https://polygon-rpc.com`) — Polygon RPC。
+      默认免费公共节点，rate-limited；生产请切 Alchemy/Infura
+      （`https://polygon-mainnet.g.alchemy.com/v2/<KEY>`）。**未设 = 绑 NoopRPC**
+      （`/wallets/:id/{balance,positions,approve}` 返 503 `ErrRPCNotConfigured`）；
+      **设了** = `wallet/polygon/ethrpc.go` 通过 `ethclient.DialContext` 起 `EthClientRPC`，
+      USDC.balanceOf / allowance / approve 走 minimal embedded ABI，approve 路径
+      `LegacyTx` 签名 + `eth_sendRawTransaction` + 60s receipt poll；
+      dial 失败回退到 NoopRPC（带 warning），不阻塞 boot
+    - `POLYMARKET_CLOB_URL` (default `https://clob.polymarket.com`) — CLOB REST 端点
+    - `POLYMARKET_GAMMA_URL` (default `https://gamma-api.polymarket.com`) — Gamma 元数据端点
+    - `POLYMARKET_TRADING_ENABLED` — 必须为字面量 `true` 才进入 Polymarket 三道闸；
+      默认未设 = 永远拒。**与 Binance mainnet env 同语义、同 TokenStore（共享单例：
+      `/admin/mainnet/confirm` 一次开两个 vertical）**
+    - `POLYMARKET_CLOB_EXCHANGE_ADDRESS` (default `0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E`) —
+      EIP-712 `verifyingContract`；override 仅用于 forked / staging
 - **凭证加密**：`gateway/internal/crypto/crypto.go` 提供 AES-256-GCM 封装；
   `option` handler 在 create / update 时透明加密 `userApiKey` 与
   `userSecretKey`，密文格式 `base64(iv).base64(tag).base64(ciphertext)`，
@@ -412,12 +461,46 @@ canWithdraw=true，解析失败 fail-closed）。
 - **Audit log（Phase 7）**：`gateway/internal/http/middleware/audit.go` 在
   `/api/v1/` 上以 Echo middleware 形式挂载，捕获所有非 GET 请求；payload
   做 JSON 字段递归 scrub（任何包含 `apikey`/`secretkey`/`secret`/`passphrase`/
-  `ciphertext`/`password`/`token` 的 key 替换为 `[redacted]`）。请求体
+  `ciphertext`/`password`/`token` 的 key 替换为 `[redacted]`；**Phase 9
+  扩展 scrub 列表加 `privatekey`/`mnemonic`/`seed`**，`audit_test.go::
+  TestAudit_Phase9_ScrubsWalletKeys` 是这一硬约束的回归保护）。请求体
   上限 64 KiB；非 JSON body 直接替换为占位标注。写盘走异步缓冲通道
   （默认 1024 容量），溢出计数 + 日志 + drop。`/healthz`、`/metrics`、`/ws`
-  豁免。**Phase 7 把 `apiKey` / `secretKey` / `passphrase` / `*Ciphertext`
-  从所有 audit payload 中剥除是硬约束**；`audit_test.go` 的脱敏断言保护
-  这一点。
+  豁免。
+- **Polymarket security model（Phase 9，硬要求）**：
+  1. **私钥永不出 API 响应**：`domain.Wallet` 的 `DEKCiphertext` /
+     `PrivateKeyCiphertext` 字段使用 `json:"-"`；audit middleware scrub
+     列表新加 `privatekey`/`mnemonic`/`seed` patterns（substring，
+     case-insensitive），覆盖 `privateKey` / `privateKeyCiphertext` /
+     `mnemonic` / `seed` 等所有变体
+  2. **三道闸（无 testnet）**：Polymarket 没有 testnet，因此真实下单需要
+     全三道闸打开 — (1) 策略 `live.mode == "mainnet"`、(2) env
+     `POLYMARKET_TRADING_ENABLED=true`、(3) admin 通过 `/admin/mainnet/
+     request-token` → `/admin/mainnet/confirm` 走完 token 流程并在 1 小时
+     窗口内（**与 Binance mainnet 共享同一个 `TokenStore` 单例**）。任一
+     缺失，`prediction.engine.processCommand` 在风控闸最后一步
+     `polymarket.CheckGate` 返回 `ErrMainnetGateDenied`，不会触达 CLOB
+  3. **USDC bounded approve**：`/api/v1/wallets/:id/approve` 的 amount
+     被硬上限 `portfolio_limits.maxOpenNotionalUsd`；零 cap = 拒
+     （`ErrUSDCAllowanceCapZero`），任何超 cap 请求 `ErrApprovalExceedsCap`。
+     **infinite approve 在代码层面不可能** — `wallet/polygon/wallet.go::
+     ValidateApproveAmount` 是唯一的 approve 入口
+  4. **Slippage cap**：`prediction.engine.processCommand` 在签名前 fetch
+     CLOB book，比 mid，超 `risk.maxSlippageBps` `ErrSlippageExceeded` 拒
+  5. **Polygon RPC**：未设 `POLYGON_RPC_URL` 时绑 `NoopRPC`，所有钱包
+     on-chain endpoint（balance / positions / approve）返 503 `ErrRPCNotConfigured`；
+     设了 = `wallet/polygon/ethrpc.go::NewEthClientRPC` 通过 `ethclient.DialContext`
+     起 `EthClientRPC`，USDC.balanceOf / allowance 走 `eth_call`，approve 走
+     `LegacyTx` 签名 + `eth_sendRawTransaction` + 最长 60s `eth_getTransactionReceipt`
+     轮询；reverted = `ErrApproveTxReverted`，超时 = `ErrApproveReceiptTimeout`。
+     dial 失败时回退 NoopRPC（warning 日志），不阻塞 boot。
+     CTFBalances 当前返空（subgraph 集成预留接口缝），ERC1155 outcome token
+     余额请暂时通过 Polymarket 数据 API 查询；生产推荐 `POLYGON_RPC_URL` 切
+     Alchemy/Infura，免费公共节点 rate-limited
+  6. **EIP-712 typed-data 签名**：domain `Polymarket CTF Exchange / 1 /
+     chainId=137 / verifyingContract=0x4bFb...82E`；order type 12 个字段；
+     golden vector 测试 `signer_test.go` pin 了 type-hash + 域分隔器 +
+     最终 digest，任何字段调整都会触发显式失败
 - **KMS 切换流程（Phase 7）**：`crypto.KEKProvider` 接口三方实现：
   `EnvKEKProvider`（默认，沿用 NestJS golden vector byte-equal）/
   `AWSKMSKEKProvider` / `GCPKMSKEKProvider`（后两个是 stub，运行时返回
@@ -580,5 +663,51 @@ canWithdraw=true，解析失败 fail-closed）。
         docker-compose initdb.d 自动 apply，已存在的 hypertable 不影响）
       - 测试：29 个 pytest（offline，respx + monkeypatch）+ 4 个 Go handler
         测试（store-nil/admin-key 网格）；`go test`/`yarn build` 全绿
+- [x] **Phase 9**：Polymarket 完整接入（独立预测市场垂直）
+      - 钱包层 `gateway/internal/wallet/polygon/{wallet,rpc,wallet_test}.go` —
+        私钥 envelope 加密（同 KEK provider 切 KMS 一并迁），address 派生 +
+        校验，USDC bounded approve（cap = `portfolio_limits.maxOpenNotionalUsd`，
+        zero cap = 拒，infinite approve 不可能），CTF 持仓接口；`RPC` 接口
+        + `NoopRPC` 默认 + `MemoryRPC` 测试用；ethclient 实现接缝待补 PR
+      - Polymarket 适配器 `gateway/internal/prediction/polymarket/{client,signer,gate,*_test}.go` —
+        CLOB REST（book/trades/order/orders）+ EIP-712 typed-data signer
+        （golden vector 测试 pin 域分隔器 + order type-hash + 最终 digest +
+        sign/recover 往返）+ 3-gate（共享 Phase 4 `TokenStore`，env =
+        `POLYMARKET_TRADING_ENABLED`）
+      - 预测引擎 `gateway/internal/prediction/engine/{engine,reconcile,
+        engine_test}.go` — 独立 worker pool 消费 Redis Stream
+        `command.prediction.submit`；风控闸顺序：kill switch → live/risk
+        present → maxNotionalUsd → maxOpenMarkets → maxSlippageBps（vs.
+        live mid） → daily loss cap → portfolio cap → mainnet 3-gate；
+        `clientOrderId = sha256("polymarket:" + strategyId + marketId +
+        outcome + bar)` 32 hex 幂等；30s reconcile loop 标记
+        local-but-not-remote 为 `unknown`
+      - Mongo `polygon_wallets` / `prediction_strategies` / `prediction_orders`
+        三集合 + 索引；TimescaleDB `prediction_markets` (PK = market_id,
+        non-hypertable) + `prediction_quotes` + `prediction_trades`
+        (hypertables 7d 分块) — `infra/timescale/004_prediction.sql`
+      - Gateway endpoints `/api/v1/wallets/*` + `/api/v1/prediction/*` +
+        `/api/v1/admin/ingest/prediction`；WS topic `prediction_strategy`
+        过滤 `event.prediction_order.*` + `strategyId` 匹配
+      - Quant `quant/data/prediction/{polymarket_gamma,polymarket_clob,
+        polymarket_ws,types}.py` — Gamma 元数据 + CLOB REST 客户端 + WS
+        客户端（默认 `websockets`-backed connect_factory，`{type: "Market",
+        assets_ids: [...]}` 订阅；测试通过 fake factory 注入 offline）+
+        共享数据类
+      - Quant 策略 `quant/strategies/polymarket_event.py` — 偏离-vs-prior
+        信号 + binary outcome PnL helper（resolve 时 winner-take-all）
+      - 审计扩展 `audit.go` scrub 列表加 `privatekey`/`mnemonic`/`seed`；
+        `audit_test.go::TestAudit_Phase9_ScrubsWalletKeys` 是回归保护
+      - UI `(dashboard)/wallets/{page,new,[id]}/page.tsx` + `(dashboard)/
+        prediction/{markets,strategies}/*` + 侧栏入口 + `client/data/
+        {api-client.ts,type.d.ts}` 12 个新接口 + 9 个新类型
+      - 新 Go dep：`github.com/ethereum/go-ethereum`（EIP-712 keccak +
+        ECDSA + address 派生 + IsHexAddress + ethclient + abi for
+        production EthClientRPC）；新 Python dep：`websockets>=12`（默认
+        connect_factory）
+      - 测试：22 个 pytest 新增（offline，respx）+ 13 个 Go 单测
+        （signer golden vector + wallet round-trip + engine risk gate）；
+        `go test ./...` / `uv run pytest -q` / `yarn lint && yarn build`
+        全绿
 - [ ] 期权配置表单接通 POST 提交
 - [ ] `client/app/list/` 实现

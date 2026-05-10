@@ -589,3 +589,179 @@ export const getNews = async (
   });
   return jsonOrThrow<TypeNewsItem[]>(res);
 };
+
+// ---------- Phase 9 — Polymarket prediction-market vertical ----------
+
+import type {
+  TypeCreatePredictionStrategy,
+  TypeCreateWallet,
+  TypePredictionMarket,
+  TypePredictionOrder,
+  TypePredictionQuote,
+  TypePredictionStrategy,
+  TypePredictionTrade,
+  TypeWallet,
+  TypeWalletBalance,
+  TypeWalletPosition,
+} from "./type";
+
+export const listWallets = async (): Promise<TypeWallet[]> => {
+  const res = await fetch(parseUrl("v1/wallets"), { cache: "no-store" });
+  return jsonOrThrow<TypeWallet[]>(res);
+};
+
+export const getWallet = async (id: string): Promise<TypeWallet> => {
+  const res = await fetch(parseUrl(`v1/wallets/${id}`), { cache: "no-store" });
+  return jsonOrThrow<TypeWallet>(res);
+};
+
+export const createWallet = async (
+  input: TypeCreateWallet,
+): Promise<TypeWallet> => {
+  const res = await fetch(parseUrl("v1/wallets"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return jsonOrThrow<TypeWallet>(res);
+};
+
+export const deleteWallet = async (id: string): Promise<void> => {
+  const res = await fetch(parseUrl(`v1/wallets/${id}`), { method: "DELETE" });
+  await jsonOrThrow<{ success: boolean }>(res);
+};
+
+export const getWalletBalance = async (
+  id: string,
+): Promise<TypeWalletBalance> => {
+  const res = await fetch(parseUrl(`v1/wallets/${id}/balance`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeWalletBalance>(res);
+};
+
+export const getWalletPositions = async (
+  id: string,
+): Promise<TypeWalletPosition[]> => {
+  const res = await fetch(parseUrl(`v1/wallets/${id}/positions`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeWalletPosition[]>(res);
+};
+
+export const approveWallet = async (
+  id: string,
+  adminKey: string,
+  amountUsdc: number,
+): Promise<{ txHash: string; amountApproved: number; capUsd: number }> => {
+  const res = await fetch(parseUrl(`v1/wallets/${id}/approve`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Admin-Key": adminKey },
+    body: JSON.stringify({ amountUsdc }),
+  });
+  return jsonOrThrow(res);
+};
+
+export const listPredictionMarkets = async (params: {
+  category?: string;
+  active?: boolean;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<TypePredictionMarket[]> => {
+  const qs = new URLSearchParams();
+  if (params.category) qs.set("category", params.category);
+  if (params.active !== undefined) qs.set("active", String(params.active));
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.offset) qs.set("offset", String(params.offset));
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  const res = await fetch(parseUrl(`v1/prediction/markets${suffix}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypePredictionMarket[]>(res);
+};
+
+export const getPredictionMarket = async (
+  id: string,
+): Promise<TypePredictionMarket> => {
+  const res = await fetch(parseUrl(`v1/prediction/markets/${id}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypePredictionMarket>(res);
+};
+
+export const getPredictionQuotes = async (
+  tokenId: string,
+  start?: Date,
+  end?: Date,
+): Promise<TypePredictionQuote[]> => {
+  const qs = new URLSearchParams({ token_id: tokenId });
+  if (start) qs.set("start", start.toISOString());
+  if (end) qs.set("end", end.toISOString());
+  const res = await fetch(parseUrl(`v1/prediction/quotes?${qs.toString()}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypePredictionQuote[]>(res);
+};
+
+export const getPredictionTrades = async (
+  marketId: string,
+  limit = 100,
+): Promise<TypePredictionTrade[]> => {
+  const qs = new URLSearchParams({ market_id: marketId, limit: String(limit) });
+  const res = await fetch(parseUrl(`v1/prediction/trades?${qs.toString()}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypePredictionTrade[]>(res);
+};
+
+export const listPredictionStrategies = async (): Promise<
+  TypePredictionStrategy[]
+> => {
+  const res = await fetch(parseUrl("v1/prediction/strategies"), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypePredictionStrategy[]>(res);
+};
+
+export const getPredictionStrategy = async (
+  id: string,
+): Promise<TypePredictionStrategy> => {
+  const res = await fetch(parseUrl(`v1/prediction/strategies/${id}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypePredictionStrategy>(res);
+};
+
+export const createPredictionStrategy = async (
+  input: TypeCreatePredictionStrategy,
+): Promise<TypePredictionStrategy> => {
+  const res = await fetch(parseUrl("v1/prediction/strategies"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return jsonOrThrow<TypePredictionStrategy>(res);
+};
+
+export const togglePredictionLive = async (
+  id: string,
+  body: { enabled: boolean; walletId?: string; mode?: string },
+): Promise<TypePredictionStrategy> => {
+  const res = await fetch(parseUrl(`v1/prediction/strategies/${id}/live`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<TypePredictionStrategy>(res);
+};
+
+export const listPredictionOrders = async (
+  id: string,
+  limit = 50,
+): Promise<TypePredictionOrder[]> => {
+  const res = await fetch(
+    parseUrl(`v1/prediction/strategies/${id}/orders?limit=${limit}`),
+    { cache: "no-store" },
+  );
+  return jsonOrThrow<TypePredictionOrder[]>(res);
+};

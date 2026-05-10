@@ -33,6 +33,12 @@ var scrubKeys = []string{
 	"ciphertext",
 	"password",
 	"token",
+	// Phase 9 — Polymarket / EVM wallets. The bare hex of a private key
+	// or seed phrase is the highest-value secret in the system and must
+	// never reach the audit log even when nested deep in a payload.
+	"privatekey",
+	"mnemonic",
+	"seed",
 }
 
 // SkipPaths is the set of path prefixes that bypass auditing entirely.
@@ -210,6 +216,10 @@ func classifyResource(path string) domain.ResourceType {
 		strings.Contains(p, "/admin/system-state"),
 		strings.Contains(p, "/admin/portfolio-limits"):
 		return domain.ResourceSystem
+	case strings.Contains(p, "/wallets"):
+		return domain.ResourceWallet
+	case strings.Contains(p, "/prediction"):
+		return domain.ResourcePrediction
 	case strings.Contains(p, "/strategies"),
 		strings.Contains(p, "/option"):
 		return domain.ResourceStrategy

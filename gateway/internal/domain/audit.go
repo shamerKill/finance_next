@@ -21,6 +21,9 @@ const (
 	ResourceRecommendation ResourceType = "recommendation"
 	ResourceSystem         ResourceType = "system"
 	ResourceMarket         ResourceType = "market"
+	// Phase 9 — Polymarket prediction-markets vertical.
+	ResourceWallet         ResourceType = "wallet"
+	ResourcePrediction     ResourceType = "prediction"
 	ResourceUnknown        ResourceType = "unknown"
 )
 

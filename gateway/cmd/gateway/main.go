@@ -21,9 +21,12 @@ import (
 	auditmw "github.com/finance_next/gateway/internal/http/middleware"
 	"github.com/finance_next/gateway/internal/observability"
 	"github.com/finance_next/gateway/internal/orderengine"
+	predictionengine "github.com/finance_next/gateway/internal/prediction/engine"
+	"github.com/finance_next/gateway/internal/prediction/polymarket"
 	"github.com/finance_next/gateway/internal/quantclient"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	tsstore "github.com/finance_next/gateway/internal/store/timescale"
+	walletpkg "github.com/finance_next/gateway/internal/wallet/polygon"
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -115,6 +118,20 @@ func main() {
 		logger.Warn("ensure audit indexes failed", "err", err)
 	}
 
+	// Phase 9: Polymarket wallet + prediction strategy/order repos.
+	walletRepo := mongostore.NewWalletRepo(db)
+	if err := walletRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure polygon_wallets indexes failed", "err", err)
+	}
+	predStratRepo := mongostore.NewPredictionStrategyRepo(db)
+	if err := predStratRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure prediction_strategies indexes failed", "err", err)
+	}
+	predOrderRepo := mongostore.NewPredictionOrderRepo(db)
+	if err := predOrderRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure prediction_orders indexes failed", "err", err)
+	}
+
 	// Phase 7: KEK provider selection. Default is the env-backed Service;
 	// `KEK_PROVIDER=aws-kms` / `gcp-kms` swap to a stub that errors at
 	// runtime — production swap requires the corresponding SDK.
@@ -202,6 +219,68 @@ func main() {
 		logger.Info("order engine disabled (no REDIS_URL)")
 	}
 
+	// ---- Phase 9 wiring: Polymarket gate + CLOB client + prediction engine -
+	// The Polymarket gate is its own type but shares the underlying
+	// Phase 4 TokenStore — opening one mainnet window opens both perp +
+	// prediction. Default RPC is Noop (no Polygon dial); operators set
+	// POLYGON_RPC_URL to wire a real client when ready (production path
+	// requires a full ethclient implementation in wallet/polygon/rpc.go;
+	// the audit-loop path tolerates the Noop until that PR lands).
+	polymarketEnvEnabled := os.Getenv("POLYMARKET_TRADING_ENABLED") == "true"
+	predGate := polymarket.GateFunc{
+		AllowedFn:    gate.Allowed,                 // shares TokenStore with perp engine
+		EnvEnabledFn: func() bool { return polymarketEnvEnabled },
+	}
+	if polymarketEnvEnabled {
+		logger.Warn("POLYMARKET_TRADING_ENABLED=true — Polymarket mainnet allowed once admin confirms a token")
+	} else {
+		logger.Info("polymarket trading disabled (set POLYMARKET_TRADING_ENABLED=true to opt in)")
+	}
+	clobURL := os.Getenv("POLYMARKET_CLOB_URL")
+	clobClient := polymarket.NewClient(clobURL)
+	walletRPC := walletpkg.RPC(walletpkg.NoopRPC{})
+	if rpcURL := os.Getenv("POLYGON_RPC_URL"); rpcURL != "" {
+		// Production wiring: dial the JSON-RPC node and bind the
+		// ethclient-backed RPC. On dial failure we log a warning and
+		// fall back to NoopRPC so the gateway boots even when the node
+		// is briefly unavailable; /wallets/:id/approve will then 503
+		// with ErrRPCNotConfigured until the operator restarts with a
+		// healthy endpoint.
+		dialCtx, dialCancel := context.WithTimeout(rootCtx, 10*time.Second)
+		ethRPC, ethErr := walletpkg.NewEthClientRPC(dialCtx, rpcURL, logger)
+		dialCancel()
+		if ethErr != nil {
+			logger.Warn("polygon RPC dial failed — falling back to NoopRPC", "url", rpcURL, "err", ethErr)
+		} else {
+			walletRPC = ethRPC
+			logger.Info("polygon RPC connected", "url", rpcURL)
+		}
+	}
+
+	var predEngine *predictionengine.Engine
+	if redisClient != nil {
+		predEngine = predictionengine.New(predictionengine.Deps{
+			Redis:          redisClient,
+			StrategyRepo:   predStratRepo,
+			OrderRepo:      predOrderRepo,
+			WalletRepo:     walletRepo,
+			Envelope:       envelope,
+			CLOB:           clobClient,
+			Gate:           predGate,
+			SystemRepo:     systemRepo,
+			PortfolioStats: orderRepo,
+			Log:            logger,
+		})
+		go func() {
+			if err := predEngine.Start(rootCtx); err != nil && !errors.Is(err, context.Canceled) {
+				logger.Error("prediction engine stopped", "err", err)
+			}
+		}()
+		logger.Info("prediction engine started", "stream", predictionengine.CommandSubmitStream)
+	} else {
+		logger.Info("prediction engine disabled (no REDIS_URL)")
+	}
+
 	e := gwhttp.NewRouter(gwhttp.Deps{
 		OptionRepo:          optRepo,
 		AccountRepo:         acctRepo,
@@ -221,6 +300,12 @@ func main() {
 		OrderEngine:         orderEngine,
 		AuditMiddleware:     auditMW,
 		Metrics:             metrics,
+
+		WalletRepo:             walletRepo,
+		PredictionStrategyRepo: predStratRepo,
+		PredictionOrderRepo:    predOrderRepo,
+		WalletRPC:              walletRPC,
+		PredictionEngine:       predEngine,
 	})
 
 	addr := ":" + cfg.Port

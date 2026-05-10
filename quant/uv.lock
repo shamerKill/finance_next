@@ -2135,6 +2135,7 @@ dependencies = [
     { name = "redis" },
     { name = "structlog" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
     { name = "yfinance" },
 ]
 
@@ -2182,6 +2183,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
+    { name = "websockets", specifier = ">=12" },
     { name = "yfinance", specifier = ">=0.2" },
 ]
 provides-extras = ["dev"]

@@ -10,9 +10,11 @@ import (
 	auditmw "github.com/finance_next/gateway/internal/http/middleware"
 	"github.com/finance_next/gateway/internal/observability"
 	"github.com/finance_next/gateway/internal/orderengine"
+	predictionengine "github.com/finance_next/gateway/internal/prediction/engine"
 	"github.com/finance_next/gateway/internal/quantclient"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	"github.com/finance_next/gateway/internal/store/timescale"
+	walletpkg "github.com/finance_next/gateway/internal/wallet/polygon"
 	"github.com/finance_next/gateway/internal/ws"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -55,6 +57,15 @@ type Deps struct {
 	// when nil the corresponding feature is silently disabled.
 	AuditMiddleware *auditmw.Middleware
 	Metrics         *observability.Registry
+
+	// Phase 9: Polymarket / Polygon wallet vertical. Each dep nil → the
+	// corresponding routes are skipped (404). The wallet RPC defaults to
+	// NoopRPC (errors at call time) when not wired.
+	WalletRepo            *mongostore.WalletRepo
+	PredictionStrategyRepo *mongostore.PredictionStrategyRepo
+	PredictionOrderRepo   *mongostore.PredictionOrderRepo
+	WalletRPC             walletpkg.RPC
+	PredictionEngine      *predictionengine.Engine
 }
 
 // NewRouter wires up middleware, the /api/v1 group, /ws, and resource handlers.
@@ -196,6 +207,16 @@ func NewRouter(d Deps) *echo.Echo {
 	// are hidden when AdminKey is unset (mirrors /market/ingest).
 	handlers.NewDataExplorerHandler(d.Timescale, d.Redis, d.AdminKey).Register(v1)
 
+	// Phase 9: Polymarket / Polygon wallet vertical.
+	//   * /wallets/* — Polygon wallet CRUD + balance + bounded approve
+	//   * /prediction/markets|quotes|trades — Timescale read endpoints
+	//   * /prediction/strategies/* — strategy CRUD + live toggle + admin
+	//     submit-order
+	// Each handler internally checks for missing deps and 503s cleanly.
+	handlers.NewWalletHandler(d.WalletRepo, d.Envelope, d.WalletRPC, d.SystemRepo, d.AdminKey).Register(v1)
+	handlers.NewPredictionHandler(d.Timescale, d.Redis, d.AdminKey).Register(v1)
+	handlers.NewPredictionStrategyHandler(d.PredictionStrategyRepo, d.PredictionOrderRepo, d.PredictionEngine, d.AdminKey).Register(v1)
+
 	// WS hub: account upstreams (phase 1) + Redis-backed backtest progress
 	// fan-out (phase 3) + Redis-backed strategy order events (phase 4) +
 	// optimization study progress (phase 6).
@@ -204,9 +225,10 @@ func NewRouter(d Deps) *echo.Echo {
 	var genericFactory ws.GenericUpstreamFactory
 	if d.Redis != nil {
 		genericFactory = ws.ComposeUpstreamFactories(map[ws.TopicKind]ws.GenericUpstreamFactory{
-			ws.TopicBacktest:     ws.NewRedisBacktestUpstreamFactory(d.Redis, nil),
-			ws.TopicStrategy:     ws.NewRedisStrategyUpstreamFactory(d.Redis, nil),
-			ws.TopicOptimization: ws.NewRedisOptimizationUpstreamFactory(d.Redis, nil),
+			ws.TopicBacktest:           ws.NewRedisBacktestUpstreamFactory(d.Redis, nil),
+			ws.TopicStrategy:           ws.NewRedisStrategyUpstreamFactory(d.Redis, nil),
+			ws.TopicOptimization:       ws.NewRedisOptimizationUpstreamFactory(d.Redis, nil),
+			ws.TopicPredictionStrategy: ws.NewRedisPredictionUpstreamFactory(d.Redis, nil),
 		})
 	}
 	// Forward orderengine package import to keep build happy when nil.

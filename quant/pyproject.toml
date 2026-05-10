@@ -33,6 +33,12 @@ dependencies = [
     # boundaries; `optuna` powers the per-trial TPE sampler.
     "anthropic>=0.40",
     "optuna>=4.0",
+    # Phase 8: extended data sources. yfinance pulls intl equities;
+    # feedparser drives the generic RSS news aggregator. Everything
+    # else (FRED, DefiLlama, Etherscan, blockchain.info, CryptoPanic)
+    # rides on the existing httpx dependency.
+    "yfinance>=0.2",
+    "feedparser>=6.0",
 ]
 
 [project.optional-dependencies]

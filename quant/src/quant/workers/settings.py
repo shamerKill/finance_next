@@ -16,6 +16,17 @@ from quant.config import get_settings
 from quant.data import mongo as mongo_data
 from quant.data import timescale
 from quant.workers.backtest import backtest_task
+from quant.workers.extended_ingest import (
+    daily_equities_cron,
+    daily_macro_cron,
+    hourly_news_cron,
+    hourly_onchain_cron,
+    ingest_equities,
+    ingest_futures,
+    ingest_macro,
+    ingest_news,
+    ingest_onchain,
+)
 from quant.workers.ingest import ingest_task
 from quant.workers.optimize import daily_optimize_cron, optimize_task
 
@@ -134,18 +145,56 @@ def _cron_jobs() -> list:
                 exc,
             )
             raise
+    # Phase 8 cron: each schedule is intentionally simple (M H * * *) so
+    # _parse_cron's strict validation covers them too. Dates in UTC.
     return [
         cron(
             daily_optimize_cron,
             name="daily_optimize_cron",
             run_at_startup=False,
             **kwargs,
-        )
+        ),
+        cron(
+            daily_macro_cron,
+            name="daily_macro_cron",
+            run_at_startup=False,
+            minute={30},
+            hour={0},
+        ),
+        cron(
+            daily_equities_cron,
+            name="daily_equities_cron",
+            run_at_startup=False,
+            minute={0},
+            hour={16},
+        ),
+        cron(
+            hourly_onchain_cron,
+            name="hourly_onchain_cron",
+            run_at_startup=False,
+            minute={5},
+        ),
+        cron(
+            hourly_news_cron,
+            name="hourly_news_cron",
+            run_at_startup=False,
+            minute={15},
+        ),
     ]
 
 
 class WorkerSettings:  # Arq picks up by name.
-    functions = [ingest_task, backtest_task, optimize_task]
+    functions = [
+        ingest_task,
+        backtest_task,
+        optimize_task,
+        # Phase 8 ad-hoc ingest tasks (admin POST endpoints enqueue these).
+        ingest_equities,
+        ingest_futures,
+        ingest_macro,
+        ingest_onchain,
+        ingest_news,
+    ]
     cron_jobs = _cron_jobs()
     on_startup = startup
     on_shutdown = shutdown

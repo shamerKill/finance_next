@@ -323,3 +323,32 @@ export type TypeApproveRecommendation = {
   strategy: TypeOption;
   newVersion: number;
 };
+
+// ---------- Phase 8 — extended data sources ----------
+
+export type TypeMacroPoint = {
+  source: string;
+  code: string;
+  ts: string;
+  value: number;
+  unit: string;
+};
+
+export type TypeOnchainPoint = {
+  source: string;
+  chain: string;
+  metric: string;
+  ts: string;
+  value: number;
+};
+
+export type TypeNewsItem = {
+  id: string;
+  source: string;
+  ts: string;
+  title: string;
+  url: string;
+  body: string;
+  sentiment: number;
+  symbols: string[];
+};

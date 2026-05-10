@@ -28,6 +28,9 @@ from quant.data import mongo as mongo_data  # noqa: E402
 from quant.data import timescale  # noqa: E402
 from quant.grpc_server import serve as serve_grpc  # noqa: E402
 from quant.runtime import run_runtime  # noqa: E402
+from quant.runtime.extended_consumer import (  # noqa: E402
+    consume_loop as extended_consume_loop,
+)
 
 log = logging.getLogger("quant.main")
 
@@ -84,13 +87,43 @@ async def lifespan(app: FastAPI):
             poll_interval=poll,
         )
 
+    # Phase 8: extended-data ingest consumer. Reads admin XADDs from
+    # ``command.ingest.<kind>`` Redis Streams and dispatches to the
+    # corresponding ``run_*_ingest`` worker function. The cron schedule
+    # in ``quant.workers.settings`` is the load-bearing periodic path;
+    # this consumer is the *interactive* path that backs the gateway's
+    # ``POST /api/v1/admin/ingest/<kind>`` endpoints. We auto-start it
+    # alongside the strategy runtime so the admin endpoint isn't
+    # silently buffering into a queue with no reader. Disable via
+    # ``EXTENDED_CONSUMER_DISABLED=true`` (mirrors ``QUANT_RUNTIME_DISABLED``).
+    extended_task = None
+    if os.getenv("EXTENDED_CONSUMER_DISABLED", "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        import asyncio  # noqa: PLC0415
+
+        extended_task = asyncio.create_task(
+            extended_consume_loop(redis_client),
+            name="phase8-extended-consumer",
+        )
+
     app.state.redis = redis_client
     app.state.grpc_server = grpc_server
     app.state.arq_pool = arq_pool
     app.state.runtime = runtime
+    app.state.extended_consumer_task = extended_task
     try:
         yield
     finally:
+        if extended_task is not None:
+            extended_task.cancel()
+            try:
+                await extended_task
+            except BaseException:  # noqa: BLE001
+                pass
         if runtime is not None:
             await runtime.stop()
         await grpc_server.stop(grace=2.0)

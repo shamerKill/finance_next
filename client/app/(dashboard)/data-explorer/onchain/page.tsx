@@ -1,0 +1,56 @@
+// Phase 8 on-chain explorer. Defaults to BTC hash rate; same plain
+// table layout as the macro page.
+
+import { getOnchainMetrics } from "@/data/api-client";
+import type { TypeOnchainPoint } from "@/data/type";
+
+export const dynamic = "force-dynamic";
+
+const DEFAULT_CHAIN = "btc";
+const DEFAULT_METRIC = "hash_rate";
+
+export default async function OnchainPage() {
+  let points: TypeOnchainPoint[] = [];
+  let error: string | null = null;
+  try {
+    points = await getOnchainMetrics(DEFAULT_CHAIN, DEFAULT_METRIC);
+  } catch (e) {
+    error = e instanceof Error ? e.message : "Failed to load on-chain";
+  }
+  const rows = [...points].reverse().slice(0, 200);
+  return (
+    <div className="flex flex-col gap-4">
+      <header>
+        <h1 className="text-2xl font-semibold">
+          On-chain — {DEFAULT_CHAIN}:{DEFAULT_METRIC}
+        </h1>
+        <p className="text-sm text-default-500">
+          Showing the most recent {rows.length} observations.
+        </p>
+      </header>
+      {error && (
+        <div className="text-sm text-warning border border-warning rounded p-2">
+          {error}
+        </div>
+      )}
+      <table className="text-sm border border-default-200">
+        <thead className="bg-default-100">
+          <tr>
+            <th className="text-left px-3 py-2">ts</th>
+            <th className="text-right px-3 py-2">value</th>
+            <th className="text-left px-3 py-2">source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((p) => (
+            <tr key={p.ts} className="border-t border-default-200">
+              <td className="px-3 py-1 font-mono">{p.ts}</td>
+              <td className="px-3 py-1 text-right font-mono">{p.value}</td>
+              <td className="px-3 py-1">{p.source}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

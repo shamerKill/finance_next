@@ -10,7 +10,10 @@ import {
   TypeEquityPoint,
   TypeExchange,
   TypeExchangeMeta,
+  TypeMacroPoint,
   TypeMainnetStatus,
+  TypeNewsItem,
+  TypeOnchainPoint,
   TypeOptimizationRun,
   TypeOption,
   TypeOrderLog,
@@ -497,4 +500,92 @@ export const listAudit = async (
     headers: { "X-Admin-Key": adminKey },
   });
   return jsonOrThrow<TypeAuditEntry[]>(res);
+};
+
+// ---------- Phase 8 — extended data sources ----------
+
+export const getEquitiesOhlcv = async (
+  exchange: string,
+  symbol: string,
+  timeframe: string,
+  start: Date,
+  end: Date,
+): Promise<TypeOhlcvBar[]> => {
+  const params = new URLSearchParams({
+    exchange,
+    symbol,
+    timeframe,
+    start: start.toISOString(),
+    end: end.toISOString(),
+  });
+  const res = await fetch(parseUrl(`v1/equities/ohlcv?${params.toString()}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeOhlcvBar[]>(res);
+};
+
+export const getFuturesOhlcv = async (
+  exchange: string,
+  contract: string,
+  timeframe: string,
+  start: Date,
+  end: Date,
+): Promise<TypeOhlcvBar[]> => {
+  const params = new URLSearchParams({
+    exchange,
+    contract,
+    timeframe,
+    start: start.toISOString(),
+    end: end.toISOString(),
+  });
+  const res = await fetch(parseUrl(`v1/futures/ohlcv?${params.toString()}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeOhlcvBar[]>(res);
+};
+
+export const getMacroIndicators = async (
+  source: string,
+  code: string,
+  start?: Date,
+  end?: Date,
+): Promise<TypeMacroPoint[]> => {
+  const params = new URLSearchParams({ source, code });
+  if (start) params.set("start", start.toISOString());
+  if (end) params.set("end", end.toISOString());
+  const res = await fetch(
+    parseUrl(`v1/macro/indicators?${params.toString()}`),
+    { cache: "no-store" },
+  );
+  return jsonOrThrow<TypeMacroPoint[]>(res);
+};
+
+export const getOnchainMetrics = async (
+  chain: string,
+  metric: string,
+  start?: Date,
+  end?: Date,
+): Promise<TypeOnchainPoint[]> => {
+  const params = new URLSearchParams({ chain, metric });
+  if (start) params.set("start", start.toISOString());
+  if (end) params.set("end", end.toISOString());
+  const res = await fetch(
+    parseUrl(`v1/onchain/metrics?${params.toString()}`),
+    { cache: "no-store" },
+  );
+  return jsonOrThrow<TypeOnchainPoint[]>(res);
+};
+
+export const getNews = async (
+  symbols?: string[],
+  since?: Date,
+  limit = 100,
+): Promise<TypeNewsItem[]> => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (symbols && symbols.length) params.set("symbols", symbols.join(","));
+  if (since) params.set("since", since.toISOString());
+  const res = await fetch(parseUrl(`v1/news?${params.toString()}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeNewsItem[]>(res);
 };

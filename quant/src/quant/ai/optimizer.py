@@ -229,6 +229,23 @@ async def run_study(
             )
 
         # ----- 2. Define search space (Claude Sonnet 4.6) ------------
+        # Phase 8: lazy-import the extended-context builder so a missing
+        # extended_repo (e.g. test envs without Timescale) doesn't
+        # prevent the optimizer from running at all.
+        extended_builder: Any | None = None
+        try:
+            from quant.ai.extended_context import (
+                build_extended_context,
+            )
+            from quant.ai.extended_context import (
+                is_enabled as _ec_enabled,
+            )
+
+            if _ec_enabled():
+                extended_builder = build_extended_context
+        except Exception as exc:  # noqa: BLE001
+            log.warning("extended context disabled (import failed): %s", exc)
+
         search_space = await _try_define_search_space(
             claude_client=claude_client,
             budget_gate=budget_gate,
@@ -236,6 +253,8 @@ async def run_study(
             current_params=current_params,
             history_summaries=history_summaries or [],
             live_pnl_summary=live_pnl_summary or "",
+            base_request=base_request,
+            extended_context_builder=extended_builder,
         )
         result.search_space = search_space
 
@@ -454,8 +473,20 @@ async def _try_define_search_space(
     current_params: dict[str, Any],
     history_summaries: list[dict[str, Any]],
     live_pnl_summary: str,
+    base_request: dict[str, Any] | None = None,
+    extended_context_builder: Any | None = None,
 ) -> dict[str, Any]:
-    """Call Claude to define the search space; fall back on errors / no-budget."""
+    """Call Claude to define the search space; fall back on errors / no-budget.
+
+    Phase 8: when ``AI_CONTEXT_INCLUDE_EXTENDED`` is enabled the cached
+    study-context block is augmented with recent news + macro snapshot
+    + on-chain metrics. The extra ~500-1000 tokens land inside the same
+    Anthropic prompt-cache block so the marginal cost is ~$0.001 per
+    cached call. We DO NOT raise the projected budget here — if the
+    extended context would push the call over the gate, the budget
+    refuses and we fall back to the default search space (the warning
+    log line below distinguishes this case).
+    """
     if claude_client is None:
         return _DEFAULT_SEARCH_SPACE
 
@@ -470,6 +501,19 @@ async def _try_define_search_space(
         log.warning("define_search_space: budget refused (%s); using default", why)
         raise _BudgetExceeded(why)
 
+    # Phase 8 — optional extended context. Best-effort; any failure
+    # leaves the original (unaugmented) study context untouched.
+    study_ctx = _study_context_text(strategy_kind, current_params)
+    if extended_context_builder is not None and base_request is not None:
+        try:
+            extra = await extended_context_builder(
+                symbol=base_request.get("symbol", "")
+            )
+            if extra:
+                study_ctx = study_ctx + "\n" + extra
+        except Exception as exc:  # noqa: BLE001
+            log.warning("extended context build failed; using base only: %s", exc)
+
     user = (
         "Recent study summaries (most recent first):\n"
         f"{json.dumps(history_summaries[:5], default=str, indent=2)}\n\n"
@@ -478,7 +522,7 @@ async def _try_define_search_space(
     )
     try:
         space, usage = await claude_client.define_search_space(
-            study_context=_study_context_text(strategy_kind, current_params),
+            study_context=study_ctx,
             user_prompt=user,
         )
     except Exception as exc:  # noqa: BLE001

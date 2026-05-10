@@ -190,6 +190,12 @@ func NewRouter(d Deps) *echo.Echo {
 	// viewer. Hidden when AdminKey is unset (404).
 	handlers.NewAdminHandler(d.SystemRepo, d.AuditRepo, d.AdminKey).Register(v1)
 
+	// Phase 8 data-explorer reads (equities/futures OHLCV, macro,
+	// onchain, news) + admin-gated XADD ingest triggers. Each path
+	// degrades to 503 when the Timescale store is nil; admin paths
+	// are hidden when AdminKey is unset (mirrors /market/ingest).
+	handlers.NewDataExplorerHandler(d.Timescale, d.Redis, d.AdminKey).Register(v1)
+
 	// WS hub: account upstreams (phase 1) + Redis-backed backtest progress
 	// fan-out (phase 3) + Redis-backed strategy order events (phase 4) +
 	// optimization study progress (phase 6).

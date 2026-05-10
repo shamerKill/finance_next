@@ -45,6 +45,7 @@ finance_next/
 │   │   │   ├── markets/              # OHLCV chart (lightweight-charts)
 │   │   │   ├── backtests/            # Phase 3：列表/新建/详情（含 equity 图 + 实时进度 WS）
 │   │   │   ├── portfolio/            # Phase 5：跨交易所余额 / 资产汇总（server component）
+│   │   │   ├── data-explorer/        # Phase 8：equities / futures / macro / onchain / news 浏览页
 │   │   │   └── option/page.tsx       # 期权策略表单页
 │   │   └── list/                     # 占位，功能未实现
 │   ├── data/
@@ -71,12 +72,12 @@ finance_next/
 │       ├── ws/                       # 单进程 WS hub（topic 模型：account / backtest / strategy）+ Redis Streams 消费
 │       ├── orderengine/              # Phase 4：Redis stream 消费 + 风控闸 + 30s reconcile loop + mainnet token gate（venue-aware factory）；Phase 7 在风控闸前加 portfolio kill switch + 跨策略 cap
 │       ├── observability/            # Phase 7：进程内 Prometheus 计数器/直方图 + tracer 接口（默认 stdout/noop）
-│       ├── store/{mongo,timescale}/  # mongo (options/accounts/backtest_results/order_log/exchange_meta/system_state/portfolio_limits/audit) + timescale (ohlcv 读 + equity_curve 读)
+│       ├── store/{mongo,timescale}/  # mongo (options/accounts/backtest_results/order_log/exchange_meta/system_state/portfolio_limits/audit) + timescale (ohlcv/equity_curve 读 + Phase 8: macro/onchain/news 读)
 │       ├── quantclient/              # gRPC client → Python quant worker
 │       └── http/
 │           ├── router.go             # Echo 路由 + middleware（Phase 7：HTTP 直方图 + audit 中间件 + /metrics endpoint）
 │           ├── middleware/audit.go   # Phase 7 异步 audit middleware（缓冲通道 + 敏感字段脱敏 + 溢出计数）
-│           └── handlers/             # option.go + account.go + market.go + backtest.go + strategy.go + exchange_meta.go + portfolio.go + recommendation.go + optimization.go + admin.go (Phase 7：halt/resume/system-state/portfolio-limits/audit)
+│           └── handlers/             # option.go + account.go + market.go + backtest.go + strategy.go + exchange_meta.go + portfolio.go + recommendation.go + optimization.go + admin.go (Phase 7：halt/resume/system-state/portfolio-limits/audit) + data_explorer.go (Phase 8：equities/futures/macro/onchain/news + admin/ingest/*)
 ├── quant/                            # Phase 2 Python 量化 worker（uv 管理）
 │   ├── pyproject.toml                # uv-managed deps (fastapi/grpcio/ccxt/akshare/asyncpg/arq)
 │   ├── Dockerfile                    # uv:python3.12-bookworm-slim
@@ -84,11 +85,16 @@ finance_next/
 │   │   ├── main.py                   # FastAPI healthz + grpc.aio bootstrap
 │   │   ├── grpc_server.py            # QuantServicer (impls quant.v1.Quant)
 │   │   ├── ratelimit.py              # async TokenBucket + 每交易所 registry
-│   │   ├── data/{ccxt_source,akshare_source,timescale,symbols,mongo,recommendations}.py
+│   │   ├── data/{ccxt_source,akshare_source,timescale,symbols,mongo,recommendations,extended_repo,errors}.py
+│   │   ├── data/equities/{akshare_cn,yfinance_intl,polygon_stub}.py  # Phase 8：A 股 + intl + paid stub
+│   │   ├── data/futures/akshare_cn.py                                # Phase 8：CN commodity / index futures
+│   │   ├── data/macro/{fred,akshare_cn}.py                           # Phase 8：FRED + CN 宏观
+│   │   ├── data/onchain/{defillama,etherscan,blockchain_info,glassnode_stub,nansen_stub}.py  # Phase 8
+│   │   ├── data/news/{cryptopanic,akshare_cn,rss_aggregator,sentiment}.py  # Phase 8
 │   │   ├── strategies/{base,grid_dca}.py  # Phase 3：抽象策略 + 信号→portfolio 模拟器（带 shift(1) 防 look-ahead）
-│   │   ├── runtime/runtime.py        # Phase 4：长生命周期 asyncio 任务，每分钟扫 live=true 策略并发 command.order.submit
-│   │   ├── ai/{claude_client,cost_ledger,optimizer,prompts}.py  # Phase 6：Anthropic SDK + Optuna walk-forward + budget gate
-│   │   ├── workers/{ingest,backtest,optimize,settings}.py  # Arq 任务 + WorkerSettings + daily cron
+│   │   ├── runtime/{runtime,extended_consumer}.py  # Phase 4 long-lived runtime + Phase 8 admin-ingest stream consumer
+│   │   ├── ai/{claude_client,cost_ledger,optimizer,prompts,extended_context}.py  # Phase 6 + Phase 8 extended context
+│   │   ├── workers/{ingest,backtest,optimize,settings,extended_ingest}.py  # Arq 任务 + WorkerSettings + daily/hourly cron
 │   │   └── events/redis_stream.py    # OhlcvIngested + BacktestProgress/Completed + OptimizationProgress/Suggested 发布
 │   └── tests/                        # 离线运行：respx + fakeredis + 模块替换
 ├── shared-proto/                     # protobuf 单一来源（Go + Python 生成代码已检入）
@@ -98,7 +104,7 @@ finance_next/
 │   └── gen/{go,python}/              # 检入的生成代码
 ├── infra/
 │   ├── docker-compose.yml            # mongo / redis / timescale / gateway / quant
-│   ├── timescale/{001_init,002_hypertables}.sql  # 扩展 + 表 + 连续聚合
+│   ├── timescale/{001_init,002_hypertables,003_extended_data}.sql  # 扩展 + 表 + 连续聚合 + Phase 8 macro/onchain/news 表
 │   ├── grafana/dashboards/{gateway,quant}.json    # Phase 7：committed Grafana JSON exports
 │   ├── k8s/                          # Phase 7：Deployments / StatefulSets / Ingress / HPA / kustomization.yaml（finance-next-secrets 仅占位 example）
 │   └── scripts/                      # Phase 7：backup-{mongo,timescale}.sh + restore-* + README（commit-only，**不会自动跑**）
@@ -221,6 +227,16 @@ docker compose -f infra/docker-compose.yml up --build
 | GET    | `/api/v1/optimizations`                           | study 列表（含 cost ledger snapshot）；`?strategyId=` 过滤                                          |
 | GET    | `/api/v1/optimizations/:id`                       | study 头 doc                                                                                  |
 
+**Data Explorer (Phase 8)**（`gateway/internal/http/handlers/data_explorer.go`）— Timescale 直读；admin ingest 经 `command.ingest.<kind>` Redis Stream 投到 quant worker 的消费 loop。`ADMIN_KEY` 未配置时所有 `/admin/ingest/*` 端点 404。
+| 方法     | 路径                                          | 说明                                                                                                |
+| ------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| GET    | `/api/v1/equities/ohlcv`                    | 等价 `/market/ohlcv`，但允许 `exchange ∈ {sse,szse,nyse,nasdaq,hkex,...}`；symbol 用 `<code>.<exchange>` 形式 |
+| GET    | `/api/v1/futures/ohlcv`                     | CN 商品/股指期货；`?exchange=&contract=&timeframe=&start=&end=`                                          |
+| GET    | `/api/v1/macro/indicators`                  | `?source=&code=&start=&end=`；source ∈ {fred, cn_macro}；上限 50k 点                                    |
+| GET    | `/api/v1/onchain/metrics`                   | `?chain=&metric=&start=&end=`；chain ∈ {btc, eth, multi}                                           |
+| GET    | `/api/v1/news`                              | `?symbols=BTC,ETH&since=&limit=`；GIN array overlap 过滤；上限 1000                                     |
+| POST   | `/api/v1/admin/ingest/{equities,futures,macro,onchain,news}` | XADD 到 `command.ingest.<kind>`；body 为 kwargs 透传；返回 `{stream, messageId}` 202 |
+
 WS（phase 3 扩展 topic 模型 + phase 4 增加 strategy + phase 6 增加 optimization）：
 - 现有 `{type:"subscribe", accountId:"..."}` 仍兼容（默认 topic=`account`）。
 - `{type:"subscribe", topic:"backtest", id:"<runId>"}` — gateway 订阅 Redis Streams `event.backtest.progress` / `event.backtest.completed`，按 runId 过滤后扇出。
@@ -288,6 +304,11 @@ canWithdraw=true，解析失败 fail-closed）。
     设为 true，仍需 admin 走完 token request → confirm 流程（见 §8 安全说明）。
   - `QUANT_RUNTIME_DISABLED`（quant 端，Phase 4 新增，可选）— `true` 时
     `quant.runtime` 长生命周期任务不启动；测试和冷启动时使用。
+  - `EXTENDED_CONSUMER_DISABLED`（quant 端，Phase 8 新增，可选）— `true` 时
+    `quant.runtime.extended_consumer` 不在 lifespan 自动启动；admin
+    `POST /api/v1/admin/ingest/<kind>` 仍会写 Redis Stream，但需要操作员
+    手动 `python -m quant.runtime.extended_consumer` 或 dockerfile entrypoint
+    起独立进程消费。默认（unset）= 自动起。
   - **Phase 6（AI 优化）env vars**（仅 quant worker 读取，gateway 不直接消费）：
     - `ANTHROPIC_API_KEY` — Anthropic SDK 鉴权；为空时优化器跳过所有 Claude 调用
       使用默认 search space + 确定性 fallback rationale（dev 友好）
@@ -320,6 +341,23 @@ canWithdraw=true，解析失败 fail-closed）。
     - **Audit 保留期**：`audit` 集合 TTL 索引基于 `expiresAt` 字段，
       默认 7 年（`gateway/internal/store/mongo/audit_repo.go::DefaultAuditRetention`）；
       自动 prune 由 Mongo TTL monitor 处理（默认 60 秒扫一次，文档过期后真正删）
+  - **Phase 8 新增 env**（**全部仅 quant worker 读取**；gateway 读 `ADMIN_KEY` 决定 admin/ingest 路由是否暴露）：
+    - `FRED_API_KEY` — FRED REST 客户端鉴权；未设时整个 FRED 数据源在
+      `FREDClient.__init__` 抛 `ErrAPIKeyNotConfigured`；`run_macro_ingest`
+      捕获后跳过 FRED，AKShare CN 部分继续
+    - `ETHERSCAN_API_KEY` — 同样 fail-closed；`run_onchain_ingest` 捕获
+      后跳过 Etherscan，DefiLlama / blockchain.info 继续
+    - `CRYPTOPANIC_TOKEN` （可选）— 提升免费层 rate limit；空字符串时调
+      公共 endpoint，无 token
+    - `AI_CONTEXT_INCLUDE_EXTENDED` （default = 自动检测）— 默认 `true`
+      iff `FRED_API_KEY` 或 `ETHERSCAN_API_KEY` 任一已设；明确写
+      `true` / `false` 强制覆盖。开启后优化器在 `_try_define_search_space`
+      构建 prompt 时附带 24h 内新闻 top-5 + 最近宏观 + 链上快照
+      （走 prompt cache，**不抬高 budget 上限**；超 budget 退化为不带扩展上下文）
+    - **Phase 8 paid stub envs**（仅当下要切真 SDK 时设）：
+      `POLYGON_API_KEY`（`equities/polygon_stub.py`）、
+      `GLASSNODE_API_KEY`、`NANSEN_API_KEY`（`onchain/{glassnode,nansen}_stub.py`）。
+      未设时构造时即抛 `ErrAPIKeyNotConfigured`，整合 SDK 的步骤见 §8 ops
 - **凭证加密**：`gateway/internal/crypto/crypto.go` 提供 AES-256-GCM 封装；
   `option` handler 在 create / update 时透明加密 `userApiKey` 与
   `userSecretKey`，密文格式 `base64(iv).base64(tag).base64(ciphertext)`，
@@ -334,6 +372,16 @@ canWithdraw=true，解析失败 fail-closed）。
 - **`option/page.tsx`** 表单尚未接通 POST 提交。
 - **集成测试**：仓库目前缺少端到端 e2e（Phase 0 仅单测覆盖 crypto byte
   兼容性）；建议 Phase 1 起补 supertest-style 黑盒测试。
+- **Phase 8 付费数据源切换路径**：`quant/data/equities/polygon_stub.py` /
+  `quant/data/onchain/{glassnode,nansen}_stub.py` 在构造时即抛
+  `ErrAPIKeyNotConfigured`（绝不静默 no-op）。要切真 SDK 三步：
+  (1) 在 `quant/pyproject.toml` 加依赖（`polygon-api-client` /
+  `glassnode-sdk` 等），(2) 在 stub 文件 `__init__` 改为构造真客户端
+  + 实现 `fetch_*` 方法，(3) 在 `workers/extended_ingest.py` 把对应
+  cron 加入。Stub 的方法签名已对齐目标 SDK 的常见 shape，避免再次重命名。
+  **`AI_CONTEXT_INCLUDE_EXTENDED` 即使为 true，extended context 也不会触发付费
+  调用** — 只走免费 FRED/Etherscan/blockchain.info/DefiLlama/CryptoPanic/AKShare
+  + RSS。
 - **Mainnet 安全契约**（Phase 4，硬要求）：Binance 真实账户下单需要 **三**
   道开关全部打开 — (1) 策略 `live.mode == "mainnet"`、(2) env
   `MAINNET_TRADING_ENABLED=true`、(3) admin 通过 `/admin/mainnet/request-token`
@@ -498,5 +546,39 @@ canWithdraw=true，解析失败 fail-closed）。
         secret 为占位 example）
       - `.github/workflows/ci.yml`：Go vet/test/build + ruff + pytest + yarn
         lint/build，三 job 并行
+- [x] **Phase 8**：数据源全集
+      - 股票：`quant/data/equities/{akshare_cn,yfinance_intl,polygon_stub}.py`
+        — A 股 daily/intraday qfq + intl `Ticker.history()`；存储复用 `ohlcv`
+        表，symbol 形如 `<code>.<exchange>`
+      - 期货：`quant/data/futures/akshare_cn.py` — SHFE/DCE/CZCE/CFFEX
+        合约日 K（`futures_zh_daily_sina`）；存储复用 `ohlcv`
+      - 宏观：`quant/data/macro/{fred,akshare_cn}.py` + 新表
+        `macro_indicators(source, code, ts, value, unit)`（30 天分块 hypertable）；
+        FRED 默认序列 `CPIAUCSL/UNRATE/FEDFUNDS/DFF/DGS10/M2SL`
+      - 链上：`quant/data/onchain/{defillama,etherscan,blockchain_info,glassnode_stub,nansen_stub}.py` +
+        新表 `onchain_metrics(source, chain, metric, ts, value)`（7 天分块）；
+        付费源 fail-closed 抛 `ErrAPIKeyNotConfigured`
+      - 新闻：`quant/data/news/{cryptopanic,akshare_cn,rss_aggregator,sentiment}.py` +
+        新表 `news_events(id, source, ts, title, url, body, sentiment, symbols[])`
+        + GIN(symbols) + GIN(simple to_tsvector(title||body)) + ts desc btree；
+        sentiment 是 lexicon 占位（FinBERT swap = 实现 `LexiconSentiment.score` 替代）
+      - Gateway：`store/timescale/{macro,onchain,news}.go` + `handlers/data_explorer.go`
+        — 5 个读端点 + 5 个 `POST /api/v1/admin/ingest/<kind>` admin XADD 端点
+      - Quant：`workers/extended_ingest.py`（5 个 `run_*_ingest` + 5 个 Arq
+        函数 + 4 条 cron）+ `runtime/extended_consumer.py`（消费 admin
+        XADD 的 `command.ingest.<kind>` 流并 dispatch）；**`quant/main.py`
+        lifespan 在启动时自动起 `extended_consume_loop` 任务**，配 env
+        `EXTENDED_CONSUMER_DISABLED=true` 关闭（mirror Phase 4 的
+        `QUANT_RUNTIME_DISABLED`），保证 admin XADD 端点不会写进无消费者的
+        队列。Cron 仍是周期性 ingest 的主路径，consumer 只服务于交互式 ad-hoc 触发。
+      - AI：`ai/extended_context.py`（24h 新闻 top5 + 最新宏观 + 链上快照），
+        默认 iff `FRED_API_KEY` 或 `ETHERSCAN_API_KEY` 已设；进入 Anthropic
+        prompt-cache 块；**不抬高 budget 上限**，超 budget 退化为基础上下文
+      - UI：`(dashboard)/data-explorer/{equities,futures,macro,onchain,news}/page.tsx`
+        + 侧栏入口 + `client/data/api-client.ts` 5 个新接口 + 3 个新类型
+      - SQL：`infra/timescale/003_extended_data.sql`（idempotent，
+        docker-compose initdb.d 自动 apply，已存在的 hypertable 不影响）
+      - 测试：29 个 pytest（offline，respx + monkeypatch）+ 4 个 Go handler
+        测试（store-nil/admin-key 网格）；`go test`/`yarn build` 全绿
 - [ ] 期权配置表单接通 POST 提交
 - [ ] `client/app/list/` 实现

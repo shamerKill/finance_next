@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -145,6 +146,16 @@ func parseNonZero(s string) bool {
 	return false
 }
 
+// Binance retired /api/v3/userDataStream in 2024 (replaced by the WebSocket
+// API method userDataStream.start on wss://ws-api.binance.com:443/ws-api/v3).
+// Until the SDK call site is migrated, spot live streams degrade gracefully:
+// detect 410 Gone and surface the shared exchange.ErrUserStreamRetired so the
+// WS hub keeps the subscription open without raw HTML in the error path.
+//
+// TODO: migrate to coder/websocket-based WS API client; until then,
+// `/accounts/[id]` spot updates fall back to polling — order events still flow
+// because the order engine uses a different (Redis Stream) channel.
+
 // StreamUserData starts a fresh listenKey, opens the user-data WS, and
 // schedules listenKey keepalive (every 30 minutes per Binance docs).
 //
@@ -153,6 +164,14 @@ func parseNonZero(s string) bool {
 func (c *Client) StreamUserData(ctx context.Context) (exchange.UserDataStream, error) {
 	listenKey, err := c.spot.NewStartUserStreamService().Do(ctx)
 	if err != nil {
+		// Detect Binance's 410 Gone response for the retired spot user-data
+		// endpoint. The SDK wraps the nginx HTML response as an APIError
+		// containing "410 Gone" — surface a typed error so the WS hub can
+		// emit a friendly notice instead of a raw HTML dump.
+		s := err.Error()
+		if strings.Contains(s, "410 Gone") || strings.Contains(s, "<title>410") {
+			return nil, exchange.ErrUserStreamRetired
+		}
 		return nil, fmt.Errorf("binance: start user stream: %w", err)
 	}
 

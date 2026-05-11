@@ -29,6 +29,13 @@ import (
 	"github.com/finance_next/gateway/internal/exchange"
 )
 
+// ErrUpstreamRetired signals that the venue has retired the upstream this
+// subscription depends on (e.g. Binance spot user-data REST endpoint). The
+// /ws session handler maps this to a "degraded" notice frame and keeps the
+// connection open rather than rejecting the subscribe — other event sources
+// (Redis Stream order events) still flow.
+var ErrUpstreamRetired = errors.New("ws: venue upstream retired; subscription degraded (no live events)")
+
 // TopicKind discriminates subscription types.
 type TopicKind string
 
@@ -202,6 +209,14 @@ func (h *Hub) Subscribe(ctx context.Context, sessionID string, kind TopicKind, i
 		}
 		if err != nil {
 			cancel()
+			// Binance's spot user-data REST endpoint was retired in 2024
+			// (returns 410 Gone). We surface this as a degraded subscription
+			// rather than a hard failure: the WS connection stays open with
+			// no upstream events. Order events still flow because the order
+			// engine uses Redis Streams, not Binance's user-data WS.
+			if errors.Is(err, exchange.ErrUserStreamRetired) {
+				return ErrUpstreamRetired
+			}
 			return fmt.Errorf("ws: start upstream: %w", err)
 		}
 		up = &upstream{

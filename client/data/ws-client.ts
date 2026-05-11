@@ -16,7 +16,7 @@ export type WsTopic = "account" | "backtest" | "strategy" | "optimization";
 
 export type WsEvent = {
   // Examples: "account.event", "account.upstream_closed", "backtest.progress",
-  // "backtest.completed", "backtest.upstream_closed", "pong", "error"
+  // "backtest.completed", "backtest.upstream_closed", "pong", "error", "notice"
   type: string;
   topic?: WsTopic;
   id?: string;
@@ -24,6 +24,11 @@ export type WsEvent = {
   accountId?: string;
   payload?: unknown;
   error?: string;
+  // "notice" frames carry a non-fatal Chinese reason from the gateway
+  // (e.g. Binance spot user-data REST endpoint retired). reason is the
+  // machine-readable slug; message is the user-facing string.
+  reason?: string;
+  message?: string;
 };
 
 type Listener = (event: WsEvent) => void;
@@ -161,21 +166,28 @@ export function useAccountStream(
 ) {
   const [events, setEvents] = useState<WsEvent[]>([]);
   const [connected, setConnected] = useState(false);
+  // notice surfaces non-fatal server notices (e.g. Binance spot user-data
+  // stream retired → live updates unavailable but subscription is still open).
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!accountId) return;
     const off = getClient().subscribe("account", accountId, (ev) => {
       if (ev.type === "account.event") setConnected(true);
       if (ev.type === "account.upstream_closed") setConnected(false);
+      if (ev.type === "notice" && typeof ev.message === "string") {
+        setNotice(ev.message);
+      }
       setEvents((prev) => [ev, ...prev].slice(0, bufferSize));
     });
     return () => {
       off();
       setConnected(false);
+      setNotice(null);
     };
   }, [accountId, bufferSize]);
 
-  return { events, last: events[0] ?? null, connected };
+  return { events, last: events[0] ?? null, connected, notice };
 }
 
 // Phase 3: subscribe to live backtest progress for a single run.

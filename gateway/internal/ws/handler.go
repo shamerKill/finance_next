@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -130,6 +131,22 @@ func (h *Handler) Handle(c echo.Context) error {
 				continue
 			}
 			if err := h.hub.Subscribe(ctx, sessionID, topicKind, topicID); err != nil {
+				// ErrUpstreamRetired is a soft signal: the venue retired the
+				// upstream (e.g. Binance spot user-data /api/v3/userDataStream
+				// returns 410 Gone). The subscription itself succeeded as a
+				// degraded one — emit a Chinese "notice" frame so the UI can
+				// show the user why they're not seeing live events, instead
+				// of leaving the WS in an apparent-error state.
+				if errors.Is(err, ErrUpstreamRetired) {
+					_ = sink.SendJSON(ctx, map[string]any{
+						"type":   "notice",
+						"topic":  string(topicKind),
+						"id":     topicID,
+						"reason": "spot_user_stream_retired",
+						"message": "Binance 已下线 spot 用户数据流接口 — 实时余额更新暂不可用。订单事件不受影响。",
+					})
+					continue
+				}
 				_ = sink.SendJSON(ctx, map[string]any{
 					"type":  "error",
 					"topic": string(topicKind),

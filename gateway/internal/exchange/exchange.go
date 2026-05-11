@@ -151,3 +151,10 @@ type Adapter interface {
 // All adapters share this sentinel so the engine + reconcile loop can
 // match on it without per-venue casts.
 var ErrMainnetGateDenied = errors.New("exchange: mainnet trading not enabled (env + confirm token required)")
+
+// ErrUserStreamRetired signals that a venue has retired its user-data REST
+// endpoint and the adapter can no longer start a live stream (e.g. Binance
+// retired /api/v3/userDataStream in 2024 → 410 Gone). The WS hub maps this
+// to a non-fatal degraded subscription so the WS stays open and other event
+// channels (Redis Stream order events, periodic balance polling) continue.
+var ErrUserStreamRetired = errors.New("exchange: venue user-data stream is retired; live stream unavailable")

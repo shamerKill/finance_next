@@ -6,7 +6,7 @@ import { useAccountStream } from "@/data/ws-client";
 // account. The reconnect/backoff lives in ws-client's singleton; the buffer is
 // maintained inside useAccountStream itself so we don't double-buffer here.
 export default function AccountStreamPanel({ accountId }: { accountId: string }) {
-  const { events, connected } = useAccountStream(accountId);
+  const { events, connected, notice } = useAccountStream(accountId);
 
   return (
     <div>
@@ -20,6 +20,11 @@ export default function AccountStreamPanel({ accountId }: { accountId: string })
           {connected ? "已连接" : "等待事件中"}
         </span>
       </div>
+      {notice && (
+        <div className="mb-2 text-xs px-2 py-1 rounded bg-warning-50 text-warning-700 border border-warning-200">
+          ⚠️ {notice}
+        </div>
+      )}
       {events.length === 0 ? (
         <p className="text-sm text-default-500">
           暂无事件。该账户的交易将在此实时推送。

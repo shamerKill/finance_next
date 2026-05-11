@@ -3,6 +3,20 @@
 // ΔReturn / raw param values with the same rules — no more
 // "0.025637836675816615" leaking into the table.
 
+import type { TypeRecommendationPeriod } from "./type";
+
+// Legacy-fallback default period block. Matches the optimizer's
+// historical configuration (90d lookback, 70/30 IS/OOS split, Sharpe
+// annualized). Centralised here (not in type.d.ts, which is types-only)
+// so list + detail pages stay in sync when a recommendation pre-dates
+// the period field.
+export const DEFAULT_RECOMMENDATION_PERIOD: TypeRecommendationPeriod = {
+  lookbackDays: 90,
+  inSampleDays: 63,
+  oosDays: 27,
+  sharpeAnnualized: true,
+};
+
 // fmtPct renders a fractional number as a signed percentage. `0.0352` →
 // "+3.52%". Negative values keep their leading minus; non-finite numbers
 // render as an em-dash placeholder so the table never breaks layout.

@@ -16,7 +16,13 @@ import {
   getStrategy,
   getStrategyPerformance,
 } from "@/data/api-client";
-import { fmtPct, fmtRawNum, fmtSharpe, deltaToneClass } from "@/data/format";
+import {
+  DEFAULT_RECOMMENDATION_PERIOD,
+  deltaToneClass,
+  fmtPct,
+  fmtRawNum,
+  fmtSharpe,
+} from "@/data/format";
 import type {
   TypeOption,
   TypeRecommendation,
@@ -137,25 +143,57 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
       {/* Parent strategy snapshot — comparison anchor above the diff. */}
       <ParentStrategyPanel strategy={strategy} performance={performance} />
 
-      {/* Expected delta. */}
-      <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <div className="rounded-md bg-default-50 p-3">
-          <div className="text-xs text-default-500">Δ 夏普比率（样本外）</div>
-          <div
-            className={`text-lg font-semibold tabular-nums ${deltaToneClass(rec.expectedDelta?.sharpe)}`}
-          >
-            {fmtSharpe(rec.expectedDelta?.sharpe)}
+      {/* Expected delta. `period` is optional on legacy docs; we
+          render the documented defaults (90/63/27 + annualized) when
+          absent. The subtitle is the human-readable explanation of
+          what the cell number actually measures. */}
+      {(() => {
+        const period = rec.period ?? DEFAULT_RECOMMENDATION_PERIOD;
+        return (
+          <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <div className="rounded-md bg-default-50 p-3">
+              <div className="text-xs text-default-500">
+                Δ 夏普比率（样本外）
+              </div>
+              <div
+                className={`text-lg font-semibold tabular-nums ${deltaToneClass(rec.expectedDelta?.sharpe)}`}
+              >
+                {fmtSharpe(rec.expectedDelta?.sharpe)}
+              </div>
+              <div className="mt-1 text-xs text-default-500">
+                OOS 段{period.sharpeAnnualized ? "年化" : "未年化"} ·{" "}
+                {period.oosDays} 天
+              </div>
+            </div>
+            <div className="rounded-md bg-default-50 p-3">
+              <div className="text-xs text-default-500">Δ 收益（样本外）</div>
+              <div
+                className={`text-lg font-semibold tabular-nums ${deltaToneClass(rec.expectedDelta?.return)}`}
+              >
+                {fmtPct(rec.expectedDelta?.return)}
+              </div>
+              <div className="mt-1 text-xs text-default-500">
+                OOS {period.oosDays} 天累计 · 非年化
+              </div>
+            </div>
+          </section>
+        );
+      })()}
+
+      {/* Period explainer — defines exactly what the Δ numbers above
+          measure (lookback window, IS/OOS split, annualization). */}
+      {(() => {
+        const period = rec.period ?? DEFAULT_RECOMMENDATION_PERIOD;
+        return (
+          <div className="rounded-md border border-default-200 bg-default-50/50 p-3 text-xs text-default-600">
+            <span aria-hidden className="mr-1">ⓘ</span>
+            优化基于最近 {period.lookbackDays} 天数据，前 70% (
+            {period.inSampleDays} 天) 做 IS，后 30% ({period.oosDays} 天)
+            做 OOS。Sharpe {period.sharpeAnnualized ? "已年化" : "未年化"}
+            ；Return 为 OOS 段累计收益率。
           </div>
-        </div>
-        <div className="rounded-md bg-default-50 p-3">
-          <div className="text-xs text-default-500">Δ 收益（样本外）</div>
-          <div
-            className={`text-lg font-semibold tabular-nums ${deltaToneClass(rec.expectedDelta?.return)}`}
-          >
-            {fmtPct(rec.expectedDelta?.return)}
-          </div>
-        </div>
-      </section>
+        );
+      })()}
 
       {/* Param diff table. */}
       <section>

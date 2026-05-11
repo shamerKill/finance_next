@@ -276,6 +276,18 @@ export type TypeRecommendationStatus =
   | "rejected"
   | "superseded";
 
+// Phase D — wave 3 — period metadata describing the lookback window
+// the optimizer used to evaluate the recommendation. Optional on the
+// client because legacy recommendations pre-date the field; UI defaults
+// to 90/63/27 + annualized=true when absent (matches the optimizer's
+// historical default search window).
+export type TypeRecommendationPeriod = {
+  lookbackDays: number;
+  inSampleDays: number;
+  oosDays: number;
+  sharpeAnnualized: boolean;
+};
+
 export type TypeRecommendation = {
   id: string;
   strategyId: string;
@@ -289,7 +301,13 @@ export type TypeRecommendation = {
   appliedVersion?: number | null;
   createdAt: string;
   updatedAt: string;
+  // Optional — see TypeRecommendationPeriod note above.
+  period?: TypeRecommendationPeriod;
 };
+
+// Legacy-fallback default period block — the actual constant lives in
+// `data/format.ts` since `.d.ts` files cannot hold runtime values.
+// Re-export the type here for ergonomic single-source imports.
 
 export type TypeOptimizationCost = {
   claudeTokensIn: number;

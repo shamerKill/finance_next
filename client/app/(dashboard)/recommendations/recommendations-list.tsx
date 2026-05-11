@@ -7,13 +7,19 @@
 // action. Server-only renderable pieces (badges, formatters) are still
 // computed inline since they don't need state.
 
+import { Tooltip } from "@heroui/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { StatusBadge } from "@/components/status-badge";
 import { rejectRecommendation } from "@/data/api-client";
-import { fmtPct, fmtSharpe, deltaToneClass } from "@/data/format";
+import {
+  DEFAULT_RECOMMENDATION_PERIOD,
+  deltaToneClass,
+  fmtPct,
+  fmtSharpe,
+} from "@/data/format";
 import type {
   TypeOption,
   TypeRecommendation,
@@ -258,6 +264,14 @@ export function RecommendationsList({
     );
   }
 
+  // Pull OOS-days off the first cluster's primary for the column
+  // header; recommendations within the same status set typically share
+  // a search window. Falls back to the documented default for legacy
+  // recommendations missing `period`.
+  const headerPeriod =
+    clusters[0]?.primary.period ?? DEFAULT_RECOMMENDATION_PERIOD;
+  const headerOosLabel = `OOS ${headerPeriod.oosDays.toFixed(0)}天`;
+
   return (
     <>
       {/* Desktop: dense table. */}
@@ -266,8 +280,14 @@ export function RecommendationsList({
           <tr>
             <th className="py-2 pr-4">策略</th>
             <th className="py-2 pr-4">状态</th>
-            <th className="py-2 pr-4">Δ 夏普</th>
-            <th className="py-2 pr-4">Δ 收益</th>
+            <th className="py-2 pr-4">
+              <Tooltip content="OOS 段年化夏普比率">
+                <span className="cursor-help underline decoration-dotted decoration-default-300 underline-offset-2">
+                  Δ 夏普 (年化)
+                </span>
+              </Tooltip>
+            </th>
+            <th className="py-2 pr-4">Δ 收益 ({headerOosLabel})</th>
             <th className="py-2 pr-4">创建时间</th>
             <th className="py-2 pr-4">Study</th>
             <th className="py-2"></th>

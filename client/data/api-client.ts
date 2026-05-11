@@ -588,6 +588,77 @@ export const setPortfolioLimits = async (
   return jsonOrThrow<TypePortfolioLimits>(res);
 };
 
+// ---- Phase D wave 3 — AI configuration + prompts (admin) ----
+//
+// Two complementary endpoints. /admin/ai/config drives the editable
+// knobs (model family, model names, base URLs, budgets, lookback). It
+// gets a PUT for partial updates — the gateway merges into the
+// persisted document and falls back to env values for unset fields.
+// /admin/ai/prompts returns the hard-coded system prompts that the
+// quant worker currently has loaded; surface-area for prompt-injection
+// guardrails so they're explicitly NOT runtime-editable. The endpoint
+// is a quant gRPC proxy and returns 503 when quant is unreachable —
+// callers must handle that case (we render a warning callout).
+export type TypeAIConfig = {
+  modelFamily: "claude" | "openai";
+  anthropicPrimaryModel: string;
+  anthropicRefineModel: string;
+  openaiPrimaryModel: string;
+  openaiRefineModel: string;
+  anthropicBaseURL: string;
+  openaiBaseURL: string;
+  budgetUsdPerStudy: number;
+  budgetUsdPerDay: number;
+  lookbackDays: number;
+  updatedAt: string;
+  anthropicConfigured: boolean;
+  openaiConfigured: boolean;
+  source: "mongo" | "env" | "mixed";
+};
+
+export type TypeAIPrompts = {
+  defineSearchSpace: string;
+  refineSearchSpace: string;
+  finalRationale: string;
+  version: string;
+  promptsHash: string;
+  modelFamilyActive: string;
+  primaryModelActive: string;
+  refineModelActive: string;
+};
+
+export const getAdminAIConfig = async (
+  adminKey: string,
+): Promise<TypeAIConfig> => {
+  const res = await apiFetch(parseUrl("v1/admin/ai/config"), {
+    cache: "no-store",
+    headers: { "X-Admin-Key": adminKey },
+  });
+  return jsonOrThrow<TypeAIConfig>(res);
+};
+
+export const updateAdminAIConfig = async (
+  adminKey: string,
+  patch: Partial<TypeAIConfig>,
+): Promise<TypeAIConfig> => {
+  const res = await apiFetch(parseUrl("v1/admin/ai/config"), {
+    method: "PUT",
+    headers: adminHeaders(adminKey),
+    body: JSON.stringify(patch),
+  });
+  return jsonOrThrow<TypeAIConfig>(res);
+};
+
+export const getAdminAIPrompts = async (
+  adminKey: string,
+): Promise<TypeAIPrompts> => {
+  const res = await apiFetch(parseUrl("v1/admin/ai/prompts"), {
+    cache: "no-store",
+    headers: { "X-Admin-Key": adminKey },
+  });
+  return jsonOrThrow<TypeAIPrompts>(res);
+};
+
 export const listAudit = async (
   adminKey: string,
   params: {

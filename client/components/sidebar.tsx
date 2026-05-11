@@ -85,6 +85,8 @@ const GROUPS: NavGroup[] = [
             />
           ) : null,
       },
+      { href: "/admin/ai", label: "AI 配置" },
+      { href: "/admin/audit", label: "审计" },
     ],
   },
 ];

@@ -17,12 +17,12 @@ export default function AccountStreamPanel({ accountId }: { accountId: string })
           }`}
         />
         <span className="text-default-500">
-          {connected ? "Live" : "Awaiting events"}
+          {connected ? "已连接" : "等待事件中"}
         </span>
       </div>
       {events.length === 0 ? (
         <p className="text-sm text-default-500">
-          No events yet. Trades on this account will stream here in real time.
+          暂无事件。该账户的交易将在此实时推送。
         </p>
       ) : (
         <ul className="text-xs font-mono max-h-72 overflow-auto border border-default-200 rounded p-2 bg-default-50">

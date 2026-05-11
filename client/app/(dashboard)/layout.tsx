@@ -42,11 +42,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       {state?.tradingHalted && (
         <div className="bg-danger text-white px-4 py-2 text-sm font-semibold flex items-center justify-between">
           <span>
-            TRADING HALTED — {state.haltedReason ?? "no reason given"}
-            {state.haltedBy ? ` (by ${state.haltedBy})` : ""}
+            交易已暂停 — {state.haltedReason ?? "未提供原因"}
+            {state.haltedBy ? ` (由 ${state.haltedBy} 操作)` : ""}
           </span>
           <Link href="/admin" className="underline">
-            manage
+            管理
           </Link>
         </div>
       )}
@@ -55,43 +55,43 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <div className="text-lg font-semibold mb-6">finance_next</div>
           <nav className="flex flex-col gap-2 text-sm">
             <Link className="hover:text-primary" href="/accounts">
-              Accounts
+              账户
             </Link>
             <Link className="hover:text-primary" href="/portfolio">
-              Portfolio
+              投资组合
             </Link>
             <Link className="hover:text-primary" href="/strategies">
-              Strategies
+              策略
             </Link>
             <Link className="hover:text-primary" href="/api-list">
-              Strategies (legacy)
+              策略（旧版）
             </Link>
             <Link className="hover:text-primary" href="/option">
-              New Strategy
+              新建策略
             </Link>
             <Link className="hover:text-primary" href="/markets">
-              Markets
+              行情
             </Link>
             <Link className="hover:text-primary" href="/backtests">
-              Backtests
+              回测
             </Link>
             <Link className="hover:text-primary" href="/recommendations">
-              Recommendations
+              AI 推荐
             </Link>
             <Link className="hover:text-primary" href="/data-explorer">
-              Data Explorer
+              数据浏览
             </Link>
             <Link className="hover:text-primary mt-4" href="/wallets">
-              Wallets
+              钱包
             </Link>
             <Link className="hover:text-primary" href="/prediction/markets">
-              Prediction Markets
+              预测市场
             </Link>
             <Link className="hover:text-primary" href="/prediction/strategies">
-              Prediction Strategies
+              预测策略
             </Link>
             <Link className="hover:text-primary mt-4" href="/admin">
-              Admin
+              管理
             </Link>
           </nav>
         </aside>

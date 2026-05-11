@@ -157,6 +157,13 @@ func main() {
 			// Non-fatal: log + continue. Market endpoints will return 503.
 			logger.Warn("timescale connect failed; market endpoints disabled", "err", err)
 		} else {
+			// Idempotent schema migration. docker-entrypoint-initdb.d only
+			// fires on a virgin data dir, so a re-attached compose volume
+			// silently skips the SQL. Re-applying every boot guarantees the
+			// tables exist regardless of volume state.
+			if err := tsstore.Migrate(rootCtx, pool, logger); err != nil {
+				logger.Warn("timescale migrate had errors (continuing)", "err", err)
+			}
 			tsStore = tsstore.New(pool)
 			tsPool = pool
 			logger.Info("timescale connected")

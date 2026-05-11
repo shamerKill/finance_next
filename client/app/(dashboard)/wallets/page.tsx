@@ -17,35 +17,32 @@ export default async function WalletsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Polygon Wallets</h1>
+        <h1 className="text-2xl font-semibold">Polygon 钱包</h1>
         <Link
           href="/wallets/new"
           className="px-3 py-2 rounded bg-primary text-white text-sm"
         >
-          + Add wallet
+          + 添加钱包
         </Link>
       </div>
 
       <div className="rounded border border-warning bg-warning/10 p-3 text-sm mb-4">
-        <strong>Polymarket security model:</strong> Polygon wallet private keys
-        are stored encrypted with the same envelope provider as exchange API
-        keys. They never appear in API responses and are scrubbed from audit
-        logs. USDC approvals are <em>bounded</em> — capped by{" "}
-        <code>portfolio_limits.maxOpenNotionalUsd</code>; infinite approve is
-        disabled by design. Polymarket has no testnet — three gates required
-        for any order.
+        <strong>Polymarket 安全模型：</strong>Polygon 钱包私钥使用与交易所 API
+        密钥相同的信封加密方案加密存储。私钥永远不会出现在 API 响应中，并会从审计
+        日志中清除。USDC 授权额度为<em>有限额度</em> — 上限由{" "}
+        <code>portfolio_limits.maxOpenNotionalUsd</code> 限定；无限额度授权在
+        设计上已禁用。Polymarket 没有测试网 — 任何订单都需要通过三道闸验证。
       </div>
 
       {error && (
         <div className="rounded border border-danger p-3 text-sm text-danger mb-4">
-          Failed to load wallets: {error}
+          加载钱包失败：{error}
         </div>
       )}
 
       {wallets.length === 0 && !error && (
         <p className="text-default-500 text-sm">
-          No wallets yet. Add a Polygon wallet (private key) to start trading
-          Polymarket.
+          暂无钱包。添加一个 Polygon 钱包（私钥）以开始 Polymarket 交易。
         </p>
       )}
 
@@ -62,7 +59,7 @@ export default async function WalletsPage() {
             </div>
             {w.usdcBalanceCached != null && (
               <div className="text-xs text-default-500 mt-1">
-                USDC cached: {w.usdcBalanceCached.toFixed(2)} · allowance:{" "}
+                USDC 缓存余额：{w.usdcBalanceCached.toFixed(2)} · 授权额度：{" "}
                 {(w.usdcAllowanceCached ?? 0).toFixed(2)}
               </div>
             )}

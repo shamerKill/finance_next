@@ -15,17 +15,17 @@ export default async function OnchainPage() {
   try {
     points = await getOnchainMetrics(DEFAULT_CHAIN, DEFAULT_METRIC);
   } catch (e) {
-    error = e instanceof Error ? e.message : "Failed to load on-chain";
+    error = e instanceof Error ? e.message : "加载链上数据失败";
   }
   const rows = [...points].reverse().slice(0, 200);
   return (
     <div className="flex flex-col gap-4">
       <header>
         <h1 className="text-2xl font-semibold">
-          On-chain — {DEFAULT_CHAIN}:{DEFAULT_METRIC}
+          链上 — {DEFAULT_CHAIN}:{DEFAULT_METRIC}
         </h1>
         <p className="text-sm text-default-500">
-          Showing the most recent {rows.length} observations.
+          显示最近 {rows.length} 条观测数据。
         </p>
       </header>
       {error && (
@@ -36,9 +36,9 @@ export default async function OnchainPage() {
       <table className="text-sm border border-default-200">
         <thead className="bg-default-100">
           <tr>
-            <th className="text-left px-3 py-2">ts</th>
-            <th className="text-right px-3 py-2">value</th>
-            <th className="text-left px-3 py-2">source</th>
+            <th className="text-left px-3 py-2">时间</th>
+            <th className="text-right px-3 py-2">数值</th>
+            <th className="text-left px-3 py-2">来源</th>
           </tr>
         </thead>
         <tbody>

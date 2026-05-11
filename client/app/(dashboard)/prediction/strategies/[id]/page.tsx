@@ -50,7 +50,7 @@ export default function PredictionStrategyDetailPage() {
 
   const toggle = async (enabled: boolean) => {
     if (enabled && !walletId) {
-      setError("select a wallet first");
+      setError("请先选择钱包");
       return;
     }
     setBusy(true);
@@ -76,24 +76,24 @@ export default function PredictionStrategyDetailPage() {
       </div>
     );
   }
-  if (!s) return <div className="text-sm">Loading…</div>;
+  if (!s) return <div className="text-sm">加载中…</div>;
 
   return (
     <div className="grid gap-4">
       <h1 className="text-2xl font-semibold">{s.name}</h1>
       <div className="text-xs text-default-500">
-        market: {s.marketId} · outcome: {s.outcome} · v{s.currentVersion}
+        市场：{s.marketId} · 结果：{s.outcome} · v{s.currentVersion}
       </div>
 
       <section className="border border-default-200 rounded p-4">
-        <h2 className="font-semibold mb-2">Live mode</h2>
+        <h2 className="font-semibold mb-2">实盘模式</h2>
         <div className="flex items-center gap-2 text-sm">
           <select
             value={walletId}
             onChange={(e) => setWalletId(e.target.value)}
             className="border border-default-200 rounded px-2 py-1"
           >
-            <option value="">— select wallet —</option>
+            <option value="">— 选择钱包 —</option>
             {wallets.map((w) => (
               <option key={w.id} value={w.id}>
                 {w.label} ({w.address.slice(0, 8)}…)
@@ -108,14 +108,14 @@ export default function PredictionStrategyDetailPage() {
               s.live.enabled ? "bg-danger" : "bg-success"
             } disabled:opacity-50`}
           >
-            {s.live.enabled ? "Disable live" : "Enable live"}
+            {s.live.enabled ? "禁用实盘" : "启用实盘"}
           </button>
         </div>
         {s.live.enabled && (
           <div className="rounded border border-warning bg-warning/10 p-2 text-xs mt-2">
-            <strong>MAINNET</strong> — Polymarket has no testnet. Three gates
-            required: env <code>POLYMARKET_TRADING_ENABLED=true</code> + admin
-            token confirmed (1h window) + this strategy mode=mainnet.
+            <strong>MAINNET 主网</strong> — Polymarket 没有测试网。需要
+            三道闸：env <code>POLYMARKET_TRADING_ENABLED=true</code> +
+            admin token 已确认（1 小时窗口）+ 此策略 mode=mainnet。
           </div>
         )}
         {error && (
@@ -124,28 +124,28 @@ export default function PredictionStrategyDetailPage() {
       </section>
 
       <section className="border border-default-200 rounded p-4">
-        <h2 className="font-semibold mb-2">Risk caps</h2>
+        <h2 className="font-semibold mb-2">风控上限</h2>
         <div className="text-sm grid grid-cols-2 gap-1">
-          <div>maxNotionalUsd: ${s.risk.maxNotionalUsd}</div>
-          <div>maxOpenMarkets: {s.risk.maxOpenMarkets}</div>
-          <div>maxSlippageBps: {s.risk.maxSlippageBps}</div>
-          <div>dailyLossCapUsd: ${s.risk.dailyLossCapUsd}</div>
+          <div>maxNotionalUsd：${s.risk.maxNotionalUsd}</div>
+          <div>maxOpenMarkets：{s.risk.maxOpenMarkets}</div>
+          <div>maxSlippageBps：{s.risk.maxSlippageBps}</div>
+          <div>dailyLossCapUsd：${s.risk.dailyLossCapUsd}</div>
         </div>
       </section>
 
       <section className="border border-default-200 rounded p-4">
-        <h2 className="font-semibold mb-2">Recent orders</h2>
+        <h2 className="font-semibold mb-2">最近订单</h2>
         {orders.length === 0 ? (
-          <div className="text-sm text-default-500">No orders yet.</div>
+          <div className="text-sm text-default-500">暂无订单。</div>
         ) : (
           <table className="w-full text-xs font-mono">
             <thead>
               <tr className="text-default-500">
-                <th className="text-left">submittedAt</th>
-                <th className="text-left">side</th>
-                <th className="text-right">price</th>
-                <th className="text-right">size</th>
-                <th>status</th>
+                <th className="text-left">提交时间</th>
+                <th className="text-left">方向</th>
+                <th className="text-right">价格</th>
+                <th className="text-right">数量</th>
+                <th>状态</th>
               </tr>
             </thead>
             <tbody>

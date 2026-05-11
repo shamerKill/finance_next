@@ -152,7 +152,7 @@ export default function PageStrategyDetail() {
   };
 
   if (!strategy) {
-    return <div className="p-4 text-sm text-default-500">Loading…</div>;
+    return <div className="p-4 text-sm text-default-500">加载中…</div>;
   }
 
   return (
@@ -170,7 +170,7 @@ export default function PageStrategyDetail() {
               via the WS optimization topic. */}
           {id && <TuneNowButton strategyId={id} />}
           <span className={`h-2 w-2 rounded-full ${connected ? "bg-success-500" : "bg-default-300"}`} />
-          {connected ? "live stream connected" : "stream idle"}
+          {connected ? "实时数据流已连接" : "数据流空闲"}
         </div>
       </div>
 
@@ -182,14 +182,13 @@ export default function PageStrategyDetail() {
 
       {mode === "mainnet" && enabled && (
         <div className="rounded border border-warning-200 bg-warning-50 p-3 text-sm text-warning-800">
-          MAINNET TRADING IS ENABLED FOR THIS STRATEGY. Real funds at risk. The
-          server-side gate (env + confirm token) must currently be open.
+          此策略已启用主网交易。真实资金存在风险。当前服务端闸门（env + 确认 token）必须开启。
         </div>
       )}
 
       {/* ---- Live toggle ---- */}
       <section className="rounded border border-default-200 p-4">
-        <h2 className="mb-3 text-sm font-semibold">Live execution</h2>
+        <h2 className="mb-3 text-sm font-semibold">实盘执行</h2>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <label className="flex items-center gap-2">
             <input
@@ -197,26 +196,26 @@ export default function PageStrategyDetail() {
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
             />
-            <span>Enabled</span>
+            <span>启用</span>
           </label>
           <label className="flex items-center gap-2">
-            Mode:
+            模式：
             <select
               value={mode}
               onChange={(e) => setMode(e.target.value as TypeLiveMode)}
               className="rounded border border-default-200 px-2 py-1"
             >
-              <option value="testnet">testnet (default)</option>
-              <option value="mainnet">mainnet (admin gate)</option>
+              <option value="testnet">测试网（默认）</option>
+              <option value="mainnet">主网（需管理员闸门）</option>
             </select>
           </label>
           <label className="flex items-center gap-2">
-            Account ID:
+            账户 ID：
             <input
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
               className="rounded border border-default-200 px-2 py-1"
-              placeholder="required when enabling"
+              placeholder="启用时必填"
             />
           </label>
         </div>
@@ -225,21 +224,21 @@ export default function PageStrategyDetail() {
           onClick={onSaveLive}
           className="mt-3 rounded bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
         >
-          Save live config
+          保存实盘配置
         </button>
       </section>
 
       {/* ---- Risk caps ---- */}
       <section className="rounded border border-default-200 p-4">
         <h2 className="mb-3 text-sm font-semibold">
-          Risk caps{" "}
+          风控上限{" "}
           <span className="text-xs font-normal text-default-500">
-            (mandatory; missing values cause the gateway to REJECT every order)
+            （必填；缺失值会导致 gateway 拒绝所有订单）
           </span>
         </h2>
         <div className="grid grid-cols-3 gap-3 text-sm">
           <label className="flex flex-col gap-1">
-            Max position (USD)
+            最大仓位（USD）
             <input
               type="number"
               value={maxPosition}
@@ -248,7 +247,7 @@ export default function PageStrategyDetail() {
             />
           </label>
           <label className="flex flex-col gap-1">
-            Max leverage
+            最大杠杆
             <input
               type="number"
               value={maxLeverage}
@@ -257,7 +256,7 @@ export default function PageStrategyDetail() {
             />
           </label>
           <label className="flex flex-col gap-1">
-            Daily loss cap (USD)
+            每日亏损上限（USD）
             <input
               type="number"
               value={dailyLoss}
@@ -271,29 +270,29 @@ export default function PageStrategyDetail() {
           onClick={onSaveRisk}
           className="mt-3 rounded bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
         >
-          Save risk caps
+          保存风控上限
         </button>
       </section>
 
       {/* ---- Order log ---- */}
       <section className="rounded border border-default-200 p-4">
-        <h2 className="mb-3 text-sm font-semibold">Order log (live)</h2>
+        <h2 className="mb-3 text-sm font-semibold">订单日志（实时）</h2>
         {mergedOrders.length === 0 ? (
-          <p className="text-sm text-default-500">No orders yet.</p>
+          <p className="text-sm text-default-500">暂无订单。</p>
         ) : (
           <table className="w-full text-xs">
             <thead className="text-left text-default-500">
               <tr>
-                <th className="py-1">Submitted</th>
-                <th>Symbol</th>
-                <th>Side</th>
-                <th>Type</th>
-                <th>Qty</th>
-                <th>Filled</th>
-                <th>Avg fill</th>
-                <th>Status</th>
-                <th>Mode</th>
-                <th>Client ID</th>
+                <th className="py-1">提交时间</th>
+                <th>交易对</th>
+                <th>方向</th>
+                <th>类型</th>
+                <th>数量</th>
+                <th>已成交</th>
+                <th>均价</th>
+                <th>状态</th>
+                <th>模式</th>
+                <th>客户端 ID</th>
               </tr>
             </thead>
             <tbody>

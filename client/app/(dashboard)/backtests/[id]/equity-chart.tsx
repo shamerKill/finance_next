@@ -75,7 +75,7 @@ export function EquityChart({ points }: Props) {
   if (points.length === 0) {
     return (
       <div className="text-sm text-default-500">
-        No equity data yet — backtest still running or no bars in range.
+        暂无资金曲线数据——回测仍在运行或所选区间无 K 线数据。
       </div>
     );
   }

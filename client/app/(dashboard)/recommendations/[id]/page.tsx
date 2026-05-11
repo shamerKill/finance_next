@@ -39,16 +39,16 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
     rec = await getRecommendation(id);
     strategy = await getStrategy(rec.strategyId);
   } catch (e) {
-    error = e instanceof Error ? e.message : "failed";
+    error = e instanceof Error ? e.message : "失败";
   }
 
   if (error || !rec) {
     return (
       <div className="rounded-md bg-danger-50 p-4 text-sm text-danger-700">
-        {error ?? "Recommendation not found"}
+        {error ?? "未找到推荐"}
         <div className="mt-2">
           <Link href="/recommendations" className="text-primary hover:underline">
-            ← Back to recommendations
+            ← 返回推荐列表
           </Link>
         </div>
       </div>
@@ -74,20 +74,20 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
             href="/recommendations"
             className="text-xs text-default-500 hover:underline"
           >
-            ← Recommendations
+            ← AI 推荐
           </Link>
-          <h1 className="mt-1 text-2xl font-semibold">Recommendation</h1>
+          <h1 className="mt-1 text-2xl font-semibold">推荐详情</h1>
           <p className="text-sm text-default-500">
-            Strategy{" "}
+            策略{" "}
             <span className="font-mono">{rec.strategyId}</span> · Study{" "}
             <span className="font-mono">{rec.studyId}</span>
           </p>
         </div>
         <div className="text-right text-xs text-default-500">
-          <div>Created {new Date(rec.createdAt).toLocaleString()}</div>
-          <div>Status: {rec.status}</div>
+          <div>创建于 {new Date(rec.createdAt).toLocaleString()}</div>
+          <div>状态：{rec.status}</div>
           {rec.appliedVersion && (
-            <div>Applied version: {rec.appliedVersion}</div>
+            <div>应用版本：{rec.appliedVersion}</div>
           )}
         </div>
       </header>
@@ -95,13 +95,13 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
       {/* Expected delta + cost meter. */}
       <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <div className="rounded-md bg-default-50 p-3">
-          <div className="text-xs text-default-500">Δ Sharpe (OOS)</div>
+          <div className="text-xs text-default-500">Δ 夏普比率（样本外）</div>
           <div className="text-lg font-semibold">
             {(rec.expectedDelta?.sharpe ?? 0).toFixed(3)}
           </div>
         </div>
         <div className="rounded-md bg-default-50 p-3">
-          <div className="text-xs text-default-500">Δ Return (OOS)</div>
+          <div className="text-xs text-default-500">Δ 收益（样本外）</div>
           <div className="text-lg font-semibold">
             {((rec.expectedDelta?.return ?? 0) * 100).toFixed(2)}%
           </div>
@@ -110,13 +110,13 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
 
       {/* Param diff table. */}
       <section>
-        <h2 className="text-lg font-semibold mb-2">Proposed parameter changes</h2>
+        <h2 className="text-lg font-semibold mb-2">建议的参数变更</h2>
         <table className="w-full text-sm">
           <thead className="border-b border-default-200 text-left text-default-500">
             <tr>
-              <th className="py-2 pr-4">Parameter</th>
-              <th className="py-2 pr-4">Current</th>
-              <th className="py-2 pr-4">Proposed</th>
+              <th className="py-2 pr-4">参数</th>
+              <th className="py-2 pr-4">当前值</th>
+              <th className="py-2 pr-4">建议值</th>
               <th className="py-2"></th>
             </tr>
           </thead>
@@ -138,7 +138,7 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
                   </td>
                   <td className="py-2 pr-4 font-mono text-xs">{fmt(proposed)}</td>
                   <td className="py-2 text-xs text-default-500">
-                    {changed ? "modified" : ""}
+                    {changed ? "已修改" : ""}
                   </td>
                 </tr>
               );
@@ -152,9 +152,9 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
           short enough that <pre> + line-breaks reads cleanly and we
           avoid an extra render-time dep on the server. */}
       <section>
-        <h2 className="text-lg font-semibold mb-2">Rationale</h2>
+        <h2 className="text-lg font-semibold mb-2">理由</h2>
         <div className="rounded-md border border-default-200 bg-default-50 p-4 text-sm whitespace-pre-wrap">
-          {rec.rationale || "(no rationale produced)"}
+          {rec.rationale || "（未生成理由）"}
         </div>
       </section>
 
@@ -164,9 +164,9 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
         <section className="border-t border-default-200 pt-4">
           <RecommendationActions id={rec.id} />
           <p className="mt-2 text-xs text-default-500">
-            Approving will update the strategy document, bump
-            <code className="mx-1">currentVersion</code>, and supersede
-            any other pending recommendations for this strategy.
+            批准后将更新策略文档，自增
+            <code className="mx-1">currentVersion</code>，并替代
+            该策略其他所有待审核的推荐。
           </p>
         </section>
       )}

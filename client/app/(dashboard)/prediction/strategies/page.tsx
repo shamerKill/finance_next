@@ -16,12 +16,12 @@ export default async function PredictionStrategiesPage() {
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">Prediction Strategies</h1>
+        <h1 className="text-2xl font-semibold">预测策略</h1>
         <Link
           href="/prediction/strategies/new"
           className="px-3 py-2 rounded bg-primary text-white text-sm"
         >
-          + Create
+          + 新建
         </Link>
       </div>
 
@@ -31,7 +31,7 @@ export default async function PredictionStrategiesPage() {
         </div>
       )}
       {strategies.length === 0 && !error && (
-        <p className="text-default-500 text-sm">No strategies yet.</p>
+        <p className="text-default-500 text-sm">暂无策略。</p>
       )}
 
       <div className="grid gap-3">
@@ -45,12 +45,12 @@ export default async function PredictionStrategiesPage() {
               <div>
                 <div className="font-medium">{s.name}</div>
                 <div className="text-xs text-default-500 mt-1">
-                  market: {s.marketId} · outcome: {s.outcome}
+                  市场：{s.marketId} · 结果：{s.outcome}
                 </div>
               </div>
               {s.live.enabled && (
                 <span className="px-2 py-1 rounded bg-success/20 text-success text-xs">
-                  live · {s.live.mode}
+                  实盘 · {s.live.mode}
                 </span>
               )}
             </div>

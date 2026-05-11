@@ -25,10 +25,9 @@ export default async function PredictionMarketsPage({
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-4">Prediction Markets</h1>
+      <h1 className="text-2xl font-semibold mb-4">预测市场</h1>
       <div className="text-sm text-default-500 mb-4">
-        Polymarket condition catalogue. Click a market to see orderbook +
-        place-order form.
+        Polymarket 条件目录。点击市场查看订单簿和下单表单。
       </div>
 
       {error && (
@@ -39,8 +38,8 @@ export default async function PredictionMarketsPage({
 
       {markets.length === 0 && !error && (
         <p className="text-default-500 text-sm">
-          No markets ingested yet. Run{" "}
-          <code>POST /api/v1/admin/ingest/prediction</code> to seed.
+          尚未抓取任何市场。运行{" "}
+          <code>POST /api/v1/admin/ingest/prediction</code> 进行初始化。
         </p>
       )}
 
@@ -55,7 +54,7 @@ export default async function PredictionMarketsPage({
             <div className="text-xs text-default-500 mt-1 flex gap-2 flex-wrap">
               {m.category && <span>{m.category}</span>}
               {m.endDate && (
-                <span>ends: {new Date(m.endDate).toLocaleDateString()}</span>
+                <span>结束：{new Date(m.endDate).toLocaleDateString()}</span>
               )}
               {(m.tags ?? []).map((t) => (
                 <span key={t} className="bg-default-100 px-2 rounded">

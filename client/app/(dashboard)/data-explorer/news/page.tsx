@@ -19,15 +19,15 @@ export default async function NewsPage() {
   try {
     items = await getNews(undefined, undefined, 100);
   } catch (e) {
-    error = e instanceof Error ? e.message : "Failed to load news";
+    error = e instanceof Error ? e.message : "加载新闻失败";
   }
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <h1 className="text-2xl font-semibold">News & sentiment</h1>
+        <h1 className="text-2xl font-semibold">新闻与情绪</h1>
         <p className="text-sm text-default-500">
-          Latest {items.length} items across CryptoPanic / AKShare CLS / RSS.
-          Sentiment is a placeholder lexicon scorer — not financial advice.
+          来自 CryptoPanic / AKShare 财联社 / RSS 的最新 {items.length} 条。
+          情绪为占位词典打分 — 不构成投资建议。
         </p>
       </header>
       {error && (

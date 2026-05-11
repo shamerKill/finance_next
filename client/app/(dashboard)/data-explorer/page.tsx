@@ -11,28 +11,28 @@ const ENTRIES: Array<{
 }> = [
   {
     href: "/data-explorer/equities",
-    title: "Equities",
-    blurb: "A 股 (AKShare) + US/HK (yfinance). Daily / intraday OHLCV.",
+    title: "股票",
+    blurb: "A 股 (AKShare) + 美股/港股 (yfinance)。日线 / 日内 OHLCV。",
   },
   {
     href: "/data-explorer/futures",
-    title: "Futures",
-    blurb: "CN commodity & index futures (SHFE / DCE / CZCE / CFFEX).",
+    title: "期货",
+    blurb: "国内商品与股指期货 (SHFE / DCE / CZCE / CFFEX)。",
   },
   {
     href: "/data-explorer/macro",
-    title: "Macro indicators",
-    blurb: "FRED (US/global) + AKShare CN (CPI/PPI/M2/GDP/PMI).",
+    title: "宏观指标",
+    blurb: "FRED (美国/全球) + AKShare 国内 (CPI/PPI/M2/GDP/PMI)。",
   },
   {
     href: "/data-explorer/onchain",
-    title: "On-chain metrics",
-    blurb: "DefiLlama TVL, Etherscan ETH supply/gas, blockchain.info BTC stats.",
+    title: "链上指标",
+    blurb: "DefiLlama TVL、Etherscan ETH 供应/Gas、blockchain.info BTC 统计。",
   },
   {
     href: "/data-explorer/news",
-    title: "News & sentiment",
-    blurb: "CryptoPanic, AKShare CLS, RSS aggregator. Lexicon sentiment.",
+    title: "新闻与情绪",
+    blurb: "CryptoPanic、AKShare 财联社、RSS 聚合。词典情绪分析。",
   },
 ];
 
@@ -40,10 +40,9 @@ export default function DataExplorerLanding() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-2xl font-semibold">Data Explorer</h1>
+        <h1 className="text-2xl font-semibold">数据浏览</h1>
         <p className="text-sm text-default-500">
-          Browse every Phase 8 data source. Read-only — admin-key holders can
-          additionally trigger ad-hoc ingest from the Admin page.
+          浏览所有 Phase 8 数据源。只读 — 持有 admin-key 的用户可在管理页面额外触发临时数据采集。
         </p>
       </header>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -52,29 +52,29 @@ export default function PredictionMarketDetailPage() {
     );
   }
   if (!market) {
-    return <div className="text-sm text-default-500">Loading…</div>;
+    return <div className="text-sm text-default-500">加载中…</div>;
   }
 
   return (
     <div className="grid gap-4">
       <h1 className="text-2xl font-semibold">{market.question}</h1>
       <div className="text-xs text-default-500">
-        {market.category} · ends{" "}
+        {market.category} · 结束{" "}
         {market.endDate
           ? new Date(market.endDate).toLocaleString()
-          : "no end date"}
+          : "无结束日期"}
       </div>
 
       <section className="border border-default-200 rounded p-4">
-        <h2 className="font-semibold mb-2">Latest quotes</h2>
+        <h2 className="font-semibold mb-2">最新报价</h2>
         {quotes.length === 0 ? (
-          <div className="text-sm text-default-500">No quote history.</div>
+          <div className="text-sm text-default-500">无报价历史。</div>
         ) : (
           <div className="grid gap-1 text-sm font-mono">
             {quotes.slice(-10).map((q, i) => (
               <div key={i} className="flex justify-between">
                 <span>{new Date(q.ts).toISOString()}</span>
-                <span>mid={(q.mid ?? 0).toFixed(4)}</span>
+                <span>中间价={(q.mid ?? 0).toFixed(4)}</span>
               </div>
             ))}
           </div>
@@ -82,17 +82,17 @@ export default function PredictionMarketDetailPage() {
       </section>
 
       <section className="border border-default-200 rounded p-4">
-        <h2 className="font-semibold mb-2">Recent trades</h2>
+        <h2 className="font-semibold mb-2">最近成交</h2>
         {trades.length === 0 ? (
-          <div className="text-sm text-default-500">No trade history.</div>
+          <div className="text-sm text-default-500">无成交历史。</div>
         ) : (
           <table className="w-full text-sm">
             <thead className="text-xs text-default-500">
               <tr>
-                <th className="text-left">Time</th>
-                <th className="text-left">Side</th>
-                <th className="text-right">Price</th>
-                <th className="text-right">Size</th>
+                <th className="text-left">时间</th>
+                <th className="text-left">方向</th>
+                <th className="text-right">价格</th>
+                <th className="text-right">数量</th>
               </tr>
             </thead>
             <tbody>
@@ -112,13 +112,13 @@ export default function PredictionMarketDetailPage() {
       </section>
 
       <section className="border border-default-200 rounded p-4 bg-warning/5">
-        <h2 className="font-semibold mb-2">Place order</h2>
+        <h2 className="font-semibold mb-2">下单</h2>
         <div className="text-xs text-default-500">
-          Order placement uses prediction strategies — create a strategy under{" "}
+          下单通过预测策略完成 — 在{" "}
           <Link href="/prediction/strategies/new" className="underline">
-            Prediction Strategies
+            预测策略
           </Link>{" "}
-          referencing this market id, attach a wallet, then enable live.
+          下创建一个引用此 market id 的策略，关联钱包后启用实盘。
         </div>
       </section>
     </div>

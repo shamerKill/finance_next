@@ -3,7 +3,7 @@ import { FC } from 'react';
 const PagesList: FC = () => {
   return (
     <div>
-      <p>list</p>
+      <p>列表</p>
     </div>
   );
 };

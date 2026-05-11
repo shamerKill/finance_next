@@ -22,27 +22,27 @@ const PageStrategies: FC = async () => {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Strategies</h1>
+        <h1 className="text-xl font-semibold">策略</h1>
         <Link
           href="/option"
           className="rounded bg-primary px-3 py-1.5 text-sm text-white"
         >
-          New Strategy
+          新建策略
         </Link>
       </div>
       {error && (
         <div className="rounded border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700">
-          Failed to load strategies: {error}
+          加载策略失败：{error}
         </div>
       )}
       <table className="w-full text-sm">
         <thead className="text-left text-default-500">
           <tr>
-            <th className="py-2">Name</th>
-            <th>Symbol</th>
-            <th>Live</th>
-            <th>Mode</th>
-            <th>Risk</th>
+            <th className="py-2">名称</th>
+            <th>交易对</th>
+            <th>实盘</th>
+            <th>模式</th>
+            <th>风控</th>
           </tr>
         </thead>
         <tbody>
@@ -62,20 +62,20 @@ const PageStrategies: FC = async () => {
                 <span
                   className={`rounded px-2 py-0.5 text-xs ${s.live?.enabled ? "bg-success-100 text-success-700" : "bg-default-100 text-default-700"}`}
                 >
-                  {s.live?.enabled ? "ENABLED" : "off"}
+                  {s.live?.enabled ? "已启用" : "关闭"}
                 </span>
               </td>
               <td>
                 {s.live?.mode === "mainnet" ? (
-                  <span className="text-warning-600">mainnet</span>
+                  <span className="text-warning-600">主网</span>
                 ) : (
-                  <span className="text-default-500">testnet</span>
+                  <span className="text-default-500">测试网</span>
                 )}
               </td>
               <td className="text-xs text-default-500">
                 {s.risk
-                  ? `pos $${s.risk.maxPositionUsd} · lev ${s.risk.maxLeverage}× · daily $${s.risk.dailyLossCapUsd}`
-                  : "— (orders will be rejected)"}
+                  ? `仓位 $${s.risk.maxPositionUsd} · 杠杆 ${s.risk.maxLeverage}× · 日亏 $${s.risk.dailyLossCapUsd}`
+                  : "—（订单将被拒绝）"}
               </td>
             </tr>
           ))}

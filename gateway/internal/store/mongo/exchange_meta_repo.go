@@ -145,6 +145,12 @@ func (r *ExchangeMetaRepo) IsStale(ctx context.Context) (bool, error) {
 }
 
 func decodeMeta(m bson.M) (*domain.ExchangeMeta, error) {
+	// _id arrives as bson.ObjectID from Mongo but ExchangeMeta.ID is a
+	// string, and mongo-driver v2 refuses to decode ObjectID→string
+	// without ObjectIDAsHexString. Stash the raw _id, drop it from the
+	// map so Unmarshal doesn't choke, then patch the hex back on.
+	rawID := m["_id"]
+	delete(m, "_id")
 	bs, err := bson.Marshal(m)
 	if err != nil {
 		return nil, err
@@ -153,8 +159,11 @@ func decodeMeta(m bson.M) (*domain.ExchangeMeta, error) {
 	if err := bson.Unmarshal(bs, &meta); err != nil {
 		return nil, err
 	}
-	if oid, ok := m["_id"].(bson.ObjectID); ok {
-		meta.ID = oid.Hex()
+	switch v := rawID.(type) {
+	case bson.ObjectID:
+		meta.ID = v.Hex()
+	case string:
+		meta.ID = v
 	}
 	return &meta, nil
 }

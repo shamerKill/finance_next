@@ -62,7 +62,7 @@ export default function AdminPage() {
 
   const onHalt = async () => {
     if (!reason) {
-      setError("reason required");
+      setError("必须填写原因");
       return;
     }
     setBusy(true);
@@ -107,13 +107,13 @@ export default function AdminPage() {
 
   return (
     <div className="max-w-3xl space-y-8">
-      <h1 className="text-2xl font-semibold">Admin</h1>
+      <h1 className="text-2xl font-semibold">管理</h1>
 
       <section className="space-y-2">
-        <h2 className="text-lg font-medium">Admin key</h2>
+        <h2 className="text-lg font-medium">管理密钥</h2>
         <p className="text-sm text-default-500">
-          Stored only in this browser&apos;s localStorage; never sent except
-          via the X-Admin-Key header to /api/v1/admin/*.
+          仅保存在本浏览器的 localStorage 中；除了通过 X-Admin-Key
+          请求头发送到 /api/v1/admin/* 外，不会传输到任何其他地方。
         </p>
         <input
           className="border rounded px-2 py-1 w-full font-mono"
@@ -125,39 +125,39 @@ export default function AdminPage() {
           className="bg-primary text-white rounded px-3 py-1"
           onClick={onSaveKey}
         >
-          Save key
+          保存密钥
         </button>
         {error && <div className="text-danger text-sm">{error}</div>}
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-lg font-medium">Kill switch</h2>
+        <h2 className="text-lg font-medium">紧急停机开关</h2>
         <p className="text-sm">
-          Status:{" "}
+          状态：{" "}
           <span
             className={
               state?.tradingHalted ? "text-danger font-bold" : "text-success"
             }
           >
-            {state?.tradingHalted ? "HALTED" : "ACTIVE"}
+            {state?.tradingHalted ? "已暂停" : "运行中"}
           </span>
         </p>
         {state?.tradingHalted ? (
           <div className="space-y-2">
-            <p className="text-sm">Reason: {state.haltedReason}</p>
+            <p className="text-sm">原因：{state.haltedReason}</p>
             <button
               className="bg-success text-white rounded px-3 py-1"
               onClick={onResume}
               disabled={busy}
             >
-              Resume trading
+              恢复交易
             </button>
           </div>
         ) : (
           <div className="space-y-2">
             <input
               className="border rounded px-2 py-1 w-full"
-              placeholder="Reason for halt"
+              placeholder="暂停原因"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
             />
@@ -166,22 +166,21 @@ export default function AdminPage() {
               onClick={onHalt}
               disabled={busy || !reason}
             >
-              Halt all trading
+              暂停所有交易
             </button>
           </div>
         )}
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-lg font-medium">Portfolio limits</h2>
+        <h2 className="text-lg font-medium">投资组合限额</h2>
         <p className="text-sm text-default-500">
-          0 = no cap. Caps apply across all strategies for the default
-          user.
+          0 表示无上限。限额适用于默认用户的所有策略。
         </p>
         {limits && (
           <div className="grid grid-cols-2 gap-3">
             <label className="text-sm">
-              Max open notional (USD)
+              最大未平仓名义金额（USD）
               <input
                 className="border rounded px-2 py-1 w-full"
                 type="number"
@@ -195,7 +194,7 @@ export default function AdminPage() {
               />
             </label>
             <label className="text-sm">
-              Max open positions
+              最大持仓数量
               <input
                 className="border rounded px-2 py-1 w-full"
                 type="number"
@@ -209,7 +208,7 @@ export default function AdminPage() {
               />
             </label>
             <label className="text-sm col-span-2">
-              Max daily loss (USD)
+              每日最大亏损（USD）
               <input
                 className="border rounded px-2 py-1 w-full"
                 type="number"
@@ -229,14 +228,14 @@ export default function AdminPage() {
           onClick={onSaveLimits}
           disabled={busy || !limits}
         >
-          Save limits
+          保存限额
         </button>
       </section>
 
       <section>
-        <h2 className="text-lg font-medium">Audit log</h2>
+        <h2 className="text-lg font-medium">审计日志</h2>
         <Link className="text-primary underline" href="/admin/audit">
-          View recent admin / mutation activity
+          查看最近的管理 / 变更操作
         </Link>
       </section>
     </div>

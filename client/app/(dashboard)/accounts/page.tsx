@@ -18,24 +18,24 @@ export default async function AccountsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Accounts</h1>
+        <h1 className="text-2xl font-semibold">账户</h1>
         <Link
           href="/accounts/new"
           className="px-3 py-2 rounded bg-primary text-white text-sm"
         >
-          + Add account
+          + 添加账户
         </Link>
       </div>
 
       {error && (
         <div className="rounded border border-danger p-3 text-sm text-danger mb-4">
-          Failed to load accounts: {error}
+          加载账户失败：{error}
         </div>
       )}
 
       {accounts.length === 0 && !error && (
         <p className="text-default-500 text-sm">
-          No accounts yet. Add a Binance read-only key to get started.
+          暂无账户。请先添加一个 Binance 只读密钥开始使用。
         </p>
       )}
 
@@ -56,12 +56,12 @@ export default async function AccountsPage() {
               <div className="text-xs flex gap-2">
                 {a.permissions.canTrade && (
                   <span className="px-2 py-1 rounded bg-success/20 text-success">
-                    trade
+                    交易
                   </span>
                 )}
                 {a.permissions.canWithdraw && (
                   <span className="px-2 py-1 rounded bg-danger/20 text-danger">
-                    withdraw
+                    提现
                   </span>
                 )}
               </div>

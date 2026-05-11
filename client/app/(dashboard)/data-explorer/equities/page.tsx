@@ -25,14 +25,14 @@ export default async function EquitiesPage() {
       end,
     );
   } catch (e) {
-    error = e instanceof Error ? e.message : "Failed to load equities";
+    error = e instanceof Error ? e.message : "加载股票数据失败";
   }
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <h1 className="text-2xl font-semibold">Equities — {DEFAULT_SYMBOL}</h1>
+        <h1 className="text-2xl font-semibold">股票 — {DEFAULT_SYMBOL}</h1>
         <p className="text-sm text-default-500">
-          {DEFAULT_EXCHANGE.toUpperCase()} · {DEFAULT_TIMEFRAME} · last 90 days
+          {DEFAULT_EXCHANGE.toUpperCase()} · {DEFAULT_TIMEFRAME} · 近 90 天
         </p>
       </header>
       {error && (

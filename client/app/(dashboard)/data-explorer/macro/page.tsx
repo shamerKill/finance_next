@@ -17,7 +17,7 @@ export default async function MacroPage() {
   try {
     points = await getMacroIndicators(DEFAULT_SOURCE, DEFAULT_CODE);
   } catch (e) {
-    error = e instanceof Error ? e.message : "Failed to load macro";
+    error = e instanceof Error ? e.message : "加载宏观数据失败";
   }
   // Display newest first.
   const rows = [...points].reverse().slice(0, 200);
@@ -25,10 +25,10 @@ export default async function MacroPage() {
     <div className="flex flex-col gap-4">
       <header>
         <h1 className="text-2xl font-semibold">
-          Macro — {DEFAULT_SOURCE}:{DEFAULT_CODE}
+          宏观 — {DEFAULT_SOURCE}:{DEFAULT_CODE}
         </h1>
         <p className="text-sm text-default-500">
-          Showing the most recent {rows.length} observations.
+          显示最近 {rows.length} 条观测数据。
         </p>
       </header>
       {error && (
@@ -39,9 +39,9 @@ export default async function MacroPage() {
       <table className="text-sm border border-default-200">
         <thead className="bg-default-100">
           <tr>
-            <th className="text-left px-3 py-2">ts</th>
-            <th className="text-right px-3 py-2">value</th>
-            <th className="text-left px-3 py-2">unit</th>
+            <th className="text-left px-3 py-2">时间</th>
+            <th className="text-right px-3 py-2">数值</th>
+            <th className="text-left px-3 py-2">单位</th>
           </tr>
         </thead>
         <tbody>

@@ -45,10 +45,10 @@ export default function AuditPage() {
 
   return (
     <div className="max-w-5xl space-y-4">
-      <h1 className="text-2xl font-semibold">Audit log</h1>
+      <h1 className="text-2xl font-semibold">审计日志</h1>
       <div className="flex gap-2 items-end">
         <label className="text-sm">
-          Actor
+          操作者
           <input
             className="border rounded px-2 py-1 ml-2"
             value={actor}
@@ -56,37 +56,37 @@ export default function AuditPage() {
           />
         </label>
         <label className="text-sm">
-          Resource type
+          资源类型
           <select
             className="border rounded px-2 py-1 ml-2"
             value={resourceType}
             onChange={(e) => setResourceType(e.target.value)}
           >
-            <option value="">all</option>
-            <option value="strategy">strategy</option>
-            <option value="account">account</option>
-            <option value="order">order</option>
-            <option value="recommendation">recommendation</option>
-            <option value="system">system</option>
-            <option value="market">market</option>
+            <option value="">全部</option>
+            <option value="strategy">策略</option>
+            <option value="account">账户</option>
+            <option value="order">订单</option>
+            <option value="recommendation">推荐</option>
+            <option value="system">系统</option>
+            <option value="market">行情</option>
           </select>
         </label>
         <button
           className="bg-primary text-white rounded px-3 py-1"
           onClick={refresh}
         >
-          Refresh
+          刷新
         </button>
       </div>
       {error && <div className="text-danger text-sm">{error}</div>}
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left border-b">
-            <th className="py-1">Timestamp</th>
-            <th className="py-1">Actor</th>
-            <th className="py-1">Action</th>
-            <th className="py-1">Resource</th>
-            <th className="py-1">Status</th>
+            <th className="py-1">时间</th>
+            <th className="py-1">操作者</th>
+            <th className="py-1">操作</th>
+            <th className="py-1">资源</th>
+            <th className="py-1">状态</th>
             <th className="py-1">IP</th>
           </tr>
         </thead>
@@ -109,7 +109,7 @@ export default function AuditPage() {
         </tbody>
       </table>
       {entries.length === 0 && (
-        <div className="text-default-500">no entries</div>
+        <div className="text-default-500">暂无记录</div>
       )}
     </div>
   );

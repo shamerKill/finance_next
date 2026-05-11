@@ -21,6 +21,10 @@ from quant.ratelimit import registry as rate_registry
 
 log = logging.getLogger(__name__)
 
+# Sentinel: distinguishes "caller didn't pass anything" (auto-import) from
+# "caller explicitly disabled the module by passing None".
+_UNSET: Any = object()
+
 
 def _normalize_to_bars(
     df: Any, *, symbol: str, timeframe: str
@@ -89,9 +93,13 @@ class AkshareSource:
     require a different AKShare entry point and land in a later phase.
     """
 
-    def __init__(self, akshare_module: Any | None = None) -> None:
-        # Lazy import — akshare is heavy and slow to import.
-        if akshare_module is None:
+    def __init__(self, akshare_module: Any = _UNSET) -> None:
+        # Lazy import — akshare is heavy and slow to import. The sentinel
+        # lets a caller pass akshare_module=None to *disable* the source
+        # (tests rely on this); only the default `_UNSET` triggers the
+        # lazy import. Without the sentinel the dev box's installed
+        # akshare would silently re-enter and hit the network.
+        if akshare_module is _UNSET:
             try:
                 import akshare as akshare_module  # type: ignore
             except Exception:  # pragma: no cover

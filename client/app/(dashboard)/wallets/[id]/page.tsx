@@ -48,17 +48,17 @@ export default function WalletDetailPage() {
     setApproveStatus(null);
     const adminKey = window.localStorage.getItem("finance_next_admin_key");
     if (!adminKey) {
-      setApproveStatus("admin key not set in localStorage");
+      setApproveStatus("localStorage 中未设置 admin key");
       return;
     }
     const amt = parseFloat(approveAmt);
     if (!Number.isFinite(amt) || amt <= 0) {
-      setApproveStatus("amount must be > 0");
+      setApproveStatus("金额必须 > 0");
       return;
     }
     try {
       const res = await approveWallet(id, adminKey, amt);
-      setApproveStatus(`approved $${res.amountApproved.toFixed(2)} — tx ${res.txHash}`);
+      setApproveStatus(`已授权 $${res.amountApproved.toFixed(2)} — tx ${res.txHash}`);
       const b = await getWalletBalance(id).catch(() => null);
       setBalance(b);
     } catch (e) {
@@ -74,7 +74,7 @@ export default function WalletDetailPage() {
     );
   }
   if (!wallet) {
-    return <div className="text-sm text-default-500">Loading…</div>;
+    return <div className="text-sm text-default-500">加载中…</div>;
   }
 
   return (
@@ -85,29 +85,29 @@ export default function WalletDetailPage() {
       </div>
 
       <section className="border border-default-200 rounded p-4">
-        <h2 className="font-semibold mb-2">USDC balance + allowance</h2>
+        <h2 className="font-semibold mb-2">USDC 余额 + 授权额度</h2>
         {balance ? (
           <div className="grid grid-cols-2 gap-2 text-sm">
-            <div>Balance: ${balance.balanceUsdc.toFixed(2)}</div>
-            <div>Allowance: ${balance.allowanceUsdc.toFixed(2)}</div>
+            <div>余额：${balance.balanceUsdc.toFixed(2)}</div>
+            <div>授权额度：${balance.allowanceUsdc.toFixed(2)}</div>
           </div>
         ) : (
           <div className="text-sm text-default-500">
-            Polygon RPC not configured or balance fetch failed.
+            Polygon RPC 未配置或余额获取失败。
           </div>
         )}
       </section>
 
       <section className="border border-default-200 rounded p-4">
-        <h2 className="font-semibold mb-2">Bounded USDC approve (admin)</h2>
+        <h2 className="font-semibold mb-2">USDC 限额授权（管理员）</h2>
         <div className="text-xs text-default-500 mb-2">
-          Approval is hard-capped by{" "}
-          <code>portfolio_limits.maxOpenNotionalUsd</code>. Infinite approve
-          is impossible by design. Admin key required.
+          授权额度受{" "}
+          <code>portfolio_limits.maxOpenNotionalUsd</code> 硬性限制。
+          无限额度授权在设计上不可能。需要 admin key。
         </div>
         <div className="flex gap-2 items-end">
           <label className="text-sm flex flex-col gap-1">
-            <span>Amount (USDC)</span>
+            <span>金额（USDC）</span>
             <input
               type="number"
               step="0.01"
@@ -121,7 +121,7 @@ export default function WalletDetailPage() {
             onClick={approve}
             className="px-3 py-2 rounded bg-warning text-white text-sm"
           >
-            Approve
+            授权
           </button>
         </div>
         {approveStatus && (
@@ -130,9 +130,9 @@ export default function WalletDetailPage() {
       </section>
 
       <section className="border border-default-200 rounded p-4">
-        <h2 className="font-semibold mb-2">CTF outcome positions</h2>
+        <h2 className="font-semibold mb-2">CTF outcome 持仓</h2>
         {positions.length === 0 ? (
-          <div className="text-sm text-default-500">No positions.</div>
+          <div className="text-sm text-default-500">无持仓。</div>
         ) : (
           <div className="grid gap-2 text-sm">
             {positions.map((p) => (

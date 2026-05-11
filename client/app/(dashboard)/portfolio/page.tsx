@@ -30,11 +30,10 @@ export default async function PortfolioPage() {
   return (
     <div className="space-y-8">
       <header>
-        <h1 className="text-2xl font-semibold">Portfolio</h1>
+        <h1 className="text-2xl font-semibold">投资组合</h1>
         <p className="text-sm text-default-500 mt-1">
-          Cross-exchange snapshot. USD values use the latest{" "}
-          <code>&lt;asset&gt;USDT</code> close from Timescale; missing series
-          contribute 0 to the total.
+          跨交易所资产快照。USD 估值取自 Timescale 中{" "}
+          <code>&lt;asset&gt;USDT</code> 的最新收盘价；缺失行情按 0 计入总值。
         </p>
       </header>
 
@@ -47,30 +46,30 @@ export default async function PortfolioPage() {
       {summary && (
         <>
           <section>
-            <h2 className="text-xl font-medium mb-2">Total</h2>
+            <h2 className="text-xl font-medium mb-2">总计</h2>
             <div className="text-3xl font-semibold">
               {formatUsd(summary.totalUsd)}
             </div>
             <div className="text-xs text-default-500 mt-1">
-              Generated at {summary.generatedAt}
+              生成时间 {summary.generatedAt}
             </div>
           </section>
 
           <section>
-            <h2 className="text-xl font-medium mb-3">By exchange</h2>
+            <h2 className="text-xl font-medium mb-3">按交易所</h2>
             <table className="w-full text-sm">
               <thead className="text-default-500">
                 <tr>
-                  <th className="text-left p-2">Exchange</th>
-                  <th className="text-right p-2">Accounts</th>
-                  <th className="text-right p-2">Total USD</th>
+                  <th className="text-left p-2">交易所</th>
+                  <th className="text-right p-2">账户数</th>
+                  <th className="text-right p-2">总计 USD</th>
                 </tr>
               </thead>
               <tbody>
                 {summary.perExchange.length === 0 ? (
                   <tr>
                     <td className="p-2 text-default-500" colSpan={3}>
-                      No accounts configured.
+                      尚未配置任何账户。
                     </td>
                   </tr>
                 ) : (
@@ -89,20 +88,20 @@ export default async function PortfolioPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-medium mb-3">Top assets</h2>
+            <h2 className="text-xl font-medium mb-3">主要资产</h2>
             <table className="w-full text-sm">
               <thead className="text-default-500">
                 <tr>
-                  <th className="text-left p-2">Asset</th>
-                  <th className="text-right p-2">Quantity</th>
-                  <th className="text-right p-2">USD value</th>
+                  <th className="text-left p-2">资产</th>
+                  <th className="text-right p-2">数量</th>
+                  <th className="text-right p-2">USD 价值</th>
                 </tr>
               </thead>
               <tbody>
                 {summary.perAsset.length === 0 ? (
                   <tr>
                     <td className="p-2 text-default-500" colSpan={3}>
-                      No balances.
+                      暂无余额。
                     </td>
                   </tr>
                 ) : (
@@ -126,7 +125,7 @@ export default async function PortfolioPage() {
 
           {summary.notes && summary.notes.length > 0 && (
             <section className="text-xs text-default-500">
-              <h3 className="font-medium text-default-600 mb-1">Notes</h3>
+              <h3 className="font-medium text-default-600 mb-1">备注</h3>
               <ul className="list-disc ml-5 space-y-1">
                 {summary.notes.map((n, i) => (
                   <li key={i}>{n}</li>

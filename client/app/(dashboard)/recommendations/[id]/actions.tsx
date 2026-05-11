@@ -21,7 +21,7 @@ export default function RecommendationActions({ id }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const onApprove = async () => {
-    if (!confirm("Approve this recommendation? Strategy parameters will be updated immediately.")) {
+    if (!confirm("批准此推荐？策略参数将立即更新。")) {
       return;
     }
     setBusy("approve");
@@ -30,7 +30,7 @@ export default function RecommendationActions({ id }: Props) {
       await approveRecommendation(id);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "approve failed");
+      setError(e instanceof Error ? e.message : "批准失败");
     } finally {
       setBusy(null);
     }
@@ -43,7 +43,7 @@ export default function RecommendationActions({ id }: Props) {
       await rejectRecommendation(id);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "reject failed");
+      setError(e instanceof Error ? e.message : "拒绝失败");
     } finally {
       setBusy(null);
     }
@@ -57,14 +57,14 @@ export default function RecommendationActions({ id }: Props) {
           disabled={busy !== null}
           className="rounded-md bg-success px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
-          {busy === "approve" ? "Approving…" : "Approve"}
+          {busy === "approve" ? "批准中…" : "批准"}
         </button>
         <button
           onClick={onReject}
           disabled={busy !== null}
           className="rounded-md bg-default-200 px-4 py-2 text-sm font-medium text-default-700 disabled:opacity-50"
         >
-          {busy === "reject" ? "Rejecting…" : "Reject"}
+          {busy === "reject" ? "拒绝中…" : "拒绝"}
         </button>
       </div>
       {error && (

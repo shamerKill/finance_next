@@ -8,13 +8,13 @@ import { useBacktestStream } from "@/data/ws-client";
 const stateLabel = (s: number | null) => {
   switch (s) {
     case 1:
-      return "PENDING";
+      return "等待中";
     case 2:
-      return "RUNNING";
+      return "运行中";
     case 3:
-      return "COMPLETED";
+      return "已完成";
     case 4:
-      return "FAILED";
+      return "已失败";
     default:
       return "—";
   }
@@ -27,7 +27,7 @@ export function LiveProgress({ runId }: { runId: string }) {
   return (
     <div className="rounded border border-default-200 p-3 text-sm">
       <div className="mb-2 flex items-center justify-between">
-        <span className="font-medium">Live progress</span>
+        <span className="font-medium">实时进度</span>
         <span className="text-default-500">
           {stateLabel(state)} · {pct}%
         </span>
@@ -40,13 +40,12 @@ export function LiveProgress({ runId }: { runId: string }) {
       </div>
       {completed ? (
         <div className="mt-2 text-success-700">
-          Backtest finished. Refresh the page to see final metrics.
+          回测已完成。刷新页面查看最终指标。
         </div>
       ) : null}
       {last && last.type === "backtest.upstream_closed" ? (
         <div className="mt-2 text-warning-700">
-          Lost progress stream — gateway WS upstream closed. The job may still
-          be running; refresh to check.
+          进度流已断开——gateway WS 上游已关闭。任务可能仍在运行，请刷新查看。
         </div>
       ) : null}
     </div>

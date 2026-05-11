@@ -24,14 +24,14 @@ export default async function FuturesPage() {
       end,
     );
   } catch (e) {
-    error = e instanceof Error ? e.message : "Failed to load futures";
+    error = e instanceof Error ? e.message : "加载期货数据失败";
   }
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <h1 className="text-2xl font-semibold">Futures — {DEFAULT_CONTRACT}</h1>
+        <h1 className="text-2xl font-semibold">期货 — {DEFAULT_CONTRACT}</h1>
         <p className="text-sm text-default-500">
-          {DEFAULT_EXCHANGE.toUpperCase()} · {DEFAULT_TIMEFRAME} · last 180 days
+          {DEFAULT_EXCHANGE.toUpperCase()} · {DEFAULT_TIMEFRAME} · 近 180 天
         </p>
       </header>
       {error && (

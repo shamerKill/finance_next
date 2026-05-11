@@ -18,11 +18,11 @@ export const dynamic = "force-dynamic";
 
 const stateLabel = (s: number) => {
   switch (s) {
-    case 1: return { label: "PENDING", color: "bg-default-100 text-default-700" };
-    case 2: return { label: "RUNNING", color: "bg-warning-100 text-warning-700" };
-    case 3: return { label: "COMPLETED", color: "bg-success-100 text-success-700" };
-    case 4: return { label: "FAILED", color: "bg-danger-100 text-danger-700" };
-    default: return { label: "UNKNOWN", color: "bg-default-100" };
+    case 1: return { label: "等待中", color: "bg-default-100 text-default-700" };
+    case 2: return { label: "运行中", color: "bg-warning-100 text-warning-700" };
+    case 3: return { label: "已完成", color: "bg-success-100 text-success-700" };
+    case 4: return { label: "已失败", color: "bg-danger-100 text-danger-700" };
+    default: return { label: "未知", color: "bg-default-100" };
   }
 };
 
@@ -63,7 +63,7 @@ export default async function BacktestDetailPage({ params }: Params) {
   if (loadError) {
     return (
       <div className="rounded border border-danger p-3 text-sm text-danger">
-        Failed to load backtest: {loadError}
+        加载回测失败：{loadError}
       </div>
     );
   }
@@ -81,8 +81,8 @@ export default async function BacktestDetailPage({ params }: Params) {
             {head.runId.slice(0, 16)}…
           </h1>
           <p className="text-sm text-default-500">
-            strategy: <span className="font-medium">{head.strategyId}</span> ·
-            kind: {head.kind} · created:{" "}
+            策略：<span className="font-medium">{head.strategyId}</span> ·
+            类型：{head.kind} · 创建时间：{" "}
             {new Date(head.createdAt).toLocaleString()}
           </p>
         </div>
@@ -91,7 +91,7 @@ export default async function BacktestDetailPage({ params }: Params) {
 
       {head.state === 4 && head.error ? (
         <div className="rounded border border-danger-200 bg-danger-50 p-3 text-sm">
-          <div className="font-medium text-danger">Run failed</div>
+          <div className="font-medium text-danger">运行失败</div>
           <div className="mt-1 text-danger-700">{head.error}</div>
         </div>
       ) : null}
@@ -99,40 +99,40 @@ export default async function BacktestDetailPage({ params }: Params) {
       {!isTerminal ? <LiveProgress runId={head.runId} /> : null}
 
       <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-6">
-        <Card label="Total return" value={fmtPct(m.total_return)} />
-        <Card label="Sharpe" value={fmtNum(m.sharpe)} />
-        <Card label="Sortino" value={fmtNum(m.sortino)} />
-        <Card label="Max DD" value={fmtPct(m.max_dd)} />
-        <Card label="CAGR" value={fmtPct(m.cagr)} />
+        <Card label="总收益" value={fmtPct(m.total_return)} />
+        <Card label="夏普比率" value={fmtNum(m.sharpe)} />
+        <Card label="索提诺比率" value={fmtNum(m.sortino)} />
+        <Card label="最大回撤" value={fmtPct(m.max_dd)} />
+        <Card label="年化收益" value={fmtPct(m.cagr)} />
         <Card
-          label="Trades / Win rate"
+          label="交易数 / 胜率"
           value={`${m.n_trades ?? 0} / ${fmtPct(m.win_rate)}`}
         />
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold mb-2">Equity curve</h2>
+        <h2 className="text-lg font-semibold mb-2">资金曲线</h2>
         <EquityChart points={equity} />
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold mb-2">Trades</h2>
+        <h2 className="text-lg font-semibold mb-2">交易</h2>
         {trades.length === 0 ? (
-          <div className="text-sm text-default-500">No trades recorded.</div>
+          <div className="text-sm text-default-500">暂无交易记录。</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-left text-default-500">
-                  <th className="px-3 py-2">Entry</th>
-                  <th className="px-3 py-2">Exit</th>
-                  <th className="px-3 py-2">Avg entry</th>
-                  <th className="px-3 py-2">Exit price</th>
-                  <th className="px-3 py-2">Size</th>
-                  <th className="px-3 py-2">PnL</th>
-                  <th className="px-3 py-2">Return</th>
-                  <th className="px-3 py-2">Adds</th>
-                  <th className="px-3 py-2">Reason</th>
+                  <th className="px-3 py-2">入场时间</th>
+                  <th className="px-3 py-2">出场时间</th>
+                  <th className="px-3 py-2">均价入场</th>
+                  <th className="px-3 py-2">出场价格</th>
+                  <th className="px-3 py-2">数量</th>
+                  <th className="px-3 py-2">盈亏</th>
+                  <th className="px-3 py-2">收益率</th>
+                  <th className="px-3 py-2">加仓次数</th>
+                  <th className="px-3 py-2">原因</th>
                 </tr>
               </thead>
               <tbody>
@@ -163,7 +163,7 @@ export default async function BacktestDetailPage({ params }: Params) {
             </table>
             {trades.length > 200 ? (
               <div className="mt-2 text-xs text-default-500">
-                Showing 200 of {trades.length}.
+                显示 {trades.length} 条中的 200 条。
               </div>
             ) : null}
           </div>

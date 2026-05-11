@@ -108,11 +108,11 @@ export default function NewBacktestPage() {
 
   return (
     <div className="max-w-2xl">
-      <h1 className="text-2xl font-semibold mb-6">New backtest</h1>
+      <h1 className="text-2xl font-semibold mb-6">新建回测</h1>
       <form className="flex flex-col gap-4" onSubmit={onSubmit}>
         {strategies.length > 0 ? (
           <Select
-            label="Strategy"
+            label="策略"
             selectedKeys={strategyId ? [strategyId] : []}
             onSelectionChange={(keys) => {
               const k = Array.from(keys)[0];
@@ -126,22 +126,22 @@ export default function NewBacktestPage() {
         ) : (
           <Input
             name="strategyId"
-            label="Strategy id"
+            label="策略 ID"
             required
             value={strategyId}
             onValueChange={setStrategyId}
-            description="No strategies in DB yet — type any identifier to label this run."
+            description="数据库中暂无策略——输入任意标识符为本次运行打标签。"
           />
         )}
 
         <div className="grid grid-cols-3 gap-3">
-          <Select label="Exchange" name="exchange" defaultSelectedKeys={["binance"]}>
+          <Select label="交易所" name="exchange" defaultSelectedKeys={["binance"]}>
             {EXCHANGES.map((x) => (
               <SelectItem key={x}>{x}</SelectItem>
             ))}
           </Select>
-          <Input name="symbol" label="Symbol" defaultValue="BTCUSDT" required />
-          <Select label="Timeframe" name="timeframe" defaultSelectedKeys={["1h"]}>
+          <Input name="symbol" label="交易对" defaultValue="BTCUSDT" required />
+          <Select label="周期" name="timeframe" defaultSelectedKeys={["1h"]}>
             {TIMEFRAMES.map((tf) => (
               <SelectItem key={tf}>{tf}</SelectItem>
             ))}
@@ -149,15 +149,15 @@ export default function NewBacktestPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Input name="start" type="datetime-local" label="Start" required />
-          <Input name="end" type="datetime-local" label="End" required />
+          <Input name="start" type="datetime-local" label="开始时间" required />
+          <Input name="end" type="datetime-local" label="结束时间" required />
         </div>
 
         <div className="grid grid-cols-3 gap-3">
           <Input
             name="initialCapital"
             type="number"
-            label="Initial capital"
+            label="初始资金"
             defaultValue="10000"
             min="0"
             step="100"
@@ -165,7 +165,7 @@ export default function NewBacktestPage() {
           <Input
             name="commissionRate"
             type="number"
-            label="Commission"
+            label="手续费率"
             defaultValue="0.0004"
             min="0"
             step="0.0001"
@@ -173,7 +173,7 @@ export default function NewBacktestPage() {
           <Input
             name="slippageBps"
             type="number"
-            label="Slippage (bps)"
+            label="滑点（bps）"
             defaultValue="1"
             min="0"
             step="1"
@@ -181,11 +181,11 @@ export default function NewBacktestPage() {
         </div>
 
         <Textarea
-          label="Params JSON"
+          label="参数 JSON"
           value={paramsText}
           onValueChange={setParamsText}
           minRows={8}
-          description="grid_dca params: createPositions[], stopProfitRate, stopLossRate, profitRateAfterAtAddPosition"
+          description="grid_dca 参数：createPositions[], stopProfitRate, stopLossRate, profitRateAfterAtAddPosition"
         />
 
         {error ? (
@@ -195,7 +195,7 @@ export default function NewBacktestPage() {
         ) : null}
 
         <Button type="submit" color="primary" isLoading={submitting}>
-          Run backtest
+          运行回测
         </Button>
       </form>
     </div>

@@ -13,15 +13,15 @@ interface Props {
 const stateLabel = (s: number | null): string => {
   switch (s) {
     case 1:
-      return "pending";
+      return "等待中";
     case 2:
-      return "running";
+      return "运行中";
     case 3:
-      return "completed";
+      return "已完成";
     case 4:
-      return "failed";
+      return "已失败";
     case 5:
-      return "budget exceeded";
+      return "预算超限";
     default:
       return "—";
   }
@@ -46,7 +46,7 @@ export default function TuneNowButton({ strategyId }: Props) {
       const handle = await startOptimization(strategyId);
       setStudyId(handle.studyId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "failed");
+      setError(e instanceof Error ? e.message : "失败");
     } finally {
       setBusy(false);
     }
@@ -59,12 +59,12 @@ export default function TuneNowButton({ strategyId }: Props) {
         disabled={busy || (studyId !== null && state !== null && state < 3)}
         className="rounded-md border border-primary-200 bg-primary-50 px-3 py-1 font-medium text-primary-700 disabled:opacity-50"
       >
-        {busy ? "Starting…" : studyId ? `Study ${studyId.slice(0, 8)}…` : "Tune now"}
+        {busy ? "启动中…" : studyId ? `Study ${studyId.slice(0, 8)}…` : "立即调优"}
       </button>
       {studyId && (
         <div className="flex items-center gap-3 text-default-500">
           <span>
-            {trialsCompleted}/{trialsTotal || "?"} trials
+            {trialsCompleted}/{trialsTotal || "?"} 试验
           </span>
           <span className="h-2 w-24 rounded-full bg-default-100">
             <span
@@ -79,7 +79,7 @@ export default function TuneNowButton({ strategyId }: Props) {
               href={`/recommendations/${recommendationId}`}
               className="font-medium text-primary hover:underline"
             >
-              Review →
+              审核 →
             </Link>
           )}
         </div>

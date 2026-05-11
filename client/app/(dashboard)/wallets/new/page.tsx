@@ -17,7 +17,7 @@ export default function NewWalletPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!acknowledged) {
-      setError("You must acknowledge the security warning before continuing.");
+      setError("继续之前必须确认安全警告。");
       return;
     }
     setSubmitting(true);
@@ -37,42 +37,41 @@ export default function NewWalletPage() {
 
   return (
     <div className="max-w-xl">
-      <h1 className="text-2xl font-semibold mb-4">Add Polygon Wallet</h1>
+      <h1 className="text-2xl font-semibold mb-4">添加 Polygon 钱包</h1>
 
       <div className="rounded border-2 border-danger bg-danger/10 p-4 mb-6 text-sm">
         <div className="font-bold text-danger mb-2 text-base">
-          ⚠ DANGER — Read carefully
+          ⚠️ 危险 — 请仔细阅读
         </div>
         <ul className="list-disc pl-5 space-y-1">
           <li>
-            <strong>Anyone with this private key controls all funds in the
-            wallet</strong>, including USDC and any outcome tokens. Loss /
-            leak is irreversible — there is no password reset.
+            <strong>任何持有此私钥的人都可以控制钱包中的所有资金</strong>，
+            包括 USDC 和任何 outcome token。丢失/泄露不可挽回 — 没有
+            密码重置机制。
           </li>
           <li>
-            The key is encrypted at rest with AES-256-GCM (envelope
-            encryption, same as exchange API keys) and is{" "}
-            <strong>never returned in any API response</strong>.
+            私钥静态存储时使用 AES-256-GCM 加密（信封加密，与交易所 API
+            密钥相同），并且{" "}
+            <strong>永远不会在任何 API 响应中返回</strong>。
           </li>
           <li>
-            Audit logs scrub the key from every request body — but anyone
-            with database access can still decrypt with the master KEK.
+            审计日志会从每个请求体中清除私钥 — 但是任何有数据库访问权限
+            的人仍可以用主 KEK 解密。
           </li>
           <li>
-            <strong>Use a dedicated trading wallet</strong> with only the
-            funds you can afford to lose. Don&apos;t paste your main wallet&apos;s
-            seed-derived key.
+            <strong>请使用专用交易钱包</strong>，只存放您能承受损失的资金。
+            不要粘贴您主钱包的助记词派生密钥。
           </li>
           <li>
-            Polymarket has <strong>no testnet</strong>. Real trades require the
-            three-gate flow (env + admin token + strategy mode=mainnet).
+            Polymarket <strong>没有测试网</strong>。真实交易需要通过
+            三道闸流程（env + admin token + 策略 mode=mainnet）。
           </li>
         </ul>
       </div>
 
       <form className="grid gap-4" onSubmit={submit}>
         <label className="text-sm flex flex-col gap-1">
-          <span>Label</span>
+          <span>标签</span>
           <input
             required
             value={label}
@@ -82,7 +81,7 @@ export default function NewWalletPage() {
           />
         </label>
         <label className="text-sm flex flex-col gap-1">
-          <span>Private key (64-hex)</span>
+          <span>私钥（64 位十六进制）</span>
           <input
             required
             type="password"
@@ -93,7 +92,7 @@ export default function NewWalletPage() {
           />
         </label>
         <label className="text-sm flex flex-col gap-1">
-          <span>Expected address (optional, 0x...)</span>
+          <span>预期地址（可选，0x...）</span>
           <input
             value={expectedAddress}
             onChange={(e) => setExpectedAddress(e.target.value)}
@@ -109,8 +108,7 @@ export default function NewWalletPage() {
             onChange={(e) => setAcknowledged(e.target.checked)}
           />
           <span>
-            I understand the risks above and have a backup of this private
-            key offline.
+            我已了解上述风险，并已离线备份此私钥。
           </span>
         </label>
 
@@ -125,7 +123,7 @@ export default function NewWalletPage() {
           disabled={submitting}
           className="px-4 py-2 rounded bg-primary text-white text-sm disabled:opacity-50"
         >
-          {submitting ? "Creating…" : "Create wallet"}
+          {submitting ? "创建中…" : "创建钱包"}
         </button>
       </form>
     </div>

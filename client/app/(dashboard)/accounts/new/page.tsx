@@ -8,7 +8,7 @@ import { TypeExchange } from "@/data/type";
 
 const EXCHANGES: { key: TypeExchange; label: string; supported: boolean }[] = [
   { key: "binance", label: "Binance", supported: true },
-  { key: "okx", label: "OKX (passphrase required)", supported: true },
+  { key: "okx", label: "OKX（需要 passphrase）", supported: true },
   { key: "bybit", label: "Bybit", supported: true },
 ];
 
@@ -43,14 +43,13 @@ export default function NewAccountPage() {
 
   return (
     <div className="max-w-xl">
-      <h1 className="text-2xl font-semibold mb-6">Add account</h1>
+      <h1 className="text-2xl font-semibold mb-6">添加账户</h1>
       <p className="text-sm text-default-500 mb-4">
-        Read+trade keys are accepted. Keys with withdraw permission are rejected
-        on creation.
+        支持只读和交易权限的密钥。带提现权限的密钥将在创建时被拒绝。
       </p>
       <form className="flex flex-col gap-4" onSubmit={onSubmit}>
         <Select
-          label="Exchange"
+          label="交易所"
           selectedKeys={[exchange]}
           onSelectionChange={(keys) => {
             const k = Array.from(keys)[0] as TypeExchange | undefined;
@@ -63,12 +62,12 @@ export default function NewAccountPage() {
             </SelectItem>
           ))}
         </Select>
-        <Input name="label" label="Label" required minLength={3} maxLength={32} />
-        <Input name="email" label="Email" type="email" required />
-        <Input name="apiKey" label="API key" required />
-        <Input name="secretKey" label="Secret key" type="password" required />
+        <Input name="label" label="标签" required minLength={3} maxLength={32} />
+        <Input name="email" label="邮箱" type="email" required />
+        <Input name="apiKey" label="API 密钥" required />
+        <Input name="secretKey" label="Secret 密钥" type="password" required />
         {exchange === "okx" && (
-          <Input name="passphrase" label="Passphrase" type="password" required />
+          <Input name="passphrase" label="Passphrase 口令" type="password" required />
         )}
         {error && (
           <div className="rounded border border-danger p-3 text-sm text-danger">
@@ -76,7 +75,7 @@ export default function NewAccountPage() {
           </div>
         )}
         <Button type="submit" color="primary" isLoading={submitting}>
-          Create
+          创建
         </Button>
       </form>
     </div>

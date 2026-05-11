@@ -17,13 +17,13 @@ type StatusBadge = { label: string; color: string };
 const statusBadge = (s: TypeRecommendationStatus): StatusBadge => {
   switch (s) {
     case "pending_review":
-      return { label: "pending review", color: "bg-warning-100 text-warning-700" };
+      return { label: "待审核", color: "bg-warning-100 text-warning-700" };
     case "approved":
-      return { label: "approved", color: "bg-success-100 text-success-700" };
+      return { label: "已批准", color: "bg-success-100 text-success-700" };
     case "rejected":
-      return { label: "rejected", color: "bg-default-100 text-default-700" };
+      return { label: "已拒绝", color: "bg-default-100 text-default-700" };
     case "superseded":
-      return { label: "superseded", color: "bg-default-100 text-default-500" };
+      return { label: "已替代", color: "bg-default-100 text-default-500" };
   }
 };
 
@@ -42,7 +42,7 @@ export default async function RecommendationsListPage({ searchParams }: PageProp
   try {
     recs = await listRecommendations(status);
   } catch (e) {
-    error = e instanceof Error ? e.message : "failed";
+    error = e instanceof Error ? e.message : "失败";
   }
 
   const filters: TypeRecommendationStatus[] = [
@@ -55,10 +55,9 @@ export default async function RecommendationsListPage({ searchParams }: PageProp
   return (
     <div className="flex flex-col gap-4">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">Recommendations</h1>
+        <h1 className="text-2xl font-semibold">AI 推荐</h1>
         <p className="text-sm text-default-500">
-          AI-generated strategy parameter recommendations. Every change
-          requires explicit human approval — there is no auto-apply.
+          AI 生成的策略参数推荐。所有变更均需人工显式批准——不存在自动应用。
         </p>
       </header>
 
@@ -73,25 +72,25 @@ export default async function RecommendationsListPage({ searchParams }: PageProp
                 : "border-default-200 text-default-600"
             }`}
           >
-            {f.replace("_", " ")}
+            {statusBadge(f).label}
           </Link>
         ))}
       </nav>
 
       {error && (
         <div className="rounded-md bg-danger-50 p-3 text-sm text-danger-700">
-          Failed to load recommendations: {error}
+          加载推荐失败：{error}
         </div>
       )}
 
       <table className="w-full text-sm">
         <thead className="border-b border-default-200 text-left text-default-500">
           <tr>
-            <th className="py-2 pr-4">Strategy</th>
-            <th className="py-2 pr-4">Status</th>
-            <th className="py-2 pr-4">Δ Sharpe</th>
-            <th className="py-2 pr-4">Δ Return</th>
-            <th className="py-2 pr-4">Created</th>
+            <th className="py-2 pr-4">策略</th>
+            <th className="py-2 pr-4">状态</th>
+            <th className="py-2 pr-4">Δ 夏普比率</th>
+            <th className="py-2 pr-4">Δ 收益</th>
+            <th className="py-2 pr-4">创建时间</th>
             <th className="py-2"></th>
           </tr>
         </thead>
@@ -99,7 +98,7 @@ export default async function RecommendationsListPage({ searchParams }: PageProp
           {recs.length === 0 && !error && (
             <tr>
               <td colSpan={6} className="py-6 text-center text-default-400">
-                No recommendations with status &quot;{status}&quot;.
+                状态为 &quot;{statusBadge(status).label}&quot; 的推荐为空。
               </td>
             </tr>
           )}
@@ -129,7 +128,7 @@ export default async function RecommendationsListPage({ searchParams }: PageProp
                     href={`/recommendations/${r.id}`}
                     className="text-primary hover:underline"
                   >
-                    Review →
+                    审核 →
                   </Link>
                 </td>
               </tr>

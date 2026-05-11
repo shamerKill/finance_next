@@ -42,10 +42,10 @@ export default function NewPredictionStrategyPage() {
 
   return (
     <div className="max-w-xl">
-      <h1 className="text-2xl font-semibold mb-4">New Prediction Strategy</h1>
+      <h1 className="text-2xl font-semibold mb-4">新建预测策略</h1>
       <form className="grid gap-3" onSubmit={submit}>
         <label className="text-sm flex flex-col gap-1">
-          <span>Name</span>
+          <span>名称</span>
           <input
             required
             value={name}
@@ -54,7 +54,7 @@ export default function NewPredictionStrategyPage() {
           />
         </label>
         <label className="text-sm flex flex-col gap-1">
-          <span>Market ID (Polymarket condition or slug)</span>
+          <span>Market ID（Polymarket condition 或 slug）</span>
           <input
             required
             value={marketId}
@@ -63,7 +63,7 @@ export default function NewPredictionStrategyPage() {
           />
         </label>
         <label className="text-sm flex flex-col gap-1">
-          <span>Outcome</span>
+          <span>结果</span>
           <select
             value={outcome}
             onChange={(e) => setOutcome(e.target.value as "YES" | "NO")}
@@ -74,10 +74,10 @@ export default function NewPredictionStrategyPage() {
           </select>
         </label>
         <fieldset className="border border-default-200 rounded p-3">
-          <legend className="text-sm px-1">Risk caps (all required)</legend>
+          <legend className="text-sm px-1">风控上限（全部必填）</legend>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <label className="flex flex-col gap-1">
-              <span>maxNotionalUsd (per market)</span>
+              <span>maxNotionalUsd（每市场）</span>
               <input
                 type="number" step="0.01" min="0.01"
                 value={maxNotionalUsd}
@@ -124,7 +124,7 @@ export default function NewPredictionStrategyPage() {
           disabled={submitting}
           className="px-4 py-2 rounded bg-primary text-white text-sm disabled:opacity-50"
         >
-          {submitting ? "Creating…" : "Create"}
+          {submitting ? "创建中…" : "创建"}
         </button>
       </form>
     </div>

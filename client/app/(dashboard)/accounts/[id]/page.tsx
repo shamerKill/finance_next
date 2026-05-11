@@ -28,9 +28,9 @@ export default async function AccountDetailPage({ params }: PageProps) {
   if (error || !account) {
     return (
       <div>
-        <h1 className="text-2xl font-semibold mb-4">Account</h1>
+        <h1 className="text-2xl font-semibold mb-4">账户</h1>
         <div className="rounded border border-danger p-3 text-sm text-danger">
-          {error ?? "Account not found"}
+          {error ?? "未找到账户"}
         </div>
       </div>
     );
@@ -46,17 +46,17 @@ export default async function AccountDetailPage({ params }: PageProps) {
       </div>
 
       <section className="mb-8">
-        <h2 className="text-lg font-medium mb-3">Balances</h2>
+        <h2 className="text-lg font-medium mb-3">余额</h2>
         {balances.length === 0 ? (
-          <p className="text-sm text-default-500">No balances reported.</p>
+          <p className="text-sm text-default-500">暂无余额数据。</p>
         ) : (
           <table className="w-full text-sm border border-default-200 rounded">
             <thead className="bg-default-100">
               <tr>
-                <th className="text-left p-2">Asset</th>
-                <th className="text-right p-2">Free</th>
-                <th className="text-right p-2">Locked</th>
-                <th className="text-left p-2">Wallet</th>
+                <th className="text-left p-2">资产</th>
+                <th className="text-right p-2">可用</th>
+                <th className="text-right p-2">冻结</th>
+                <th className="text-left p-2">钱包</th>
               </tr>
             </thead>
             <tbody>
@@ -74,20 +74,20 @@ export default async function AccountDetailPage({ params }: PageProps) {
       </section>
 
       <section className="mb-8">
-        <h2 className="text-lg font-medium mb-3">Open positions</h2>
+        <h2 className="text-lg font-medium mb-3">持仓</h2>
         {positions.length === 0 ? (
-          <p className="text-sm text-default-500">No open positions.</p>
+          <p className="text-sm text-default-500">暂无持仓。</p>
         ) : (
           <table className="w-full text-sm border border-default-200 rounded">
             <thead className="bg-default-100">
               <tr>
-                <th className="text-left p-2">Symbol</th>
-                <th className="text-left p-2">Side</th>
-                <th className="text-right p-2">Qty</th>
-                <th className="text-right p-2">Entry</th>
-                <th className="text-right p-2">Mark</th>
-                <th className="text-right p-2">PnL</th>
-                <th className="text-right p-2">Lev</th>
+                <th className="text-left p-2">交易对</th>
+                <th className="text-left p-2">方向</th>
+                <th className="text-right p-2">数量</th>
+                <th className="text-right p-2">开仓价</th>
+                <th className="text-right p-2">标记价</th>
+                <th className="text-right p-2">盈亏</th>
+                <th className="text-right p-2">杠杆</th>
               </tr>
             </thead>
             <tbody>
@@ -108,7 +108,7 @@ export default async function AccountDetailPage({ params }: PageProps) {
       </section>
 
       <section>
-        <h2 className="text-lg font-medium mb-3">Live events</h2>
+        <h2 className="text-lg font-medium mb-3">实时事件</h2>
         <AccountStreamPanel accountId={account.id} />
       </section>
     </div>

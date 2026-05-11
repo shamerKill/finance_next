@@ -98,10 +98,14 @@ func (h *OptionHandler) create(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	// Match NestJS controller: { message: '创建成功', value: { name } }
+	// Response shape extends the original NestJS contract from { name } to
+	// { id, name }. Callers (e.g. e2e tests, future UI flows that need to
+	// redirect after create) need the document id; the old contract forced
+	// a list-then-match workaround. Adding a field is back-compat: existing
+	// clients reading only `value.name` keep working.
 	return c.JSON(http.StatusCreated, echo.Map{
 		"message": "创建成功",
-		"value":   echo.Map{"name": saved.Name},
+		"value":   echo.Map{"id": saved.ID, "name": saved.Name},
 	})
 }
 

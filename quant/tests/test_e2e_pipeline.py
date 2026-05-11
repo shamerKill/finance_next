@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -65,7 +65,7 @@ def test_full_pipeline(stack):
     }
 
     # ---- 1. ingest 30d BTCUSDT 1h ------------------------------------------
-    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     start = (now - timedelta(days=30)).isoformat().replace("+00:00", "Z")
     end = now.isoformat().replace("+00:00", "Z")
     r = httpx.post(
@@ -127,19 +127,11 @@ def test_full_pipeline(stack):
     create_r = httpx.post(
         f"{g}/api/v1/option", json=body, headers=admin_headers, timeout=10.0
     )
-    # Note: option POST may not return the inserted doc id consistently — we
-    # list-and-match by unique name to recover the id regardless of POST
-    # response shape (tolerates known 5xx-but-inserted edge case).
-    list_r = httpx.get(f"{g}/api/v1/option", headers=user_headers, timeout=10.0)
-    assert list_r.status_code == 200, list_r.text
-    strategies = list_r.json()
-    match = [s for s in strategies if s.get("name") == name]
-    assert match, (
-        f"strategy {name!r} not found after POST; "
-        f"create_resp={create_r.status_code}/{create_r.text[:200]}"
-    )
-    strategy_id = match[0].get("id") or match[0].get("_id")
-    assert strategy_id, f"strategy doc missing id: {match[0]!r}"
+    assert create_r.status_code == 201, create_r.text
+    value = (create_r.json() or {}).get("value") or {}
+    strategy_id = value.get("id")
+    assert strategy_id, f"POST /option missing value.id in response: {create_r.text}"
+    assert value.get("name") == name
 
     try:
         # ---- 4. trigger optimization --------------------------------------

@@ -167,7 +167,7 @@ docker compose -f infra/docker-compose.yml up --build
 | ------ | ------------------- | --------------------------------- |
 | GET    | `/api/v1/option`    | 列表                                |
 | GET    | `/api/v1/option/:id`| 详情                                |
-| POST   | `/api/v1/option`    | 创建，返回 `{ message, value: { name } }` |
+| POST   | `/api/v1/option`    | 创建，返回 `{ message, value: { id, name } }` |
 | PUT    | `/api/v1/option/:id`| 更新                                |
 | DELETE | `/api/v1/option/:id`| 删除                                |
 
@@ -417,10 +417,15 @@ canWithdraw=true，解析失败 fail-closed）。
 
 ## 8. 注意事项 / 已知问题
 
-- **`client/app/list/`** 为占位目录。
-- **`option/page.tsx`** 表单尚未接通 POST 提交。
-- **集成测试**：仓库目前缺少端到端 e2e（Phase 0 仅单测覆盖 crypto byte
-  兼容性）；建议 Phase 1 起补 supertest-style 黑盒测试。
+- ~~**`client/app/list/`** 为占位目录。~~ — 已删除（commit `ee22b1c`）。
+- ~~**`option/page.tsx`** 表单尚未接通 POST 提交。~~ — 已完整重建为 11 字段
+  HeroUI 表单（commit `ee22b1c`），含动态分批表格、提示文、`createOption()`
+  接通、成功跳转 `/strategies`。
+- ~~**集成测试**：仓库目前缺少端到端 e2e。~~ — 已补：
+  `quant/tests/test_e2e_pipeline.py` 跑完整流水线（ingest → /ohlcv 读 →
+  /option 建策略 → /optimize → 推荐验证 → 清理），`@pytest.mark.integration`
+  默认 `pytest -q` 不跑，`uv run pytest -m integration` 显式跑；
+  fixture 在 gateway 不可达时自动 skip，不阻塞离线。
 - **Phase 8 付费数据源切换路径**：`quant/data/equities/polygon_stub.py` /
   `quant/data/onchain/{glassnode,nansen}_stub.py` 在构造时即抛
   `ErrAPIKeyNotConfigured`（绝不静默 no-op）。要切真 SDK 三步：

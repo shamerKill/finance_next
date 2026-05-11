@@ -41,11 +41,9 @@ import pandas as pd
 
 from quant.ai._protocol import AIClient
 from quant.ai.claude_client import (
-    HAIKU_MODEL,
     ROLE_DEFINE,
     ROLE_RATIONALE,
     ROLE_REFINE,
-    SONNET_MODEL,
     ClaudeUsage,
     compute_usd_cost,
 )
@@ -493,7 +491,7 @@ async def _try_define_search_space(
     # Sonnet 4.6 typical: ~300 input + ~600 output → ~$0.01. Budget for ~3K
     # input / 1K output as a safe upper bound: ~0.024 USD.
     projected = compute_usd_cost(
-        SONNET_MODEL,
+        claude_client.primary_model,
         ClaudeUsage(input_tokens=3_000, output_tokens=1_000),
     )
     ok, why = await budget_gate.try_charge(projected)
@@ -528,7 +526,7 @@ async def _try_define_search_space(
     except Exception as exc:  # noqa: BLE001
         log.warning("define_search_space failed; falling back to default: %s", exc)
         return _DEFAULT_SEARCH_SPACE
-    budget_gate.record(role=ROLE_DEFINE, model=SONNET_MODEL, usage=usage)
+    budget_gate.record(role=ROLE_DEFINE, model=claude_client.primary_model, usage=usage)
     return space
 
 
@@ -541,7 +539,7 @@ async def _try_refine(
 ) -> None:
     """Mid-study Haiku refinement. Best-effort — failures are swallowed."""
     projected = compute_usd_cost(
-        HAIKU_MODEL,
+        claude_client.refine_model,
         ClaudeUsage(input_tokens=2_000, output_tokens=600),
     )
     ok, why = await budget_gate.try_charge(projected)
@@ -563,7 +561,7 @@ async def _try_refine(
     except Exception as exc:  # noqa: BLE001
         log.warning("refine_search_space failed: %s", exc)
         return
-    budget_gate.record(role=ROLE_REFINE, model=HAIKU_MODEL, usage=usage)
+    budget_gate.record(role=ROLE_REFINE, model=claude_client.refine_model, usage=usage)
 
 
 async def _try_write_rationale(
@@ -584,7 +582,7 @@ async def _try_write_rationale(
         return fallback
 
     projected = compute_usd_cost(
-        SONNET_MODEL,
+        claude_client.primary_model,
         ClaudeUsage(input_tokens=2_000, output_tokens=600),
     )
     ok, why = await budget_gate.try_charge(projected)
@@ -609,7 +607,7 @@ async def _try_write_rationale(
     except Exception as exc:  # noqa: BLE001
         log.warning("write_final_rationale failed; using fallback: %s", exc)
         return fallback
-    budget_gate.record(role=ROLE_RATIONALE, model=SONNET_MODEL, usage=usage)
+    budget_gate.record(role=ROLE_RATIONALE, model=claude_client.primary_model, usage=usage)
     return text or fallback
 
 

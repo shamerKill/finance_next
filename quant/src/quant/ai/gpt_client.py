@@ -116,6 +116,11 @@ class GPTClient:
     the ``openai`` package on PYTHONPATH.
     """
 
+    # AIClient Protocol surface — see _protocol.py. The optimizer and
+    # cost ledger read these to route auditing on the real model name.
+    primary_model: str = OPENAI_MODEL_PRIMARY
+    refine_model: str = OPENAI_MODEL_REFINE
+
     def __init__(
         self,
         *,

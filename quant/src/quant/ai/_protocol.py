@@ -24,7 +24,15 @@ class AIClient(Protocol):
     names so the cost ledger handles them uniformly. We use ``Any`` for
     the usage half of the tuple to keep this Protocol from coupling to
     a concrete dataclass.
+
+    ``primary_model`` / ``refine_model`` carry the model ID the call site
+    will use. The optimizer reads these (instead of hard-coding Claude
+    constants) so the cost ledger / audit trail reflects whichever
+    family is currently dispatched.
     """
+
+    primary_model: str
+    refine_model: str
 
     async def define_search_space(
         self,

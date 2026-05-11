@@ -37,7 +37,12 @@ export default function AdminPage() {
     "unknown" | "verifying" | "ok" | "bad"
   >("unknown");
 
-  // Load the admin key + userId from localStorage on first paint.
+  // Load the admin key + userId from localStorage on first paint. We do
+  // this inside an effect rather than via lazy initializer because
+  // `window.localStorage` is unavailable during SSR (this is a client
+  // component but Next still pre-renders on the server). The setState
+  // calls fire exactly once after hydration; the cascading-render lint
+  // rule is acknowledged via the inline disables.
   useEffect(() => {
     const k = window.localStorage.getItem(ADMIN_KEY_STORAGE) ?? "";
     const u = window.localStorage.getItem(USER_ID_STORAGE) ?? "";

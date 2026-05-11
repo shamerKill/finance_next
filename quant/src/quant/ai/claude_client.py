@@ -125,7 +125,16 @@ class ClaudeClient:
     so tests that monkeypatch the underlying client never need an API key.
 
     Tests can pass ``client=<fake>`` to fully bypass the SDK.
+
+    ``primary_model`` and ``refine_model`` are instance attributes (not
+    constants on the class) so the optimizer / budget ledger can route
+    pricing + auditing on the actual model name being used, regardless of
+    whether this client or a sibling (e.g. GPTClient) is in play.
     """
+
+    # AIClient Protocol surface — see _protocol.py.
+    primary_model: str = SONNET_MODEL
+    refine_model: str = HAIKU_MODEL
 
     def __init__(
         self,

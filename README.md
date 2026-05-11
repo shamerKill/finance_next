@@ -80,4 +80,5 @@ uv run pytest -q && uv run ruff check .
 
 ## 详细文档
 
-请阅读 [CLAUDE.md](./CLAUDE.md)（含数据模型、API 表、各 phase 历史）。
+- [USAGE.md](./USAGE.md) — **日常使用指南**：抓行情 / 建策略 / AI 优化 / 审批推荐 / 监控运维 / 错误诊断
+- [CLAUDE.md](./CLAUDE.md) — 架构参考：数据模型、完整 API 表、各 phase 历史、安全契约

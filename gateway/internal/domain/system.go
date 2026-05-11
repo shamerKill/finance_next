@@ -6,12 +6,64 @@ import "time"
 // SystemState is the single-doc record (id="global") that controls the
 // portfolio kill switch. When TradingHalted is true, the order engine
 // rejects every submit before risk gates run.
+//
+// The same doc also carries the operator-tunable AIConfig (model family,
+// budgets, base URLs) so /admin/ai/config can persist without minting a
+// second collection. AIConfig is nil for legacy docs — readers MUST fall
+// back to env vars when the nested field is absent or zero-valued.
 type SystemState struct {
 	ID            string     `json:"id" bson:"_id"`
 	TradingHalted bool       `json:"tradingHalted" bson:"tradingHalted"`
 	HaltedAt      *time.Time `json:"haltedAt,omitempty" bson:"haltedAt,omitempty"`
 	HaltedReason  string     `json:"haltedReason,omitempty" bson:"haltedReason,omitempty"`
 	HaltedBy      string     `json:"haltedBy,omitempty" bson:"haltedBy,omitempty"`
+
+	// AIConfig is the persisted overlay for /admin/ai/config. When nil
+	// or empty, env vars supply every field (see handler:effective).
+	AIConfig *AIConfig `json:"aiConfig,omitempty" bson:"aiConfig,omitempty"`
+}
+
+// AIConfig is the operator-tunable AI optimisation config persisted in
+// system_state.aiConfig. Every field is optional in PUT bodies; a zero
+// value means "fall back to env at read time".
+//
+// Model name strings are validated non-empty when present; budgets must
+// be > 0 and study cap ≤ daily cap; lookbackDays must be in [7, 365];
+// base URLs are accepted empty (= SDK default) or as well-formed URLs.
+type AIConfig struct {
+	ModelFamily           string    `bson:"modelFamily,omitempty"           json:"modelFamily,omitempty"`
+	AnthropicPrimaryModel string    `bson:"anthropicPrimaryModel,omitempty" json:"anthropicPrimaryModel,omitempty"`
+	AnthropicRefineModel  string    `bson:"anthropicRefineModel,omitempty"  json:"anthropicRefineModel,omitempty"`
+	OpenAIPrimaryModel    string    `bson:"openaiPrimaryModel,omitempty"    json:"openaiPrimaryModel,omitempty"`
+	OpenAIRefineModel     string    `bson:"openaiRefineModel,omitempty"     json:"openaiRefineModel,omitempty"`
+	AnthropicBaseURL      string    `bson:"anthropicBaseURL,omitempty"      json:"anthropicBaseURL,omitempty"`
+	OpenAIBaseURL         string    `bson:"openaiBaseURL,omitempty"         json:"openaiBaseURL,omitempty"`
+	BudgetUsdPerStudy     float64   `bson:"budgetUsdPerStudy,omitempty"     json:"budgetUsdPerStudy,omitempty"`
+	BudgetUsdPerDay       float64   `bson:"budgetUsdPerDay,omitempty"       json:"budgetUsdPerDay,omitempty"`
+	LookbackDays          int       `bson:"lookbackDays,omitempty"          json:"lookbackDays,omitempty"`
+	UpdatedAt             time.Time `bson:"updatedAt,omitempty"             json:"updatedAt,omitempty"`
+}
+
+// RecommendationPeriod is the OOS-window metadata attached to each
+// recommendation. Quant worker writes it at insert time; gateway
+// populates a default at read time so legacy docs render with context.
+type RecommendationPeriod struct {
+	LookbackDays     int     `bson:"lookbackDays"     json:"lookbackDays"`
+	InSampleDays     float64 `bson:"inSampleDays"     json:"inSampleDays"`
+	OosDays          float64 `bson:"oosDays"          json:"oosDays"`
+	SharpeAnnualized bool    `bson:"sharpeAnnualized" json:"sharpeAnnualized"`
+}
+
+// DefaultRecommendationPeriod returns the gateway-side fallback used
+// when a legacy doc has no period field. The values mirror the quant
+// worker's default 70/30 walk-forward split over a 90-day lookback.
+func DefaultRecommendationPeriod() *RecommendationPeriod {
+	return &RecommendationPeriod{
+		LookbackDays:     90,
+		InSampleDays:     63,
+		OosDays:          27,
+		SharpeAnnualized: true,
+	}
 }
 
 // SystemStateGlobalID is the canonical _id for the single global doc.

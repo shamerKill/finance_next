@@ -86,6 +86,12 @@ func (h *RecommendationHandler) list(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	// Legacy docs may lack the OOS-window period field; populate the
+	// gateway-side default at serialization time so the client always
+	// sees a usable period block.
+	for i := range docs {
+		docs[i].EnsurePeriod()
+	}
 	return c.JSON(http.StatusOK, docs)
 }
 
@@ -102,6 +108,7 @@ func (h *RecommendationHandler) findOne(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	doc.EnsurePeriod()
 	return c.JSON(http.StatusOK, doc)
 }
 
@@ -120,6 +127,7 @@ func (h *RecommendationHandler) reject(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	doc.EnsurePeriod()
 	return c.JSON(http.StatusOK, doc)
 }
 
@@ -297,6 +305,7 @@ func (h *RecommendationHandler) approve(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	approvedRec.EnsurePeriod()
 	updatedStrat, err := h.options.FindByID(c.Request().Context(), rec.StrategyID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())

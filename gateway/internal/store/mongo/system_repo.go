@@ -138,3 +138,38 @@ func (r *SystemRepo) SetPortfolioLimits(ctx context.Context, p *domain.Portfolio
 	)
 	return err
 }
+
+// GetAIConfig returns the persisted aiConfig nested in the global
+// system_state doc, or nil when the doc / field is absent. The handler
+// merges nil with env-derived defaults to compute the effective config.
+func (r *SystemRepo) GetAIConfig(ctx context.Context) (*domain.AIConfig, error) {
+	s, err := r.GetSystemState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s == nil || s.AIConfig == nil {
+		return nil, nil
+	}
+	return s.AIConfig, nil
+}
+
+// SetAIConfig upserts the aiConfig nested field on system_state while
+// leaving the kill-switch fields untouched. We use $set rather than
+// ReplaceOne so a concurrent Halt/Resume can't race the aiConfig PUT.
+// updatedAt is stamped here so callers can omit it.
+func (r *SystemRepo) SetAIConfig(ctx context.Context, cfg *domain.AIConfig) error {
+	if cfg == nil {
+		return errors.New("SetAIConfig: cfg nil")
+	}
+	cfg.UpdatedAt = time.Now().UTC()
+	_, err := r.state.UpdateOne(
+		ctx,
+		bson.M{"_id": domain.SystemStateGlobalID},
+		bson.M{
+			"$set":         bson.M{"aiConfig": cfg},
+			"$setOnInsert": bson.M{"_id": domain.SystemStateGlobalID, "tradingHalted": false},
+		},
+		options.UpdateOne().SetUpsert(true),
+	)
+	return err
+}

@@ -66,6 +66,13 @@ func (f *fakeQuant) GetOptimizationStatus(_ context.Context, _ *quantv1.StudyHan
 	return nil, nil
 }
 
+// GetAIConfig defaults to Unimplemented so admin/ai/prompts tests get
+// the expected 503 path; tests that want a happy response override the
+// method by wrapping the fake.
+func (f *fakeQuant) GetAIConfig(_ context.Context) (*quantclient.AIConfigResponse, error) {
+	return nil, quantclient.ErrQuantGetAIConfigUnimplemented
+}
+
 func (f *fakeQuant) Close() error { return nil }
 
 // helper: route /api/v1/market/ingest with the supplied dependencies.

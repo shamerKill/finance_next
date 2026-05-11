@@ -21,6 +21,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/finance_next/gateway/internal/domain"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -54,18 +55,29 @@ type ExpectedDelta struct {
 
 // RecommendationDoc mirrors the Python writer's shape.
 type RecommendationDoc struct {
-	ID             string         `bson:"_id"            json:"id"`
-	StrategyID     string         `bson:"strategyId"     json:"strategyId"`
-	StudyID        string         `bson:"studyId"        json:"studyId"`
-	ProposedParams map[string]any `bson:"proposedParams" json:"proposedParams"`
-	ExpectedDelta  ExpectedDelta  `bson:"expectedDelta"  json:"expectedDelta"`
-	Rationale      string         `bson:"rationale"      json:"rationale"`
-	Status         string         `bson:"status"         json:"status"`
-	ReviewedBy     *string        `bson:"reviewedBy"     json:"reviewedBy,omitempty"`
-	ReviewedAt     *time.Time     `bson:"reviewedAt"     json:"reviewedAt,omitempty"`
-	AppliedVersion *int64         `bson:"appliedVersion" json:"appliedVersion,omitempty"`
-	CreatedAt      time.Time      `bson:"createdAt"      json:"createdAt"`
-	UpdatedAt      time.Time      `bson:"updatedAt"      json:"updatedAt"`
+	ID             string                       `bson:"_id"               json:"id"`
+	StrategyID     string                       `bson:"strategyId"        json:"strategyId"`
+	StudyID        string                       `bson:"studyId"           json:"studyId"`
+	ProposedParams map[string]any               `bson:"proposedParams"    json:"proposedParams"`
+	ExpectedDelta  ExpectedDelta                `bson:"expectedDelta"     json:"expectedDelta"`
+	Rationale      string                       `bson:"rationale"         json:"rationale"`
+	Status         string                       `bson:"status"            json:"status"`
+	ReviewedBy     *string                      `bson:"reviewedBy"        json:"reviewedBy,omitempty"`
+	ReviewedAt     *time.Time                   `bson:"reviewedAt"        json:"reviewedAt,omitempty"`
+	AppliedVersion *int64                       `bson:"appliedVersion"    json:"appliedVersion,omitempty"`
+	Period         *domain.RecommendationPeriod `bson:"period,omitempty"  json:"period,omitempty"`
+	CreatedAt      time.Time                    `bson:"createdAt"         json:"createdAt"`
+	UpdatedAt      time.Time                    `bson:"updatedAt"         json:"updatedAt"`
+}
+
+// EnsurePeriod populates a default period when the doc has none. The
+// quant worker writes the field at insert time; this fallback makes
+// legacy docs render with context so the dashboard never shows a blank
+// OOS window.
+func (d *RecommendationDoc) EnsurePeriod() {
+	if d.Period == nil {
+		d.Period = domain.DefaultRecommendationPeriod()
+	}
 }
 
 // OptimizationCost is the persisted cost ledger sub-document.

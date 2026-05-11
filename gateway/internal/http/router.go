@@ -254,8 +254,10 @@ func NewRouter(d Deps) *echo.Echo {
 	handlers.NewOptimizationHandler(d.OptimizationRunRepo, d.Quant).Register(v1)
 
 	// Phase 7 admin endpoints: kill switch + portfolio limits + audit
-	// viewer. Hidden when AdminKey is unset (404).
-	handlers.NewAdminHandler(d.SystemRepo, d.AuditRepo, d.AdminKey).Register(v1)
+	// viewer + /admin/ai/{config,prompts}. Hidden when AdminKey is
+	// unset (404). The quant client is forwarded so /admin/ai/prompts
+	// can call GetAIConfig; nil = 503 with a clear message.
+	handlers.NewAdminHandler(d.SystemRepo, d.AuditRepo, d.Quant, d.AdminKey).Register(v1)
 
 	// Phase 8 data-explorer reads (equities/futures OHLCV, macro,
 	// onchain, news) + admin-gated XADD ingest triggers. Each path

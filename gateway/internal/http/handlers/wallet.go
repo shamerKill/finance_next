@@ -26,6 +26,7 @@ import (
 
 	"github.com/finance_next/gateway/internal/crypto"
 	"github.com/finance_next/gateway/internal/domain"
+	gwmw "github.com/finance_next/gateway/internal/http/middleware"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	walletpkg "github.com/finance_next/gateway/internal/wallet/polygon"
 	"github.com/go-playground/validator/v10"
@@ -86,7 +87,7 @@ func (h *WalletHandler) Register(g *echo.Group) {
 }
 
 func (h *WalletHandler) list(c echo.Context) error {
-	out, err := h.repo.FindAll(c.Request().Context(), domain.DefaultUserID)
+	out, err := h.repo.FindAll(c.Request().Context(), gwmw.FromEcho(c))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -121,7 +122,7 @@ func (h *WalletHandler) create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "encrypt: "+err.Error())
 	}
 	w := &domain.Wallet{
-		UserID:               domain.DefaultUserID,
+		UserID:               gwmw.FromEcho(c),
 		Label:                dto.Label,
 		Address:              addr,
 		DEKCiphertext:        dekCT,
@@ -199,7 +200,7 @@ func (h *WalletHandler) approve(c echo.Context) error {
 	if h.systemRepo == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "portfolio_limits source not configured")
 	}
-	limits, err := h.systemRepo.GetPortfolioLimits(c.Request().Context(), domain.DefaultUserID)
+	limits, err := h.systemRepo.GetPortfolioLimits(c.Request().Context(), gwmw.FromEcho(c))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "load portfolio_limits: "+err.Error())
 	}

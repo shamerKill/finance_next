@@ -132,6 +132,12 @@ func main() {
 		logger.Warn("ensure prediction_orders indexes failed", "err", err)
 	}
 
+	// R2 multi-tenant userId backfill. Idempotent — re-runs are no-ops.
+	// Every user-scoped collection gets userId="default" on docs that
+	// pre-date the boundary. Runs after every EnsureIndexes so the new
+	// compound indexes already exist when later reads happen.
+	runUserIDBackfills(connectCtx, logger, optRepo, acctRepo, orderRepo, walletRepo, predStratRepo, predOrderRepo)
+
 	// Phase 7: KEK provider selection. Default is the env-backed Service;
 	// `KEK_PROVIDER=aws-kms` / `gcp-kms` swap to a stub that errors at
 	// runtime — production swap requires the corresponding SDK.
@@ -314,6 +320,8 @@ func main() {
 		PredictionOrderRepo:    predOrderRepo,
 		WalletRPC:              walletRPC,
 		PredictionEngine:       predEngine,
+
+		RequireUserID: cfg.RequireUserID,
 	})
 
 	addr := ":" + cfg.Port
@@ -374,6 +382,45 @@ func selectKEKProvider(svc *crypto.Service, log *slog.Logger) crypto.KEKProvider
 		return crypto.NewGCPKMSKEKProvider(os.Getenv("GCP_KMS_KEY_NAME"))
 	default:
 		return crypto.NewEnvKEKProvider(svc)
+	}
+}
+
+// runUserIDBackfills upserts userId="default" onto every doc in the
+// user-scoped collections that pre-dates the R2 multi-tenant boundary.
+// Each call is idempotent; subsequent boots become no-ops once every
+// row carries the field. Failures are logged but never fatal — a Mongo
+// blip should not block gateway startup.
+func runUserIDBackfills(
+	ctx context.Context,
+	log *slog.Logger,
+	opt *mongostore.OptionRepo,
+	acct *mongostore.AccountRepo,
+	order *mongostore.OrderRepo,
+	wallet *mongostore.WalletRepo,
+	predStrat *mongostore.PredictionStrategyRepo,
+	predOrder *mongostore.PredictionOrderRepo,
+) {
+	type job struct {
+		name string
+		run  func(context.Context) (int64, error)
+	}
+	jobs := []job{
+		{"options", opt.BackfillMissingUserID},
+		{"accounts", acct.BackfillMissingUserID},
+		{"order_log", order.BackfillMissingUserID},
+		{"polygon_wallets", wallet.BackfillMissingUserID},
+		{"prediction_strategies", predStrat.BackfillMissingUserID},
+		{"prediction_orders", predOrder.BackfillMissingUserID},
+	}
+	for _, j := range jobs {
+		n, err := j.run(ctx)
+		if err != nil {
+			log.Warn("userId backfill failed", "collection", j.name, "err", err)
+			continue
+		}
+		if n > 0 {
+			log.Info("userId backfill applied", "collection", j.name, "docs", n)
+		}
 	}
 }
 

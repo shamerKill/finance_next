@@ -34,16 +34,40 @@ func NewWalletRepo(db *mongo.Database) *WalletRepo {
 	return &WalletRepo{col: db.Collection(WalletCollectionName)}
 }
 
-// EnsureIndexes builds the (userId, address) unique index.
+// EnsureIndexes builds:
+//   - unique(userId, address) — wallet identity
+//   - unique(userId, label)   — R2 multi-tenant label uniqueness per user
 func (r *WalletRepo) EnsureIndexes(ctx context.Context) error {
-	_, err := r.col.Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys: bson.D{
-			{Key: "userId", Value: 1},
-			{Key: "address", Value: 1},
+	_, err := r.col.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "userId", Value: 1},
+				{Key: "address", Value: 1},
+			},
+			Options: options.Index().SetUnique(true).SetName("uniq_user_address"),
 		},
-		Options: options.Index().SetUnique(true).SetName("uniq_user_address"),
+		{
+			Keys: bson.D{
+				{Key: "userId", Value: 1},
+				{Key: "label", Value: 1},
+			},
+			Options: options.Index().SetUnique(true).SetName("uniq_user_label"),
+		},
 	})
 	return err
+}
+
+// BackfillMissingUserID upserts userId=DefaultUserID on every doc missing
+// the field. Idempotent. Returns the number of updated documents.
+func (r *WalletRepo) BackfillMissingUserID(ctx context.Context) (int64, error) {
+	res, err := r.col.UpdateMany(ctx,
+		bson.M{"userId": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"userId": "default"}},
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
 }
 
 // Create inserts a new wallet and returns the persisted doc.

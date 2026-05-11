@@ -31,13 +31,35 @@ func NewOptionRepo(db *mongo.Database) *OptionRepo {
 	return &OptionRepo{col: db.Collection(CollectionName)}
 }
 
-// EnsureIndexes creates the unique-name index that Mongoose previously enforced.
+// EnsureIndexes creates:
+//   - unique(name)               — legacy uniqueness from Mongoose
+//   - (userId, _id)              — R2 multi-tenant lookup
 func (r *OptionRepo) EnsureIndexes(ctx context.Context) error {
-	_, err := r.col.Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys:    bson.D{{Key: "name", Value: 1}},
-		Options: options.Index().SetUnique(true).SetName("uniq_name"),
+	_, err := r.col.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "name", Value: 1}},
+			Options: options.Index().SetUnique(true).SetName("uniq_name"),
+		},
+		{
+			Keys:    bson.D{{Key: "userId", Value: 1}, {Key: "_id", Value: 1}},
+			Options: options.Index().SetName("user_id"),
+		},
 	})
 	return err
+}
+
+// BackfillMissingUserID upserts userId=DefaultUserID on every doc missing
+// the field. Idempotent; safe to run on every boot. Returns the number of
+// updated documents so the caller can log it.
+func (r *OptionRepo) BackfillMissingUserID(ctx context.Context) (int64, error) {
+	res, err := r.col.UpdateMany(ctx,
+		bson.M{"userId": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"userId": "default"}},
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
 }
 
 // Create inserts a new option and returns the persisted doc (with assigned _id).
@@ -58,9 +80,15 @@ func (r *OptionRepo) Create(ctx context.Context, o *domain.Option) (*domain.Opti
 	return r.FindByID(ctx, oid.Hex())
 }
 
-// FindAll returns every option (no filter, matches NestJS behaviour).
-func (r *OptionRepo) FindAll(ctx context.Context) ([]domain.Option, error) {
-	cur, err := r.col.Find(ctx, bson.D{})
+// FindAll returns every option for the given userId. Passing "" returns
+// every option across all tenants — reserved for admin / migration paths
+// only; HTTP handlers must always pass the resolved userId.
+func (r *OptionRepo) FindAll(ctx context.Context, userID string) ([]domain.Option, error) {
+	filter := bson.D{}
+	if userID != "" {
+		filter = bson.D{{Key: "userId", Value: userID}}
+	}
+	cur, err := r.col.Find(ctx, filter)
 	if err != nil {
 		return nil, err
 	}

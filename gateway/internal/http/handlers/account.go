@@ -12,6 +12,7 @@ import (
 	"github.com/finance_next/gateway/internal/exchange/binance"
 	"github.com/finance_next/gateway/internal/exchange/bybit"
 	"github.com/finance_next/gateway/internal/exchange/okx"
+	gwmw "github.com/finance_next/gateway/internal/http/middleware"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
@@ -75,7 +76,7 @@ func (h *AccountHandler) Register(g *echo.Group) {
 }
 
 func (h *AccountHandler) list(c echo.Context) error {
-	out, err := h.repo.FindAll(c.Request().Context(), domain.DefaultUserID)
+	out, err := h.repo.FindAll(c.Request().Context(), gwmw.FromEcho(c))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -145,8 +146,7 @@ func (h *AccountHandler) create(c echo.Context) error {
 	}
 
 	acct := &domain.Account{
-		// TODO(phase 7): replace with authenticated user id from JWT.
-		UserID:               domain.DefaultUserID,
+		UserID:               gwmw.FromEcho(c),
 		Exchange:             dto.Exchange,
 		Label:                dto.Label,
 		Email:                dto.Email,

@@ -33,7 +33,9 @@ func (e *Engine) reconcileOnce(ctx context.Context) {
 	// pass: list open orders for every wallet that's appeared in any
 	// strategy's live config. For Phase 9 we walk strategies and
 	// dedupe by wallet.
-	strats, err := e.deps.StrategyRepo.FindAll(ctx, domain.DefaultUserID)
+	// R2: empty userID returns strategies across every tenant — the
+	// reconcile loop has no HTTP context and must enumerate the world.
+	strats, err := e.deps.StrategyRepo.FindAll(ctx, "")
 	if err != nil {
 		e.log.Warn("prediction reconcile: list strategies", "err", err)
 		return

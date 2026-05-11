@@ -4,6 +4,12 @@
 // docker-compose Mongo. This file only houses the cheap, fast guards
 // that fire BEFORE any collection access — so they can be exercised
 // against a bare zero-value repo with no live database connection.
+//
+// R2 update: the previous "default"-only guard has been replaced with
+// real `userId` filtering at the aggregation pipeline level. The cheap
+// guard now only rejects the *empty* userID — every order belongs to
+// some tenant, including the legacy "default" one. The actual filter
+// behaviour is exercised by integration tests that spin up Mongo.
 package mongo
 
 import (
@@ -11,53 +17,48 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/finance_next/gateway/internal/domain"
 )
 
-// TestSumOpenNotionalForUser_RejectsNonDefaultUserID is the regression
-// guard for the cross-tenant foot-gun: the aggregation currently runs
-// across the entire collection regardless of userId (Phase 8 will thread
-// a userId column through write sites). Until that lands, any caller
-// passing a non-default userId gets an explicit error rather than
-// silently receiving another tenant's data.
-func TestSumOpenNotionalForUser_RejectsNonDefaultUserID(t *testing.T) {
+// TestSumOpenNotionalForUser_RejectsEmptyUserID confirms the cheap guard
+// fires on the empty string before any Mongo round-trip happens.
+func TestSumOpenNotionalForUser_RejectsEmptyUserID(t *testing.T) {
 	r := &OrderRepo{} // nil col — guard runs first, never touches Mongo.
 
-	_, _, err := r.SumOpenNotionalForUser(context.Background(), "user-42")
+	_, _, err := r.SumOpenNotionalForUser(context.Background(), "")
 	if err == nil {
-		t.Fatal("expected error for non-default userId, got nil")
+		t.Fatal("expected error for empty userID, got nil")
 	}
-	if !strings.Contains(err.Error(), "multi-tenant userId aggregation not yet supported") {
+	if !strings.Contains(err.Error(), "userID required") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
 
-func TestSumRealisedPnlSinceForUser_RejectsNonDefaultUserID(t *testing.T) {
+// TestSumRealisedPnlSinceForUser_RejectsEmptyUserID mirrors the above.
+func TestSumRealisedPnlSinceForUser_RejectsEmptyUserID(t *testing.T) {
 	r := &OrderRepo{}
 
-	_, err := r.SumRealisedPnlSinceForUser(context.Background(), "user-42", time.Now())
+	_, err := r.SumRealisedPnlSinceForUser(context.Background(), "", time.Now())
 	if err == nil {
-		t.Fatal("expected error for non-default userId, got nil")
+		t.Fatal("expected error for empty userID, got nil")
 	}
-	if !strings.Contains(err.Error(), "multi-tenant userId aggregation not yet supported") {
+	if !strings.Contains(err.Error(), "userID required") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
 
-// TestSumOpenNotionalForUser_DefaultUserID_NoGuard documents that the
-// default user passes the guard. We don't run the aggregation here (it
-// would require a live collection), but a panic-free call into a nil
-// collection would deref — so we recover and assert we got far enough
-// to attempt the query.
-func TestSumOpenNotionalForUser_DefaultUserID_PassesGuard(t *testing.T) {
+// TestSumOpenNotionalForUser_NonEmptyUserID_PassesGuard documents that
+// any non-empty userID passes the guard and proceeds to the aggregation
+// (which panics here because col is nil — the test is structured around
+// the panic to assert we got past the cheap guard).
+func TestSumOpenNotionalForUser_NonEmptyUserID_PassesGuard(t *testing.T) {
 	r := &OrderRepo{}
 	defer func() {
 		// Expected: nil pointer deref because col is nil. The point is
 		// the guard didn't fire — we got past it.
 		_ = recover()
 	}()
-	_, _, _ = r.SumOpenNotionalForUser(context.Background(), domain.DefaultUserID)
-	// If we reach here without a panic, the test still passes — the
-	// guard returned early with a different error (also acceptable).
+	_, _, _ = r.SumOpenNotionalForUser(context.Background(), "user-42")
+	// If we reach here without a panic the guard returned early — that
+	// would be a regression from the empty-string check.
+	t.Fatal("expected panic from nil collection after guard passed, but the call returned cleanly — guard may be too strict")
 }

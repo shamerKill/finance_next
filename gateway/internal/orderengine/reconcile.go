@@ -72,7 +72,10 @@ func (e *Engine) collectOpenByAccount(ctx context.Context) (map[string][]domain.
 	// the current schema — collect via FindAccounts. As a pragmatic
 	// shortcut, we list all accounts then sweep each. Phase 4 daily
 	// volume is low; phase 7 can swap in an index-driven path.
-	accounts, err := e.deps.AccountRepo.FindAll(ctx, domain.DefaultUserID)
+	// R2: empty userID returns accounts across every tenant — the
+	// reconcile loop has no HTTP context to derive a userId from, so
+	// it must enumerate the world.
+	accounts, err := e.deps.AccountRepo.FindAll(ctx, "")
 	if err != nil {
 		return nil, err
 	}

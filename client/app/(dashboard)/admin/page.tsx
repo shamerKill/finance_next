@@ -17,12 +17,17 @@ import {
 
 const ADMIN_KEY_STORAGE = "finance_next_admin_key";
 
+// R2 multi-tenant userId storage key — matches api-client.ts.
+// Absent → the gateway falls back to "default" for this browser.
+const USER_ID_STORAGE = "finance_next_user_id";
+
 // Phase 7 admin page. Rendered client-side because the operator's admin
 // key lives in localStorage; server components have no access. The page
 // has three sections: kill switch toggle, portfolio limits editor, and
 // a link to the audit viewer.
 export default function AdminPage() {
   const [adminKey, setAdminKey] = useState("");
+  const [userId, setUserId] = useState("");
   const [state, setState] = useState<TypeSystemState | null>(null);
   const [limits, setLimits] = useState<TypePortfolioLimits | null>(null);
   const [reason, setReason] = useState("");
@@ -32,11 +37,14 @@ export default function AdminPage() {
     "unknown" | "verifying" | "ok" | "bad"
   >("unknown");
 
-  // Load the admin key from localStorage on first paint.
+  // Load the admin key + userId from localStorage on first paint.
   useEffect(() => {
     const k = window.localStorage.getItem(ADMIN_KEY_STORAGE) ?? "";
+    const u = window.localStorage.getItem(USER_ID_STORAGE) ?? "";
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setAdminKey(k);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setUserId(u);
   }, []);
 
   const refresh = async () => {
@@ -74,6 +82,16 @@ export default function AdminPage() {
     window.localStorage.setItem(ADMIN_KEY_STORAGE, adminKey);
     // Immediately re-verify so the halt / limits sections unlock.
     refresh();
+  };
+
+  const onSaveUserId = () => {
+    if (userId) {
+      window.localStorage.setItem(USER_ID_STORAGE, userId);
+    } else {
+      window.localStorage.removeItem(USER_ID_STORAGE);
+    }
+    // Reload so every page in the dashboard picks up the new header.
+    window.location.reload();
   };
 
   const onHalt = async () => {
@@ -155,6 +173,28 @@ export default function AdminPage() {
           )}
         </div>
         <ApiErrorView error={error} />
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-lg font-medium">用户 ID（X-User-Id）</h2>
+        <p className="text-sm text-default-500">
+          多租户开发开关：留空则网关回落到默认用户 &quot;default&quot;。
+          仅保存到本浏览器的 localStorage，并通过 X-User-Id
+          请求头发送到 /api/v1/*。未来由认证代理在边缘验证后注入。
+        </p>
+        <input
+          className="border rounded px-2 py-1 w-full font-mono"
+          type="text"
+          placeholder="留空 = default"
+          value={userId}
+          onChange={(e) => setUserId(e.target.value)}
+        />
+        <button
+          className="bg-primary text-white rounded px-3 py-1"
+          onClick={onSaveUserId}
+        >
+          保存并刷新
+        </button>
       </section>
 
       <section className="space-y-2">

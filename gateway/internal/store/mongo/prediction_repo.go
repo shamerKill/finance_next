@@ -49,15 +49,32 @@ func NewPredictionStrategyRepo(db *mongo.Database) *PredictionStrategyRepo {
 func (r *PredictionStrategyRepo) EnsureIndexes(ctx context.Context) error {
 	_, err := r.col.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
-			Keys: bson.D{{Key: "userId", Value: 1}, {Key: "marketId", Value: 1}, {Key: "outcome", Value: 1}},
+			Keys:    bson.D{{Key: "userId", Value: 1}, {Key: "marketId", Value: 1}, {Key: "outcome", Value: 1}},
 			Options: options.Index().SetName("user_market_outcome"),
 		},
 		{
 			Keys:    bson.D{{Key: "live.enabled", Value: 1}},
 			Options: options.Index().SetName("live_enabled"),
 		},
+		{
+			Keys:    bson.D{{Key: "userId", Value: 1}, {Key: "_id", Value: 1}},
+			Options: options.Index().SetName("user_id"),
+		},
 	})
 	return err
+}
+
+// BackfillMissingUserID upserts userId=DefaultUserID on every doc missing
+// the field. Idempotent.
+func (r *PredictionStrategyRepo) BackfillMissingUserID(ctx context.Context) (int64, error) {
+	res, err := r.col.UpdateMany(ctx,
+		bson.M{"userId": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"userId": "default"}},
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
 }
 
 // Create inserts a new strategy.
@@ -82,9 +99,16 @@ func (r *PredictionStrategyRepo) Create(ctx context.Context, s *domain.Predictio
 	return r.FindByID(ctx, oid.Hex())
 }
 
-// FindAll returns every strategy for the given userId.
+// FindAll returns every strategy for the given userId. Passing "" returns
+// every strategy across all tenants — reserved for background workers
+// (prediction engine reconcile loop). HTTP handlers must always pass the
+// resolved userId.
 func (r *PredictionStrategyRepo) FindAll(ctx context.Context, userID string) ([]domain.PredictionStrategy, error) {
-	cur, err := r.col.Find(ctx, bson.D{{Key: "userId", Value: userID}})
+	filter := bson.D{}
+	if userID != "" {
+		filter = bson.D{{Key: "userId", Value: userID}}
+	}
+	cur, err := r.col.Find(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -187,6 +211,7 @@ func NewPredictionOrderRepo(db *mongo.Database) *PredictionOrderRepo {
 //   - unique(clientOrderId)
 //   - (strategyId, submittedAt desc)
 //   - (walletId, status)
+//   - (userId, submittedAt desc) — R2 multi-tenant aggregation
 func (r *PredictionOrderRepo) EnsureIndexes(ctx context.Context) error {
 	_, err := r.col.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
@@ -201,8 +226,25 @@ func (r *PredictionOrderRepo) EnsureIndexes(ctx context.Context) error {
 			Keys:    bson.D{{Key: "walletId", Value: 1}, {Key: "status", Value: 1}},
 			Options: options.Index().SetName("pred_wallet_status"),
 		},
+		{
+			Keys:    bson.D{{Key: "userId", Value: 1}, {Key: "submittedAt", Value: -1}},
+			Options: options.Index().SetName("pred_user_submittedAt"),
+		},
 	})
 	return err
+}
+
+// BackfillMissingUserID upserts userId=DefaultUserID on every doc missing
+// the field. Idempotent.
+func (r *PredictionOrderRepo) BackfillMissingUserID(ctx context.Context) (int64, error) {
+	res, err := r.col.UpdateMany(ctx,
+		bson.M{"userId": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"userId": "default"}},
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
 }
 
 // Insert attempts to persist a fresh row; idempotency on clientOrderId.

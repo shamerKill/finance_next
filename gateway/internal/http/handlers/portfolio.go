@@ -26,6 +26,7 @@ import (
 	"github.com/finance_next/gateway/internal/crypto"
 	"github.com/finance_next/gateway/internal/domain"
 	"github.com/finance_next/gateway/internal/exchange"
+	gwmw "github.com/finance_next/gateway/internal/http/middleware"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	"github.com/finance_next/gateway/internal/store/timescale"
 	"github.com/labstack/echo/v4"
@@ -92,7 +93,7 @@ func (h *PortfolioHandler) summary(c echo.Context) error {
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 30*time.Second)
 	defer cancel()
 
-	accounts, err := h.repo.FindAll(ctx, domain.DefaultUserID)
+	accounts, err := h.repo.FindAll(ctx, gwmw.FromEcho(c))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}

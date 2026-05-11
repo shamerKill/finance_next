@@ -28,6 +28,18 @@ type Config struct {
 	QuantGRPCAddr string // empty: admin ingest returns 503
 	AdminKey      string // empty: admin ingest returns 404 (hidden)
 	RedisURL      string // reserved for Phase 4 order-engine + Phase 6 events
+
+	// RequireUserID controls the multi-tenant userId middleware.
+	// True (env `REQUIRE_USER_ID=true`) → requests under /api/v1
+	// without an `X-User-Id` header are rejected 400. False (default /
+	// any other value) → missing header falls back to
+	// domain.DefaultUserID, preserving single-tenant dev behaviour.
+	//
+	// Auth model: the gateway itself does NOT verify the header; an
+	// upstream auth proxy is expected to validate the user and forward
+	// the verified subject as `X-User-Id`. Until that proxy is in place
+	// the header is trust-the-frontend.
+	RequireUserID bool
 }
 
 // Load reads env (with optional .env file), validates, and returns Config.
@@ -48,6 +60,7 @@ func Load() (*Config, error) {
 		QuantGRPCAddr: os.Getenv("QUANT_GRPC_ADDR"),
 		AdminKey:      os.Getenv("ADMIN_KEY"),
 		RedisURL:      os.Getenv("REDIS_URL"),
+		RequireUserID: os.Getenv("REQUIRE_USER_ID") == "true",
 	}
 	if cfg.Port == "" {
 		cfg.Port = "3001"

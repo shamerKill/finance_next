@@ -100,6 +100,10 @@ type UpdateOptionDTO struct {
 // Option is the persisted shape (BSON). createTime defaults to now on insert.
 type Option struct {
 	ID                           string           `json:"id"                           bson:"_id,omitempty"`
+	// UserID is the owning tenant id (R2 multi-tenant boundary). Populated
+	// from the request header by the create handler; legacy docs lacking
+	// the field are backfilled to DefaultUserID on gateway startup.
+	UserID                       string           `json:"userId"                       bson:"userId"`
 	Name                         string           `json:"name"                         bson:"name"`
 	PositionLevel                int              `json:"positionLevel"                bson:"positionLevel"`
 	OpenPositionStopTime         int              `json:"openPositionStopTime"         bson:"openPositionStopTime"`

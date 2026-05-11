@@ -31,6 +31,43 @@ import {
 const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
 const parseUrl = (path: string) => baseUrl + `/${path}`.replace("//", "/");
 
+// R2 multi-tenant: localStorage key the dashboard uses to set a per-browser
+// userId for the gateway's `X-User-Id` header. Absent / empty → no header
+// → gateway falls back to "default". This is a TRUST-THE-FRONTEND dev
+// convention; a future auth provider extracts the verified user and sets
+// the header before forwarding to the gateway.
+const USER_ID_STORAGE_KEY = "finance_next_user_id";
+
+function userIdHeader(): Record<string, string> {
+  if (typeof window === "undefined") return {}; // SSR / server components
+  try {
+    const v = window.localStorage.getItem(USER_ID_STORAGE_KEY);
+    return v ? { "X-User-Id": v } : {};
+  } catch {
+    return {};
+  }
+}
+
+// apiFetch is the project-wide fetch wrapper. It merges in the X-User-Id
+// header (when localStorage has one) and preserves all other init fields.
+// Existing call sites use vanilla fetch — we leave those as-is rather than
+// rewriting every line; only the wrapper version is added so callers that
+// opt in can pick it up. Server-side rendered code paths (no window) get
+// the same fetch with no extra headers, matching the dev fallback.
+export async function apiFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+): Promise<Response> {
+  const merged: RequestInit = {
+    ...init,
+    headers: {
+      ...userIdHeader(),
+      ...(init.headers ?? {}),
+    },
+  };
+  return fetch(input, merged);
+}
+
 // ApiError carries the HTTP status alongside the message so UI components
 // can render a friendly Chinese message based on the status (see
 // `client/components/api-error.tsx`). Falls back to the raw body when the
@@ -71,12 +108,12 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 // ---------- Options (legacy strategy resource) ----------
 
 export const getOptions = async () => {
-  const res = await fetch(parseUrl("v1/option"), { cache: "no-store" });
+  const res = await apiFetch(parseUrl("v1/option"), { cache: "no-store" });
   return await res.json();
 };
 
 export const createOption = async (option: TypeOption) => {
-  const res = await fetch(parseUrl("v1/option"), {
+  const res = await apiFetch(parseUrl("v1/option"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(option),
@@ -87,17 +124,17 @@ export const createOption = async (option: TypeOption) => {
 // ---------- Accounts (phase 1) ----------
 
 export const listAccounts = async (): Promise<TypeAccount[]> => {
-  const res = await fetch(parseUrl("v1/accounts"), { cache: "no-store" });
+  const res = await apiFetch(parseUrl("v1/accounts"), { cache: "no-store" });
   return jsonOrThrow<TypeAccount[]>(res);
 };
 
 export const getAccount = async (id: string): Promise<TypeAccount> => {
-  const res = await fetch(parseUrl(`v1/accounts/${id}`), { cache: "no-store" });
+  const res = await apiFetch(parseUrl(`v1/accounts/${id}`), { cache: "no-store" });
   return jsonOrThrow<TypeAccount>(res);
 };
 
 export const createAccount = async (input: TypeCreateAccount): Promise<TypeAccount> => {
-  const res = await fetch(parseUrl("v1/accounts"), {
+  const res = await apiFetch(parseUrl("v1/accounts"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -106,17 +143,17 @@ export const createAccount = async (input: TypeCreateAccount): Promise<TypeAccou
 };
 
 export const deleteAccount = async (id: string): Promise<void> => {
-  const res = await fetch(parseUrl(`v1/accounts/${id}`), { method: "DELETE" });
+  const res = await apiFetch(parseUrl(`v1/accounts/${id}`), { method: "DELETE" });
   await jsonOrThrow<{ success: boolean }>(res);
 };
 
 export const getBalances = async (id: string): Promise<TypeBalance[]> => {
-  const res = await fetch(parseUrl(`v1/accounts/${id}/balances`), { cache: "no-store" });
+  const res = await apiFetch(parseUrl(`v1/accounts/${id}/balances`), { cache: "no-store" });
   return jsonOrThrow<TypeBalance[]>(res);
 };
 
 export const getPositions = async (id: string): Promise<TypePosition[]> => {
-  const res = await fetch(parseUrl(`v1/accounts/${id}/positions`), { cache: "no-store" });
+  const res = await apiFetch(parseUrl(`v1/accounts/${id}/positions`), { cache: "no-store" });
   return jsonOrThrow<TypePosition[]>(res);
 };
 
@@ -148,7 +185,7 @@ export const getOhlcv = async (
     start: start.toISOString(),
     end: end.toISOString(),
   });
-  const res = await fetch(parseUrl(`v1/market/ohlcv?${params.toString()}`), {
+  const res = await apiFetch(parseUrl(`v1/market/ohlcv?${params.toString()}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypeOhlcvBar[]>(res);
@@ -160,19 +197,19 @@ export const listBacktests = async (
   strategyId?: string,
 ): Promise<TypeBacktest[]> => {
   const qs = strategyId ? `?strategyId=${encodeURIComponent(strategyId)}` : "";
-  const res = await fetch(parseUrl(`v1/backtests${qs}`), { cache: "no-store" });
+  const res = await apiFetch(parseUrl(`v1/backtests${qs}`), { cache: "no-store" });
   return jsonOrThrow<TypeBacktest[]>(res);
 };
 
 export const getBacktest = async (id: string): Promise<TypeBacktest> => {
-  const res = await fetch(parseUrl(`v1/backtests/${id}`), { cache: "no-store" });
+  const res = await apiFetch(parseUrl(`v1/backtests/${id}`), { cache: "no-store" });
   return jsonOrThrow<TypeBacktest>(res);
 };
 
 export const createBacktest = async (
   input: TypeCreateBacktest,
 ): Promise<TypeBacktestHandle> => {
-  const res = await fetch(parseUrl("v1/backtests"), {
+  const res = await apiFetch(parseUrl("v1/backtests"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -184,7 +221,7 @@ export const getEquityCurve = async (
   id: string,
   limit = 50_000,
 ): Promise<TypeEquityPoint[]> => {
-  const res = await fetch(
+  const res = await apiFetch(
     parseUrl(`v1/backtests/${id}/equity?limit=${limit}`),
     { cache: "no-store" },
   );
@@ -192,7 +229,7 @@ export const getEquityCurve = async (
 };
 
 export const getTrades = async (id: string): Promise<TypeBacktestTrade[]> => {
-  const res = await fetch(parseUrl(`v1/backtests/${id}/trades`), {
+  const res = await apiFetch(parseUrl(`v1/backtests/${id}/trades`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypeBacktestTrade[]>(res);
@@ -204,12 +241,12 @@ export const getTrades = async (id: string): Promise<TypeBacktestTrade[]> => {
 // underlying Mongo collection is the same. Phase 6 will fork the data
 // model.
 export const getStrategies = async (): Promise<TypeOption[]> => {
-  const res = await fetch(parseUrl("v1/option"), { cache: "no-store" });
+  const res = await apiFetch(parseUrl("v1/option"), { cache: "no-store" });
   return jsonOrThrow<TypeOption[]>(res);
 };
 
 export const getStrategy = async (id: string): Promise<TypeOption> => {
-  const res = await fetch(parseUrl(`v1/option/${id}`), { cache: "no-store" });
+  const res = await apiFetch(parseUrl(`v1/option/${id}`), { cache: "no-store" });
   return jsonOrThrow<TypeOption>(res);
 };
 
@@ -217,7 +254,7 @@ export const getOrders = async (
   strategyId: string,
   limit = 50,
 ): Promise<TypeOrderLog[]> => {
-  const res = await fetch(
+  const res = await apiFetch(
     parseUrl(`v1/strategies/${strategyId}/orders?limit=${limit}`),
     { cache: "no-store" },
   );
@@ -228,7 +265,7 @@ export const setLive = async (
   strategyId: string,
   body: TypeSetLive,
 ): Promise<TypeOption> => {
-  const res = await fetch(parseUrl(`v1/strategies/${strategyId}/live`), {
+  const res = await apiFetch(parseUrl(`v1/strategies/${strategyId}/live`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -243,7 +280,7 @@ export const setRisk = async (
   strategyId: string,
   risk: TypeOption["risk"],
 ): Promise<TypeOption> => {
-  const res = await fetch(parseUrl(`v1/option/${strategyId}`), {
+  const res = await apiFetch(parseUrl(`v1/option/${strategyId}`), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ risk }),
@@ -258,7 +295,7 @@ export const submitOrder = async (
   adminKey: string,
   body: TypeSubmitOrder,
 ): Promise<{ streamId: string }> => {
-  const res = await fetch(
+  const res = await apiFetch(
     parseUrl(`v1/strategies/${strategyId}/live/submit-order`),
     {
       method: "POST",
@@ -277,7 +314,7 @@ export const submitOrder = async (
 export const requestMainnetToken = async (
   adminKey: string,
 ): Promise<{ message: string; tokenHint: string; ttlSec: number }> => {
-  const res = await fetch(parseUrl("v1/admin/mainnet/request-token"), {
+  const res = await apiFetch(parseUrl("v1/admin/mainnet/request-token"), {
     method: "POST",
     headers: { "X-Admin-Key": adminKey },
   });
@@ -290,7 +327,7 @@ export const confirmMainnetToken = async (
   adminKey: string,
   token: string,
 ): Promise<TypeMainnetStatus> => {
-  const res = await fetch(parseUrl("v1/admin/mainnet/confirm"), {
+  const res = await apiFetch(parseUrl("v1/admin/mainnet/confirm"), {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Admin-Key": adminKey },
     body: JSON.stringify({ token }),
@@ -301,7 +338,7 @@ export const confirmMainnetToken = async (
 export const getMainnetStatus = async (
   adminKey: string,
 ): Promise<TypeMainnetStatus> => {
-  const res = await fetch(parseUrl("v1/admin/mainnet/status"), {
+  const res = await apiFetch(parseUrl("v1/admin/mainnet/status"), {
     headers: { "X-Admin-Key": adminKey },
     cache: "no-store",
   });
@@ -318,14 +355,14 @@ export const getExchangeMeta = async (
   if (exchange) params.set("exchange", exchange);
   if (symbol) params.set("symbol", symbol);
   const qs = params.toString() ? `?${params.toString()}` : "";
-  const res = await fetch(parseUrl(`v1/exchange/meta${qs}`), {
+  const res = await apiFetch(parseUrl(`v1/exchange/meta${qs}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypeExchangeMeta | TypeExchangeMeta[]>(res);
 };
 
 export const getPortfolioSummary = async (): Promise<TypePortfolioSummary> => {
-  const res = await fetch(parseUrl("v1/portfolio/summary"), {
+  const res = await apiFetch(parseUrl("v1/portfolio/summary"), {
     cache: "no-store",
   });
   return jsonOrThrow<TypePortfolioSummary>(res);
@@ -341,7 +378,7 @@ export const listRecommendations = async (
   if (status) params.set("status", status);
   if (strategyId) params.set("strategyId", strategyId);
   const qs = params.toString() ? `?${params.toString()}` : "";
-  const res = await fetch(parseUrl(`v1/recommendations${qs}`), {
+  const res = await apiFetch(parseUrl(`v1/recommendations${qs}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypeRecommendation[]>(res);
@@ -350,7 +387,7 @@ export const listRecommendations = async (
 export const getRecommendation = async (
   id: string,
 ): Promise<TypeRecommendation> => {
-  const res = await fetch(parseUrl(`v1/recommendations/${id}`), {
+  const res = await apiFetch(parseUrl(`v1/recommendations/${id}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypeRecommendation>(res);
@@ -359,7 +396,7 @@ export const getRecommendation = async (
 export const approveRecommendation = async (
   id: string,
 ): Promise<TypeApproveRecommendation> => {
-  const res = await fetch(parseUrl(`v1/recommendations/${id}/approve`), {
+  const res = await apiFetch(parseUrl(`v1/recommendations/${id}/approve`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   });
@@ -369,7 +406,7 @@ export const approveRecommendation = async (
 export const rejectRecommendation = async (
   id: string,
 ): Promise<TypeRecommendation> => {
-  const res = await fetch(parseUrl(`v1/recommendations/${id}/reject`), {
+  const res = await apiFetch(parseUrl(`v1/recommendations/${id}/reject`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   });
@@ -380,7 +417,7 @@ export const startOptimization = async (
   strategyId: string,
   body?: { force?: boolean; nTrialsOverride?: number },
 ): Promise<TypeStudyHandle> => {
-  const res = await fetch(parseUrl(`v1/strategies/${strategyId}/optimize`), {
+  const res = await apiFetch(parseUrl(`v1/strategies/${strategyId}/optimize`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body ?? {}),
@@ -391,7 +428,7 @@ export const startOptimization = async (
 export const getOptimization = async (
   studyId: string,
 ): Promise<TypeOptimizationRun> => {
-  const res = await fetch(parseUrl(`v1/optimizations/${studyId}`), {
+  const res = await apiFetch(parseUrl(`v1/optimizations/${studyId}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypeOptimizationRun>(res);
@@ -401,7 +438,7 @@ export const listOptimizations = async (
   strategyId?: string,
 ): Promise<TypeOptimizationRun[]> => {
   const qs = strategyId ? `?strategyId=${encodeURIComponent(strategyId)}` : "";
-  const res = await fetch(parseUrl(`v1/optimizations${qs}`), {
+  const res = await apiFetch(parseUrl(`v1/optimizations${qs}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypeOptimizationRun[]>(res);
@@ -458,7 +495,7 @@ const adminHeaders = (key: string) => ({
 export const getSystemState = async (
   adminKey: string,
 ): Promise<TypeSystemState> => {
-  const res = await fetch(parseUrl("v1/admin/system-state"), {
+  const res = await apiFetch(parseUrl("v1/admin/system-state"), {
     cache: "no-store",
     headers: { "X-Admin-Key": adminKey },
   });
@@ -469,7 +506,7 @@ export const haltTrading = async (
   adminKey: string,
   reason: string,
 ): Promise<TypeSystemState> => {
-  const res = await fetch(parseUrl("v1/admin/halt"), {
+  const res = await apiFetch(parseUrl("v1/admin/halt"), {
     method: "POST",
     headers: adminHeaders(adminKey),
     body: JSON.stringify({ reason }),
@@ -480,7 +517,7 @@ export const haltTrading = async (
 export const resumeTrading = async (
   adminKey: string,
 ): Promise<TypeSystemState> => {
-  const res = await fetch(parseUrl("v1/admin/resume"), {
+  const res = await apiFetch(parseUrl("v1/admin/resume"), {
     method: "POST",
     headers: adminHeaders(adminKey),
   });
@@ -490,7 +527,7 @@ export const resumeTrading = async (
 export const getPortfolioLimits = async (
   adminKey: string,
 ): Promise<TypePortfolioLimits> => {
-  const res = await fetch(parseUrl("v1/admin/portfolio-limits"), {
+  const res = await apiFetch(parseUrl("v1/admin/portfolio-limits"), {
     cache: "no-store",
     headers: { "X-Admin-Key": adminKey },
   });
@@ -501,7 +538,7 @@ export const setPortfolioLimits = async (
   adminKey: string,
   limits: Omit<TypePortfolioLimits, "userId">,
 ): Promise<TypePortfolioLimits> => {
-  const res = await fetch(parseUrl("v1/admin/portfolio-limits"), {
+  const res = await apiFetch(parseUrl("v1/admin/portfolio-limits"), {
     method: "PUT",
     headers: adminHeaders(adminKey),
     body: JSON.stringify(limits),
@@ -524,7 +561,7 @@ export const listAudit = async (
   if (params.since) qs.set("since", params.since);
   if (params.limit) qs.set("limit", String(params.limit));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  const res = await fetch(parseUrl(`v1/admin/audit${suffix}`), {
+  const res = await apiFetch(parseUrl(`v1/admin/audit${suffix}`), {
     cache: "no-store",
     headers: { "X-Admin-Key": adminKey },
   });
@@ -547,7 +584,7 @@ export const getEquitiesOhlcv = async (
     start: start.toISOString(),
     end: end.toISOString(),
   });
-  const res = await fetch(parseUrl(`v1/equities/ohlcv?${params.toString()}`), {
+  const res = await apiFetch(parseUrl(`v1/equities/ohlcv?${params.toString()}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypeOhlcvBar[]>(res);
@@ -567,7 +604,7 @@ export const getFuturesOhlcv = async (
     start: start.toISOString(),
     end: end.toISOString(),
   });
-  const res = await fetch(parseUrl(`v1/futures/ohlcv?${params.toString()}`), {
+  const res = await apiFetch(parseUrl(`v1/futures/ohlcv?${params.toString()}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypeOhlcvBar[]>(res);
@@ -582,7 +619,7 @@ export const getMacroIndicators = async (
   const params = new URLSearchParams({ source, code });
   if (start) params.set("start", start.toISOString());
   if (end) params.set("end", end.toISOString());
-  const res = await fetch(
+  const res = await apiFetch(
     parseUrl(`v1/macro/indicators?${params.toString()}`),
     { cache: "no-store" },
   );
@@ -598,7 +635,7 @@ export const getOnchainMetrics = async (
   const params = new URLSearchParams({ chain, metric });
   if (start) params.set("start", start.toISOString());
   if (end) params.set("end", end.toISOString());
-  const res = await fetch(
+  const res = await apiFetch(
     parseUrl(`v1/onchain/metrics?${params.toString()}`),
     { cache: "no-store" },
   );
@@ -613,7 +650,7 @@ export const getNews = async (
   const params = new URLSearchParams({ limit: String(limit) });
   if (symbols && symbols.length) params.set("symbols", symbols.join(","));
   if (since) params.set("since", since.toISOString());
-  const res = await fetch(parseUrl(`v1/news?${params.toString()}`), {
+  const res = await apiFetch(parseUrl(`v1/news?${params.toString()}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypeNewsItem[]>(res);
@@ -635,19 +672,19 @@ import type {
 } from "./type";
 
 export const listWallets = async (): Promise<TypeWallet[]> => {
-  const res = await fetch(parseUrl("v1/wallets"), { cache: "no-store" });
+  const res = await apiFetch(parseUrl("v1/wallets"), { cache: "no-store" });
   return jsonOrThrow<TypeWallet[]>(res);
 };
 
 export const getWallet = async (id: string): Promise<TypeWallet> => {
-  const res = await fetch(parseUrl(`v1/wallets/${id}`), { cache: "no-store" });
+  const res = await apiFetch(parseUrl(`v1/wallets/${id}`), { cache: "no-store" });
   return jsonOrThrow<TypeWallet>(res);
 };
 
 export const createWallet = async (
   input: TypeCreateWallet,
 ): Promise<TypeWallet> => {
-  const res = await fetch(parseUrl("v1/wallets"), {
+  const res = await apiFetch(parseUrl("v1/wallets"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -656,14 +693,14 @@ export const createWallet = async (
 };
 
 export const deleteWallet = async (id: string): Promise<void> => {
-  const res = await fetch(parseUrl(`v1/wallets/${id}`), { method: "DELETE" });
+  const res = await apiFetch(parseUrl(`v1/wallets/${id}`), { method: "DELETE" });
   await jsonOrThrow<{ success: boolean }>(res);
 };
 
 export const getWalletBalance = async (
   id: string,
 ): Promise<TypeWalletBalance> => {
-  const res = await fetch(parseUrl(`v1/wallets/${id}/balance`), {
+  const res = await apiFetch(parseUrl(`v1/wallets/${id}/balance`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypeWalletBalance>(res);
@@ -672,7 +709,7 @@ export const getWalletBalance = async (
 export const getWalletPositions = async (
   id: string,
 ): Promise<TypeWalletPosition[]> => {
-  const res = await fetch(parseUrl(`v1/wallets/${id}/positions`), {
+  const res = await apiFetch(parseUrl(`v1/wallets/${id}/positions`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypeWalletPosition[]>(res);
@@ -683,7 +720,7 @@ export const approveWallet = async (
   adminKey: string,
   amountUsdc: number,
 ): Promise<{ txHash: string; amountApproved: number; capUsd: number }> => {
-  const res = await fetch(parseUrl(`v1/wallets/${id}/approve`), {
+  const res = await apiFetch(parseUrl(`v1/wallets/${id}/approve`), {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Admin-Key": adminKey },
     body: JSON.stringify({ amountUsdc }),
@@ -703,7 +740,7 @@ export const listPredictionMarkets = async (params: {
   if (params.limit) qs.set("limit", String(params.limit));
   if (params.offset) qs.set("offset", String(params.offset));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  const res = await fetch(parseUrl(`v1/prediction/markets${suffix}`), {
+  const res = await apiFetch(parseUrl(`v1/prediction/markets${suffix}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypePredictionMarket[]>(res);
@@ -712,7 +749,7 @@ export const listPredictionMarkets = async (params: {
 export const getPredictionMarket = async (
   id: string,
 ): Promise<TypePredictionMarket> => {
-  const res = await fetch(parseUrl(`v1/prediction/markets/${id}`), {
+  const res = await apiFetch(parseUrl(`v1/prediction/markets/${id}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypePredictionMarket>(res);
@@ -726,7 +763,7 @@ export const getPredictionQuotes = async (
   const qs = new URLSearchParams({ token_id: tokenId });
   if (start) qs.set("start", start.toISOString());
   if (end) qs.set("end", end.toISOString());
-  const res = await fetch(parseUrl(`v1/prediction/quotes?${qs.toString()}`), {
+  const res = await apiFetch(parseUrl(`v1/prediction/quotes?${qs.toString()}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypePredictionQuote[]>(res);
@@ -737,7 +774,7 @@ export const getPredictionTrades = async (
   limit = 100,
 ): Promise<TypePredictionTrade[]> => {
   const qs = new URLSearchParams({ market_id: marketId, limit: String(limit) });
-  const res = await fetch(parseUrl(`v1/prediction/trades?${qs.toString()}`), {
+  const res = await apiFetch(parseUrl(`v1/prediction/trades?${qs.toString()}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypePredictionTrade[]>(res);
@@ -746,7 +783,7 @@ export const getPredictionTrades = async (
 export const listPredictionStrategies = async (): Promise<
   TypePredictionStrategy[]
 > => {
-  const res = await fetch(parseUrl("v1/prediction/strategies"), {
+  const res = await apiFetch(parseUrl("v1/prediction/strategies"), {
     cache: "no-store",
   });
   return jsonOrThrow<TypePredictionStrategy[]>(res);
@@ -755,7 +792,7 @@ export const listPredictionStrategies = async (): Promise<
 export const getPredictionStrategy = async (
   id: string,
 ): Promise<TypePredictionStrategy> => {
-  const res = await fetch(parseUrl(`v1/prediction/strategies/${id}`), {
+  const res = await apiFetch(parseUrl(`v1/prediction/strategies/${id}`), {
     cache: "no-store",
   });
   return jsonOrThrow<TypePredictionStrategy>(res);
@@ -764,7 +801,7 @@ export const getPredictionStrategy = async (
 export const createPredictionStrategy = async (
   input: TypeCreatePredictionStrategy,
 ): Promise<TypePredictionStrategy> => {
-  const res = await fetch(parseUrl("v1/prediction/strategies"), {
+  const res = await apiFetch(parseUrl("v1/prediction/strategies"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -776,7 +813,7 @@ export const togglePredictionLive = async (
   id: string,
   body: { enabled: boolean; walletId?: string; mode?: string },
 ): Promise<TypePredictionStrategy> => {
-  const res = await fetch(parseUrl(`v1/prediction/strategies/${id}/live`), {
+  const res = await apiFetch(parseUrl(`v1/prediction/strategies/${id}/live`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -788,7 +825,7 @@ export const listPredictionOrders = async (
   id: string,
   limit = 50,
 ): Promise<TypePredictionOrder[]> => {
-  const res = await fetch(
+  const res = await apiFetch(
     parseUrl(`v1/prediction/strategies/${id}/orders?limit=${limit}`),
     { cache: "no-store" },
   );

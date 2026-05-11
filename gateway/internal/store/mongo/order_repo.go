@@ -48,6 +48,7 @@ func NewOrderRepo(db *mongo.Database) *OrderRepo {
 //   - unique(clientOrderId) — idempotency
 //   - (strategyId, submittedAt desc) — order log listing
 //   - (accountId, status) — open-order sweep
+//   - (userId, submittedAt desc) — R2 multi-tenant portfolio aggregation
 func (r *OrderRepo) EnsureIndexes(ctx context.Context) error {
 	_, err := r.col.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
@@ -62,8 +63,26 @@ func (r *OrderRepo) EnsureIndexes(ctx context.Context) error {
 			Keys:    bson.D{{Key: "accountId", Value: 1}, {Key: "status", Value: 1}},
 			Options: options.Index().SetName("account_status"),
 		},
+		{
+			Keys:    bson.D{{Key: "userId", Value: 1}, {Key: "submittedAt", Value: -1}},
+			Options: options.Index().SetName("user_submittedAt"),
+		},
 	})
 	return err
+}
+
+// BackfillMissingUserID upserts userId=DefaultUserID on every doc missing
+// the field. Idempotent; safe to run on every boot. Returns the number of
+// updated documents so the caller can log it.
+func (r *OrderRepo) BackfillMissingUserID(ctx context.Context) (int64, error) {
+	res, err := r.col.UpdateMany(ctx,
+		bson.M{"userId": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"userId": "default"}},
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
 }
 
 // Insert attempts to persist a fresh [domain.OrderLog]. On a duplicate
@@ -273,24 +292,22 @@ func (r *OrderRepo) SumRealisedPnlSince(ctx context.Context, strategyID string, 
 
 // SumOpenNotionalForUser computes the sum of (qty - filled) * price for
 // all currently-open orders belonging to the given userId. Phase 7's
-// portfolio cap consults this across every strategy. We approximate
-// "open notional" as the *unfilled* portion of orders in status
-// {new,partial}; matched filled portions roll into RealisedPnl instead.
+// portfolio cap consults this across every strategy.
 //
-// Pre-auth, every order is the "default" user — there is no userId
-// column on order_log yet, so this returns the sum across ALL rows.
-// Phase 8 will add a userId field + filter.
+// R2 update: now actually filters by `userId` (the previous "default"-only
+// guard was a placeholder until the userId field was threaded through
+// writes). Orders persisted before R2 are backfilled with userId="default"
+// at gateway startup, so the filter is correct for legacy rows too.
 //
-// Until that refactor lands, non-"default" userIDs are explicitly
-// rejected so we 5xx loudly instead of silently leaking another tenant's
-// open notional. This is the safer foot-gun behaviour.
+// Empty userID is rejected — every order must belong to a tenant.
 func (r *OrderRepo) SumOpenNotionalForUser(ctx context.Context, userID string) (notional float64, count int, err error) {
-	if userID != domain.DefaultUserID {
-		return 0, 0, fmt.Errorf("multi-tenant userId aggregation not yet supported (got %q); see Phase 8 TODO", userID)
+	if userID == "" {
+		return 0, 0, fmt.Errorf("SumOpenNotionalForUser: userID required")
 	}
 	cur, aggErr := r.col.Aggregate(ctx, []bson.D{
 		{
 			{Key: "$match", Value: bson.M{
+				"userId": userID,
 				"status": bson.M{"$in": bson.A{
 					string(domain.OrderStatusNew),
 					string(domain.OrderStatusPartial),
@@ -328,19 +345,19 @@ func (r *OrderRepo) SumOpenNotionalForUser(ctx context.Context, userID string) (
 }
 
 // SumRealisedPnlSinceForUser is the cross-strategy variant of
-// SumRealisedPnlSince. Same caveat re: userId — Phase 7 sums across all
-// rows; Phase 8 will filter by user.
+// SumRealisedPnlSince.
 //
-// Until that refactor lands, non-"default" userIDs are explicitly
-// rejected so we 5xx loudly instead of silently leaking another tenant's
-// realised PnL.
+// R2 update: now actually filters by `userId` (the previous "default"-only
+// guard was a placeholder until the userId field was threaded through
+// writes). Empty userID is rejected.
 func (r *OrderRepo) SumRealisedPnlSinceForUser(ctx context.Context, userID string, since time.Time) (float64, error) {
-	if userID != domain.DefaultUserID {
-		return 0, fmt.Errorf("multi-tenant userId aggregation not yet supported (got %q); see Phase 8 TODO", userID)
+	if userID == "" {
+		return 0, fmt.Errorf("SumRealisedPnlSinceForUser: userID required")
 	}
 	cur, err := r.col.Aggregate(ctx, []bson.D{
 		{
 			{Key: "$match", Value: bson.M{
+				"userId":      userID,
 				"status":      string(domain.OrderStatusFilled),
 				"submittedAt": bson.M{"$gte": since},
 			}},

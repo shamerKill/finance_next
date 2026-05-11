@@ -41,6 +41,20 @@ func (r *AccountRepo) EnsureIndexes(ctx context.Context) error {
 	return err
 }
 
+// BackfillMissingUserID upserts userId=DefaultUserID on every doc missing
+// the field. Accounts already carry userId today, but legacy NestJS docs
+// from before Phase 1 may not — this is the migration safety net. Idempotent.
+func (r *AccountRepo) BackfillMissingUserID(ctx context.Context) (int64, error) {
+	res, err := r.col.UpdateMany(ctx,
+		bson.M{"userId": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"userId": "default"}},
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
+}
+
 // Create inserts a new account and returns the persisted doc.
 func (r *AccountRepo) Create(ctx context.Context, a *domain.Account) (*domain.Account, error) {
 	now := time.Now().UTC()
@@ -60,9 +74,16 @@ func (r *AccountRepo) Create(ctx context.Context, a *domain.Account) (*domain.Ac
 	return r.FindByID(ctx, oid.Hex())
 }
 
-// FindAll returns every account for the given userId.
+// FindAll returns every account for the given userId. Passing "" returns
+// every account across all tenants — reserved for background workers
+// (order engine reconcile loop) that need to enumerate every user's
+// accounts. HTTP handlers must always pass the resolved userId.
 func (r *AccountRepo) FindAll(ctx context.Context, userID string) ([]domain.Account, error) {
-	cur, err := r.col.Find(ctx, bson.D{{Key: "userId", Value: userID}})
+	filter := bson.D{}
+	if userID != "" {
+		filter = bson.D{{Key: "userId", Value: userID}}
+	}
+	cur, err := r.col.Find(ctx, filter)
 	if err != nil {
 		return nil, err
 	}

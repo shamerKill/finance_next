@@ -18,6 +18,7 @@ import (
 	"strconv"
 
 	"github.com/finance_next/gateway/internal/domain"
+	gwmw "github.com/finance_next/gateway/internal/http/middleware"
 	"github.com/finance_next/gateway/internal/prediction/engine"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	"github.com/go-playground/validator/v10"
@@ -69,7 +70,7 @@ func (h *PredictionStrategyHandler) Register(g *echo.Group) {
 }
 
 func (h *PredictionStrategyHandler) list(c echo.Context) error {
-	out, err := h.strategies.FindAll(c.Request().Context(), domain.DefaultUserID)
+	out, err := h.strategies.FindAll(c.Request().Context(), gwmw.FromEcho(c))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -106,7 +107,7 @@ func (h *PredictionStrategyHandler) create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "risk caps must all be > 0")
 	}
 	s := &domain.PredictionStrategy{
-		UserID:   domain.DefaultUserID,
+		UserID:   gwmw.FromEcho(c),
 		Name:     dto.Name,
 		MarketID: dto.MarketID,
 		Outcome:  dto.Outcome,

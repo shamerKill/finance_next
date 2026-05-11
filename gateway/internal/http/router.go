@@ -58,6 +58,11 @@ type Deps struct {
 	AuditMiddleware *auditmw.Middleware
 	Metrics         *observability.Registry
 
+	// R2 multi-tenant boundary: when true, /api/v1/* rejects requests
+	// missing an `X-User-Id` header with 400. False (default) preserves
+	// single-tenant dev behaviour by falling back to "default".
+	RequireUserID bool
+
 	// Phase 9: Polymarket / Polygon wallet vertical. Each dep nil → the
 	// corresponding routes are skipped (404). The wallet RPC defaults to
 	// NoopRPC (errors at call time) when not wired.
@@ -165,6 +170,11 @@ func NewRouter(d Deps) *echo.Echo {
 
 	api := e.Group("/api")
 	v1 := api.Group("/v1")
+
+	// R2 multi-tenant userId middleware. MUST be mounted BEFORE the audit
+	// middleware so audit entries can pick up the resolved userId from
+	// the Echo context.
+	v1.Use(auditmw.WithUserID(d.RequireUserID))
 
 	// Phase 7 audit middleware. Mounted on the v1 group so every API
 	// mutation is captured; /healthz and /metrics are not under v1 and

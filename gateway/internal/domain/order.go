@@ -55,6 +55,10 @@ type OrderLog struct {
 	ID              string            `json:"id" bson:"_id,omitempty"`
 	ClientOrderID   string            `json:"clientOrderId" bson:"clientOrderId"`
 	ExchangeOrderID string            `json:"exchangeOrderId,omitempty" bson:"exchangeOrderId,omitempty"`
+	// UserID is the owning tenant id (R2 multi-tenant boundary). Sourced
+	// from the strategy doc the order engine looked up — engine workers
+	// don't run in an HTTP context so they can't read the request header.
+	UserID          string            `json:"userId" bson:"userId"`
 	StrategyID      string            `json:"strategyId" bson:"strategyId"`
 	AccountID       string            `json:"accountId" bson:"accountId"`
 	Symbol          string            `json:"symbol" bson:"symbol"`

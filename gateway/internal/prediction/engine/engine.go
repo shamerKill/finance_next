@@ -411,8 +411,15 @@ func (e *Engine) ProcessCommand(ctx context.Context, cmd domain.SubmitPrediction
 
 	// ---- Build clientOrderId + insert pending row ------------------
 	clientOID := e.deriveClientOrderID(cmd)
+	// R2: stamp the order with the owning user so the cross-strategy
+	// portfolio aggregations actually have a filter to match.
+	orderUserID := strat.UserID
+	if orderUserID == "" {
+		orderUserID = domain.DefaultUserID
+	}
 	pending := &domain.PredictionOrderLog{
 		ClientOrderID: clientOID,
+		UserID:        orderUserID,
 		StrategyID:    cmd.StrategyID,
 		WalletID:      strat.Live.WalletID,
 		MarketID:      cmd.MarketID,

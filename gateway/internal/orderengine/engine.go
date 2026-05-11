@@ -438,9 +438,14 @@ func (e *Engine) processCommand(ctx context.Context, cmd domain.SubmitOrderComma
 	// Only runs when both repos are wired. Zero-valued limits = "no cap"
 	// (admin must explicitly set a value to enforce).
 	if e.deps.SystemRepo != nil && e.deps.PortfolioStats != nil {
-		// Pre-auth: every strategy belongs to userId="default". Phase 8
-		// will resolve the user from the authenticated context.
-		userID := domain.DefaultUserID
+		// R2: the engine worker runs outside any HTTP context, so we read
+		// userId off the owning strategy doc rather than the request
+		// header. Legacy strategies without a userId field were
+		// backfilled to "default" on gateway startup.
+		userID := opt.UserID
+		if userID == "" {
+			userID = domain.DefaultUserID
+		}
 		limits, err := e.deps.SystemRepo.GetPortfolioLimits(ctx, userID)
 		if err != nil {
 			e.publishRejection(ctx, cmd, fmt.Errorf("portfolio limits lookup: %w", err))
@@ -480,8 +485,15 @@ func (e *Engine) processCommand(ctx context.Context, cmd domain.SubmitOrderComma
 
 	// ---- Build clientOrderId + insert pending row -------------------
 	clientOID := e.deriveClientOrderID(cmd)
+	// R2: stamp the order with the owning user so the cross-strategy
+	// portfolio aggregations actually have a filter to match.
+	orderUserID := opt.UserID
+	if orderUserID == "" {
+		orderUserID = domain.DefaultUserID
+	}
 	pending := &domain.OrderLog{
 		ClientOrderID: clientOID,
+		UserID:        orderUserID,
 		StrategyID:    cmd.StrategyID,
 		AccountID:     opt.Live.AccountID,
 		Symbol:        cmd.Symbol,

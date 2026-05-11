@@ -7,6 +7,7 @@ import (
 
 	"github.com/finance_next/gateway/internal/crypto"
 	"github.com/finance_next/gateway/internal/domain"
+	gwmw "github.com/finance_next/gateway/internal/http/middleware"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
@@ -39,7 +40,7 @@ func (h *OptionHandler) Register(g *echo.Group) {
 }
 
 func (h *OptionHandler) list(c echo.Context) error {
-	out, err := h.repo.FindAll(c.Request().Context())
+	out, err := h.repo.FindAll(c.Request().Context(), gwmw.FromEcho(c))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -77,6 +78,7 @@ func (h *OptionHandler) create(c echo.Context) error {
 	}
 
 	o := &domain.Option{
+		UserID:                       gwmw.FromEcho(c),
 		Name:                         dto.Name,
 		PositionLevel:                dto.PositionLevel,
 		OpenPositionStopTime:         dto.OpenPositionStopTime,

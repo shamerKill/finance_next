@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/finance_next/gateway/internal/domain"
+	gwmw "github.com/finance_next/gateway/internal/http/middleware"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	"github.com/labstack/echo/v4"
 )
@@ -132,7 +133,7 @@ func (h *AdminHandler) setPortfolioLimits(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "limits must be non-negative; use 0 for 'no cap'")
 	}
 	limits := &domain.PortfolioLimits{
-		UserID:                domain.DefaultUserID,
+		UserID:                gwmw.FromEcho(c),
 		MaxOpenNotionalUsd:    body.MaxOpenNotionalUsd,
 		MaxOpenPositionsCount: body.MaxOpenPositionsCount,
 		MaxDailyLossUsd:       body.MaxDailyLossUsd,
@@ -151,7 +152,7 @@ func (h *AdminHandler) getPortfolioLimits(c echo.Context) error {
 	if h.system == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "system repo not configured")
 	}
-	limits, err := h.system.GetPortfolioLimits(c.Request().Context(), domain.DefaultUserID)
+	limits, err := h.system.GetPortfolioLimits(c.Request().Context(), gwmw.FromEcho(c))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}

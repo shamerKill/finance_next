@@ -104,6 +104,9 @@ const (
 type PredictionOrderLog struct {
 	ID             string                `json:"id"            bson:"_id,omitempty"`
 	ClientOrderID  string                `json:"clientOrderId" bson:"clientOrderId"`
+	// UserID is the owning tenant id (R2 multi-tenant boundary). Sourced
+	// from the strategy doc the prediction engine looked up.
+	UserID         string                `json:"userId"        bson:"userId"`
 	StrategyID     string                `json:"strategyId"    bson:"strategyId"`
 	WalletID       string                `json:"walletId"      bson:"walletId"`
 	MarketID       string                `json:"marketId"      bson:"marketId"`

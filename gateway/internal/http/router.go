@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/finance_next/gateway/internal/config"
 	"github.com/finance_next/gateway/internal/crypto"
 	"github.com/finance_next/gateway/internal/http/handlers"
 	auditmw "github.com/finance_next/gateway/internal/http/middleware"
@@ -71,6 +72,13 @@ type Deps struct {
 	PredictionOrderRepo   *mongostore.PredictionOrderRepo
 	WalletRPC             walletpkg.RPC
 	PredictionEngine      *predictionengine.Engine
+
+	// Wave 1B: dashboard summary + strategy performance endpoints. Both
+	// are read-only fan-outs over the existing repos and tolerate any
+	// dep being nil (per-section degradation, never 5xx-ing the whole
+	// call). Config is forwarded so the AI-budget block can surface the
+	// provider/budget knobs.
+	Config *config.Config
 
 	// CORS + WebSocket origin allowlist. Empty (default) preserves the
 	// dev-friendly behaviour: CORS allows "*" and the WS upgrade uses
@@ -216,7 +224,29 @@ func NewRouter(d Deps) *echo.Echo {
 	if d.Timescale != nil {
 		priceProvider = handlers.NewTimescalePriceProvider(d.Timescale)
 	}
-	handlers.NewPortfolioHandler(d.AccountRepo, d.Envelope, nil, priceProvider).Register(v1)
+	portfolioHandler := handlers.NewPortfolioHandler(d.AccountRepo, d.Envelope, nil, priceProvider)
+	portfolioHandler.Register(v1)
+
+	// Wave 1B: dashboard summary + /strategies/:id/performance. The
+	// dashboard's totalUsd card reuses PortfolioHandler so we don't
+	// fork the per-account balance + USD-conversion logic. Every dep
+	// may be nil — the handler degrades that section instead of 5xx-ing
+	// the whole response. We thread the concrete repo pointers through
+	// nil-aware adapter constructors so a nil concrete pointer surfaces
+	// as a nil interface (otherwise Go's typed-nil trap would smuggle
+	// a non-nil interface holding a nil pointer into the handler).
+	handlers.NewDashboardHandler(
+		handlers.SystemForDashboard(d.SystemRepo),
+		handlers.OptionForDashboard(d.OptionRepo),
+		handlers.AccountForDashboard(d.AccountRepo),
+		handlers.WalletForDashboard(d.WalletRepo),
+		handlers.OrderForDashboard(d.OrderRepo),
+		handlers.RecForDashboard(d.RecommendationRepo),
+		handlers.OptRunForDashboard(d.OptimizationRunRepo),
+		d.Timescale,
+		handlers.PortfolioTotallerForDashboard(portfolioHandler),
+		d.Config,
+	).Register(v1)
 
 	// Phase 6 — AI optimization: recommendations + tune-now endpoints.
 	// Each repo nil → corresponding handler returns 503.

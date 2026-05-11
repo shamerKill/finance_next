@@ -328,6 +328,8 @@ func main() {
 
 		RequireUserID:  cfg.RequireUserID,
 		AllowedOrigins: cfg.AllowedOrigins,
+
+		Config: cfg,
 	})
 
 	addr := ":" + cfg.Port

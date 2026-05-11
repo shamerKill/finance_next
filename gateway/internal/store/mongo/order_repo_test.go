@@ -46,6 +46,51 @@ func TestSumRealisedPnlSinceForUser_RejectsEmptyUserID(t *testing.T) {
 	}
 }
 
+// TestCountFilledSinceForUser_RejectsEmptyUserID guards the same cheap
+// branch as the SumX*ForUser variants — every order belongs to a tenant,
+// and accidentally calling with "" must never silently scan everyone's
+// orders.
+func TestCountFilledSinceForUser_RejectsEmptyUserID(t *testing.T) {
+	r := &OrderRepo{}
+
+	_, err := r.CountFilledSinceForUser(context.Background(), "", time.Now())
+	if err == nil {
+		t.Fatal("expected error for empty userID, got nil")
+	}
+	if !strings.Contains(err.Error(), "userID required") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+// TestListByStrategyAndUser_RejectsEmptyUserID mirrors the guard tests
+// above. The /strategies/:id/performance handler relies on this filter
+// to keep cross-tenant order data from leaking.
+func TestListByStrategyAndUser_RejectsEmptyUserID(t *testing.T) {
+	r := &OrderRepo{}
+
+	_, err := r.ListByStrategyAndUser(context.Background(), "strat-1", "", 50)
+	if err == nil {
+		t.Fatal("expected error for empty userID, got nil")
+	}
+	if !strings.Contains(err.Error(), "userID required") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+// TestAggregateForStrategyAndUser_RejectsEmptyUserID covers the
+// dashboard performance endpoint's KPI source.
+func TestAggregateForStrategyAndUser_RejectsEmptyUserID(t *testing.T) {
+	r := &OrderRepo{}
+
+	_, err := r.AggregateForStrategyAndUser(context.Background(), "strat-1", "", time.Now())
+	if err == nil {
+		t.Fatal("expected error for empty userID, got nil")
+	}
+	if !strings.Contains(err.Error(), "userID required") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
 // TestSumOpenNotionalForUser_NonEmptyUserID_PassesGuard documents that
 // any non-empty userID passes the guard and proceeds to the aggregation
 // (which panics here because col is nil — the test is structured around

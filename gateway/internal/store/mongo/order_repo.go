@@ -344,6 +344,261 @@ func (r *OrderRepo) SumOpenNotionalForUser(ctx context.Context, userID string) (
 	return 0, 0, cur.Err()
 }
 
+// CountFilledSinceForUser counts orders with status=filled and
+// submittedAt >= since for the given user. Used by the dashboard summary
+// to render the "trades in last 24h" KPI. Mirrors the Sum*ForUser shape:
+// empty userID is rejected; aggregation pipeline filters strictly on
+// userId so legacy rows already carry userId="default" via the boot-time
+// backfill.
+func (r *OrderRepo) CountFilledSinceForUser(ctx context.Context, userID string, since time.Time) (int, error) {
+	if userID == "" {
+		return 0, fmt.Errorf("CountFilledSinceForUser: userID required")
+	}
+	cur, err := r.col.Aggregate(ctx, []bson.D{
+		{
+			{Key: "$match", Value: bson.M{
+				"userId":      userID,
+				"status":      string(domain.OrderStatusFilled),
+				"submittedAt": bson.M{"$gte": since},
+			}},
+		},
+		{
+			{Key: "$count", Value: "count"},
+		},
+	})
+	if err != nil {
+		return 0, err
+	}
+	defer cur.Close(ctx)
+	if cur.Next(ctx) {
+		var row struct {
+			Count int `bson:"count"`
+		}
+		if err := cur.Decode(&row); err != nil {
+			return 0, err
+		}
+		return row.Count, nil
+	}
+	return 0, cur.Err()
+}
+
+// ListByStrategyAndUser is the userId-scoped variant of ListByStrategy.
+// Used by the dashboard performance endpoint, which must never reveal
+// another tenant's orders even when given a strategyId. Empty userID is
+// rejected so callers can't accidentally fall back to a cross-tenant
+// scan. The query uses the (userId, submittedAt desc) index and applies
+// the strategyId filter on top.
+func (r *OrderRepo) ListByStrategyAndUser(ctx context.Context, strategyID, userID string, limit int) ([]domain.OrderLog, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("ListByStrategyAndUser: userID required")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+	filter := bson.D{
+		{Key: "userId", Value: userID},
+		{Key: "strategyId", Value: strategyID},
+	}
+	cur, err := r.col.Find(ctx, filter, options.Find().
+		SetSort(bson.D{{Key: "submittedAt", Value: -1}}).
+		SetLimit(int64(limit)),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	out := []domain.OrderLog{}
+	for cur.Next(ctx) {
+		var raw bson.M
+		if err := cur.Decode(&raw); err != nil {
+			return nil, err
+		}
+		o, err := decodeOrder(raw)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *o)
+	}
+	return out, cur.Err()
+}
+
+// StrategyOrderAggregates is the per-strategy KPI bundle computed by
+// AggregateForStrategyAndUser. All fields are zero-valued on no-data.
+type StrategyOrderAggregates struct {
+	TotalPnlUsd            float64
+	Realised24hUsd         float64
+	Realised30dUsd         float64
+	TradesTotal            int
+	TradesLast24h          int
+	WinRate                float64
+	LastTradeAt            *time.Time
+	CurrentOpenNotionalUsd float64
+}
+
+// AggregateForStrategyAndUser runs four cheap aggregations against
+// `order_log` filtered by (strategyId, userId) — the dashboard
+// performance endpoint's KPI source. Each aggregation is independent so
+// a failure on one returns the error verbatim; the caller can decide
+// whether to degrade or surface. UserID empty is rejected.
+func (r *OrderRepo) AggregateForStrategyAndUser(ctx context.Context, strategyID, userID string, now time.Time) (StrategyOrderAggregates, error) {
+	out := StrategyOrderAggregates{}
+	if userID == "" {
+		return out, fmt.Errorf("AggregateForStrategyAndUser: userID required")
+	}
+	since24h := now.Add(-24 * time.Hour)
+	since30d := now.Add(-30 * 24 * time.Hour)
+
+	// Total filled rollup + win-rate counters + last trade ts.
+	curAll, err := r.col.Aggregate(ctx, []bson.D{
+		{
+			{Key: "$match", Value: bson.M{
+				"strategyId": strategyID,
+				"userId":     userID,
+				"status":     string(domain.OrderStatusFilled),
+			}},
+		},
+		{
+			{Key: "$group", Value: bson.M{
+				"_id":          nil,
+				"totalPnl":     bson.M{"$sum": "$realisedPnlUsd"},
+				"trades":       bson.M{"$sum": 1},
+				"winningCount": bson.M{"$sum": bson.M{"$cond": bson.A{bson.M{"$gt": bson.A{"$realisedPnlUsd", 0}}, 1, 0}}},
+				"lastTradeAt":  bson.M{"$max": "$submittedAt"},
+			}},
+		},
+	})
+	if err != nil {
+		return out, err
+	}
+	if curAll.Next(ctx) {
+		var row struct {
+			TotalPnl     float64    `bson:"totalPnl"`
+			Trades       int        `bson:"trades"`
+			WinningCount int        `bson:"winningCount"`
+			LastTradeAt  *time.Time `bson:"lastTradeAt"`
+		}
+		if err := curAll.Decode(&row); err != nil {
+			curAll.Close(ctx)
+			return out, err
+		}
+		out.TotalPnlUsd = row.TotalPnl
+		out.TradesTotal = row.Trades
+		out.LastTradeAt = row.LastTradeAt
+		if row.Trades > 0 {
+			out.WinRate = float64(row.WinningCount) / float64(row.Trades)
+		}
+	}
+	curAll.Close(ctx)
+
+	// 24h pnl + 24h trade count.
+	cur24, err := r.col.Aggregate(ctx, []bson.D{
+		{
+			{Key: "$match", Value: bson.M{
+				"strategyId":  strategyID,
+				"userId":      userID,
+				"status":      string(domain.OrderStatusFilled),
+				"submittedAt": bson.M{"$gte": since24h},
+			}},
+		},
+		{
+			{Key: "$group", Value: bson.M{
+				"_id":    nil,
+				"pnl":    bson.M{"$sum": "$realisedPnlUsd"},
+				"trades": bson.M{"$sum": 1},
+			}},
+		},
+	})
+	if err != nil {
+		return out, err
+	}
+	if cur24.Next(ctx) {
+		var row struct {
+			Pnl    float64 `bson:"pnl"`
+			Trades int     `bson:"trades"`
+		}
+		if err := cur24.Decode(&row); err != nil {
+			cur24.Close(ctx)
+			return out, err
+		}
+		out.Realised24hUsd = row.Pnl
+		out.TradesLast24h = row.Trades
+	}
+	cur24.Close(ctx)
+
+	// 30d pnl.
+	cur30, err := r.col.Aggregate(ctx, []bson.D{
+		{
+			{Key: "$match", Value: bson.M{
+				"strategyId":  strategyID,
+				"userId":      userID,
+				"status":      string(domain.OrderStatusFilled),
+				"submittedAt": bson.M{"$gte": since30d},
+			}},
+		},
+		{
+			{Key: "$group", Value: bson.M{
+				"_id": nil,
+				"pnl": bson.M{"$sum": "$realisedPnlUsd"},
+			}},
+		},
+	})
+	if err != nil {
+		return out, err
+	}
+	if cur30.Next(ctx) {
+		var row struct {
+			Pnl float64 `bson:"pnl"`
+		}
+		if err := cur30.Decode(&row); err != nil {
+			cur30.Close(ctx)
+			return out, err
+		}
+		out.Realised30dUsd = row.Pnl
+	}
+	cur30.Close(ctx)
+
+	// Current open notional ((qty - filled) * price for new+partial).
+	curOpen, err := r.col.Aggregate(ctx, []bson.D{
+		{
+			{Key: "$match", Value: bson.M{
+				"strategyId": strategyID,
+				"userId":     userID,
+				"status": bson.M{"$in": bson.A{
+					string(domain.OrderStatusNew),
+					string(domain.OrderStatusPartial),
+				}},
+			}},
+		},
+		{
+			{Key: "$group", Value: bson.M{
+				"_id": nil,
+				"notional": bson.M{"$sum": bson.M{
+					"$multiply": bson.A{
+						bson.M{"$subtract": bson.A{"$qty", bson.M{"$ifNull": bson.A{"$filled", 0}}}},
+						bson.M{"$ifNull": bson.A{"$price", 0}},
+					},
+				}},
+			}},
+		},
+	})
+	if err != nil {
+		return out, err
+	}
+	if curOpen.Next(ctx) {
+		var row struct {
+			Notional float64 `bson:"notional"`
+		}
+		if err := curOpen.Decode(&row); err != nil {
+			curOpen.Close(ctx)
+			return out, err
+		}
+		out.CurrentOpenNotionalUsd = row.Notional
+	}
+	curOpen.Close(ctx)
+
+	return out, nil
+}
+
 // SumRealisedPnlSinceForUser is the cross-strategy variant of
 // SumRealisedPnlSince.
 //

@@ -205,6 +205,77 @@ func (r *RecommendationRepo) MarkRejected(ctx context.Context, id, reviewedBy st
 	return r.FindByID(ctx, id)
 }
 
+// userIDFilter builds the userId match used by the *ForUser methods.
+//
+// Recommendations are written by the quant worker which historically did
+// not stamp userId. To keep the dashboard accurate for the dev/default
+// tenant we treat a docs-without-userId field as belonging to
+// DefaultUserID. Non-default callers get a strict equality filter so
+// cross-tenant data never leaks. Empty userID is rejected by the caller.
+func userIDFilter(userID string) bson.M {
+	if userID == "default" {
+		return bson.M{"$or": bson.A{
+			bson.M{"userId": "default"},
+			bson.M{"userId": bson.M{"$exists": false}},
+		}}
+	}
+	return bson.M{"userId": userID}
+}
+
+// CountByStatus counts recommendations for userID with the given status.
+// Used by the dashboard summary's pending-review badge. Empty userID is
+// rejected to prevent accidental cross-tenant counts.
+func (r *RecommendationRepo) CountByStatus(ctx context.Context, userID, status string) (int64, error) {
+	if userID == "" {
+		return 0, errors.New("CountByStatus: userID required")
+	}
+	filter := userIDFilter(userID)
+	if status != "" {
+		filter["status"] = status
+	}
+	n, err := r.col.CountDocuments(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// ListByStatusForUser returns up to `limit` recommendations for userID
+// matching `status`, ordered by createdAt desc. The dashboard summary's
+// `topPendingIds` calls this with limit=3. Empty userID is rejected.
+func (r *RecommendationRepo) ListByStatusForUser(ctx context.Context, userID, status string, limit int) ([]RecommendationDoc, error) {
+	if userID == "" {
+		return nil, errors.New("ListByStatusForUser: userID required")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+	filter := userIDFilter(userID)
+	if status != "" {
+		filter["status"] = status
+	}
+	cur, err := r.col.Find(
+		ctx,
+		filter,
+		options.Find().
+			SetSort(bson.D{{Key: "createdAt", Value: -1}}).
+			SetLimit(int64(limit)),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	out := []RecommendationDoc{}
+	for cur.Next(ctx) {
+		var d RecommendationDoc
+		if err := cur.Decode(&d); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, cur.Err()
+}
+
 // OptimizationRunRepo wraps the optimization_runs collection.
 type OptimizationRunRepo struct {
 	col *mongo.Collection
@@ -275,4 +346,43 @@ func (r *OptimizationRunRepo) FindAll(ctx context.Context, strategyID string, li
 		out = append(out, d)
 	}
 	return out, cur.Err()
+}
+
+// SumSpentSinceForUser sums cost.usdSpent across optimization runs whose
+// startedAt >= since for the given userID. Used by the dashboard's
+// `aiBudget.usdSpentToday` card. Like the recommendation accessors,
+// rows without a userId field are attributed to DefaultUserID so the
+// dev tenant still sees its history before the quant worker migration
+// stamps every row. Empty userID is rejected.
+func (r *OptimizationRunRepo) SumSpentSinceForUser(ctx context.Context, userID string, since time.Time) (float64, error) {
+	if userID == "" {
+		return 0, errors.New("SumSpentSinceForUser: userID required")
+	}
+	match := userIDFilter(userID)
+	match["startedAt"] = bson.M{"$gte": since}
+	cur, err := r.col.Aggregate(ctx, []bson.D{
+		{
+			{Key: "$match", Value: match},
+		},
+		{
+			{Key: "$group", Value: bson.M{
+				"_id":   nil,
+				"total": bson.M{"$sum": "$cost.usdSpent"},
+			}},
+		},
+	})
+	if err != nil {
+		return 0, err
+	}
+	defer cur.Close(ctx)
+	if cur.Next(ctx) {
+		var row struct {
+			Total float64 `bson:"total"`
+		}
+		if err := cur.Decode(&row); err != nil {
+			return 0, err
+		}
+		return row.Total, nil
+	}
+	return 0, cur.Err()
 }

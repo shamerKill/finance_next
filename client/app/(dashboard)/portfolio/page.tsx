@@ -5,6 +5,8 @@
 // price provider on the gateway is best-effort (Timescale latest close
 // of `<asset>USDT` on binance) — anything missing surfaces in `notes`.
 
+import Link from "next/link";
+
 import { PageHeader } from "@/components/page-header";
 import { getPortfolioSummary } from "@/data/api-client";
 import type { TypePortfolioSummary } from "@/data/type";
@@ -62,6 +64,7 @@ export default async function PortfolioPage() {
 
           <section>
             <h2 className="text-xl font-medium mb-3">按交易所</h2>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-default-500">
                 <tr>
@@ -79,8 +82,18 @@ export default async function PortfolioPage() {
                   </tr>
                 ) : (
                   summary.perExchange.map((row) => (
-                    <tr key={row.exchange} className="border-t border-default-200">
-                      <td className="p-2 capitalize">{row.exchange}</td>
+                    <tr
+                      key={row.exchange}
+                      className="border-t border-default-200 hover:bg-default-50"
+                    >
+                      <td className="p-2 capitalize">
+                        <Link
+                          href={`/accounts?exchange=${encodeURIComponent(row.exchange)}`}
+                          className="text-primary hover:underline"
+                        >
+                          {row.exchange}
+                        </Link>
+                      </td>
                       <td className="p-2 text-right">{row.accountIds.length}</td>
                       <td className="p-2 text-right">
                         {formatUsd(row.totalUsd)}
@@ -90,10 +103,12 @@ export default async function PortfolioPage() {
                 )}
               </tbody>
             </table>
+            </div>
           </section>
 
           <section>
             <h2 className="text-xl font-medium mb-3">主要资产</h2>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-default-500">
                 <tr>
@@ -126,6 +141,7 @@ export default async function PortfolioPage() {
                 )}
               </tbody>
             </table>
+            </div>
           </section>
 
           {summary.notes && summary.notes.length > 0 && (

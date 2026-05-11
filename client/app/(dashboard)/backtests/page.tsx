@@ -78,7 +78,10 @@ export default async function BacktestsListPage() {
         />
       ) : null}
 
-      <div className="overflow-x-auto">
+      {/* Desktop: dense table. The overflow-x-auto wrapper protects
+          medium-narrow desktop widths where ~9 columns would still
+          run past the viewport. */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead>
             <tr className="text-left text-default-500">
@@ -106,7 +109,14 @@ export default async function BacktestsListPage() {
                   <td className="px-3 py-2">
                     <span className={`rounded px-2 py-0.5 text-xs ${s.color}`}>{s.label}</span>
                   </td>
-                  <td className="px-3 py-2">{r.strategyId}</td>
+                  <td className="px-3 py-2">
+                    <Link
+                      className="text-primary hover:underline"
+                      href={`/strategies/${r.strategyId}`}
+                    >
+                      {r.strategyId}
+                    </Link>
+                  </td>
                   <td className="px-3 py-2">{r.kind}</td>
                   <td className="px-3 py-2">{fmt(r.metrics?.total_return)}</td>
                   <td className="px-3 py-2">
@@ -124,6 +134,53 @@ export default async function BacktestsListPage() {
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile: card list. */}
+      <div className="md:hidden space-y-3">
+        {runs.map((r) => {
+          const s = stateLabel(r.state);
+          return (
+            <Link
+              key={r.runId}
+              href={`/backtests/${r.runId}`}
+              className="block rounded border border-default-200 p-4 active:bg-default-50"
+            >
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <span className="font-mono text-sm">
+                  {r.runId.slice(0, 12)}…
+                </span>
+                <span
+                  className={`rounded px-2 py-0.5 text-xs ${s.color}`}
+                >
+                  {s.label}
+                </span>
+              </div>
+              <div className="text-xs text-default-500 mb-2">
+                {r.kind} · 策略 {r.strategyId.slice(0, 8)}… ·{" "}
+                {new Date(r.createdAt).toLocaleString()}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-default-500">总收益：</span>
+                  {fmt(r.metrics?.total_return)}
+                </div>
+                <div>
+                  <span className="text-default-500">夏普：</span>
+                  {r.metrics?.sharpe?.toFixed(2) ?? "—"}
+                </div>
+                <div>
+                  <span className="text-default-500">最大回撤：</span>
+                  {fmt(r.metrics?.max_dd)}
+                </div>
+                <div>
+                  <span className="text-default-500">交易数：</span>
+                  {r.metrics?.n_trades ?? 0}
+                </div>
+              </div>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );

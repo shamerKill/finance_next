@@ -8,8 +8,16 @@
 //
 // We pass the data into client subcomponents for the WS hook + chart.
 
-import { getBacktest, getEquityCurve, getTrades } from "@/data/api-client";
-import type { TypeBacktest, TypeBacktestTrade, TypeEquityPoint } from "@/data/type";
+import Link from "next/link";
+
+import { PageHeader } from "@/components/page-header";
+import { getBacktest, getEquityCurve, getStrategy, getTrades } from "@/data/api-client";
+import type {
+  TypeBacktest,
+  TypeBacktestTrade,
+  TypeEquityPoint,
+  TypeOption,
+} from "@/data/type";
 
 import { EquityChart } from "./equity-chart";
 import { LiveProgress } from "./live-progress";
@@ -40,6 +48,7 @@ export default async function BacktestDetailPage({ params }: Params) {
   let head: TypeBacktest | null = null;
   let equity: TypeEquityPoint[] = [];
   let trades: TypeBacktestTrade[] = [];
+  let strategy: TypeOption | null = null;
   let loadError: string | null = null;
 
   try {
@@ -60,12 +69,28 @@ export default async function BacktestDetailPage({ params }: Params) {
     } catch {
       // Trades subset is part of head doc; this is a fallback fetch.
     }
+    try {
+      strategy = await getStrategy(head.strategyId);
+    } catch {
+      // A deleted strategy is OK — show the raw id in the breadcrumb.
+      strategy = null;
+    }
   }
 
   if (loadError) {
     return (
-      <div className="rounded border border-danger p-3 text-sm text-danger">
-        加载回测失败：{loadError}
+      <div>
+        <PageHeader
+          breadcrumb={
+            <Link href="/backtests" className="hover:underline">
+              ← 回测
+            </Link>
+          }
+          title="回测详情"
+        />
+        <div className="rounded border border-danger p-3 text-sm text-danger">
+          加载回测失败：{loadError}
+        </div>
       </div>
     );
   }
@@ -74,22 +99,48 @@ export default async function BacktestDetailPage({ params }: Params) {
   const s = stateLabel(head.state);
   const m = head.metrics ?? {};
   const isTerminal = head.state === 3 || head.state === 4;
+  const strategyLabel = strategy
+    ? `${strategy.name} (${strategy.execSymbol})`
+    : head.strategyId;
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold font-mono">
+      <PageHeader
+        breadcrumb={
+          <span className="flex items-center gap-2">
+            <Link href="/backtests" className="hover:underline">
+              ← 回测
+            </Link>
+            <span className="text-default-300">/</span>
+            <span className="font-mono">{head.runId.slice(0, 8)}…</span>
+          </span>
+        }
+        title={
+          <span className="font-mono text-2xl">
             {head.runId.slice(0, 16)}…
-          </h1>
-          <p className="text-sm text-default-500">
-            策略：<span className="font-medium">{head.strategyId}</span> ·
-            类型：{head.kind} · 创建时间：{" "}
-            {new Date(head.createdAt).toLocaleString()}
-          </p>
-        </div>
-        <span className={`rounded px-3 py-1 text-sm ${s.color}`}>{s.label}</span>
-      </header>
+          </span>
+        }
+        subtitle={
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-default-500">策略</span>
+            <Link
+              href={`/strategies/${head.strategyId}`}
+              className="text-primary hover:underline"
+            >
+              ← {strategyLabel}
+            </Link>
+            <span className="text-default-300">·</span>
+            <span className="text-default-500">类型 {head.kind}</span>
+            <span className="text-default-300">·</span>
+            <span className="text-default-500">
+              {new Date(head.createdAt).toLocaleString()}
+            </span>
+          </span>
+        }
+        action={
+          <span className={`rounded px-3 py-1 text-sm ${s.color}`}>{s.label}</span>
+        }
+      />
 
       {head.state === 4 && head.error ? (
         <div className="rounded border border-danger-200 bg-danger-50 p-3 text-sm">

@@ -16,6 +16,35 @@ export const dynamic = "force-dynamic";
 
 export const metadata = { title: "策略" };
 
+// Live badge — same color logic on desktop table cell and mobile card.
+function LiveBadge({ s }: { s: TypeOption }) {
+  return (
+    <span
+      className={`rounded px-2 py-0.5 text-xs ${s.live?.enabled ? "bg-success-100 text-success-700" : "bg-default-100 text-default-700"}`}
+    >
+      {s.live?.enabled ? "已启用" : "关闭"}
+    </span>
+  );
+}
+
+function ModeLabel({ s }: { s: TypeOption }) {
+  return s.live?.mode === "mainnet" ? (
+    <span className="text-warning-600">主网</span>
+  ) : (
+    <span className="text-default-500">测试网</span>
+  );
+}
+
+function RiskCell({ s }: { s: TypeOption }) {
+  return (
+    <span className="text-xs text-default-500">
+      {s.risk
+        ? `仓位 $${s.risk.maxPositionUsd} · 杠杆 ${s.risk.maxLeverage}× · 日亏 $${s.risk.dailyLossCapUsd}`
+        : "—（订单将被拒绝）"}
+    </span>
+  );
+}
+
 const PageStrategies: FC = async () => {
   let strategies: TypeOption[] = [];
   let error: string | null = null;
@@ -56,52 +85,83 @@ const PageStrategies: FC = async () => {
           }
         />
       )}
-      <table className="w-full text-sm">
-        <thead className="text-left text-default-500">
-          <tr>
-            <th className="py-2">名称</th>
-            <th>交易对</th>
-            <th>实盘</th>
-            <th>模式</th>
-            <th>风控</th>
-          </tr>
-        </thead>
-        <tbody>
-          {strategies.map((s) => (
-            <tr key={s.id ?? s.name} className="border-t border-default-200">
-              <td className="py-2">
-                {s.id ? (
-                  <Link className="text-primary" href={`/strategies/${s.id}`}>
-                    {s.name}
-                  </Link>
-                ) : (
-                  s.name
-                )}
-              </td>
-              <td>{s.execSymbol}</td>
-              <td>
-                <span
-                  className={`rounded px-2 py-0.5 text-xs ${s.live?.enabled ? "bg-success-100 text-success-700" : "bg-default-100 text-default-700"}`}
-                >
-                  {s.live?.enabled ? "已启用" : "关闭"}
-                </span>
-              </td>
-              <td>
-                {s.live?.mode === "mainnet" ? (
-                  <span className="text-warning-600">主网</span>
-                ) : (
-                  <span className="text-default-500">测试网</span>
-                )}
-              </td>
-              <td className="text-xs text-default-500">
-                {s.risk
-                  ? `仓位 $${s.risk.maxPositionUsd} · 杠杆 ${s.risk.maxLeverage}× · 日亏 $${s.risk.dailyLossCapUsd}`
-                  : "—（订单将被拒绝）"}
-              </td>
+
+      {/* Desktop: dense table. */}
+      <div className="hidden md:block">
+        <table className="w-full text-sm">
+          <thead className="text-left text-default-500">
+            <tr>
+              <th className="py-2">名称</th>
+              <th>交易对</th>
+              <th>实盘</th>
+              <th>模式</th>
+              <th>风控</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {strategies.map((s) => (
+              <tr key={s.id ?? s.name} className="border-t border-default-200">
+                <td className="py-2">
+                  {s.id ? (
+                    <Link className="text-primary" href={`/strategies/${s.id}`}>
+                      {s.name}
+                    </Link>
+                  ) : (
+                    s.name
+                  )}
+                </td>
+                <td>{s.execSymbol}</td>
+                <td>
+                  <LiveBadge s={s} />
+                </td>
+                <td>
+                  <ModeLabel s={s} />
+                </td>
+                <td>
+                  <RiskCell s={s} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile: card list. Tap entire card → detail. */}
+      <div className="md:hidden space-y-3">
+        {strategies.map((s) =>
+          s.id ? (
+            <Link
+              key={s.id ?? s.name}
+              href={`/strategies/${s.id}`}
+              className="block rounded border border-default-200 p-4 active:bg-default-50"
+            >
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <span className="font-semibold">{s.name}</span>
+                <LiveBadge s={s} />
+              </div>
+              <div className="text-xs text-default-500 flex gap-2">
+                <span className="font-mono">{s.execSymbol}</span>
+                <span>·</span>
+                <ModeLabel s={s} />
+              </div>
+              <div className="mt-1">
+                <RiskCell s={s} />
+              </div>
+            </Link>
+          ) : (
+            <div
+              key={s.name}
+              className="rounded border border-default-200 p-4"
+            >
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <span className="font-semibold">{s.name}</span>
+                <LiveBadge s={s} />
+              </div>
+              <div className="text-xs text-default-500">{s.execSymbol}</div>
+            </div>
+          ),
+        )}
+      </div>
     </div>
   );
 };

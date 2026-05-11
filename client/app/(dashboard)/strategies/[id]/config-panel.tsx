@@ -141,19 +141,29 @@ export function ConfigPanel({ strategy, accounts }: Props) {
               </Link>
             </div>
           ) : (
-            <Select
-              label="账户"
-              size="sm"
-              placeholder="选择账户"
-              selectedKeys={accountId ? [accountId] : []}
-              onChange={(e) => setAccountId(e.target.value)}
-            >
-              {accounts.map((a) => (
-                <SelectItem key={a.id}>
-                  {`${a.label} · ${a.exchange}`}
-                </SelectItem>
-              ))}
-            </Select>
+            <div className="space-y-1">
+              <Select
+                label="账户"
+                size="sm"
+                placeholder="选择账户"
+                selectedKeys={accountId ? [accountId] : []}
+                onChange={(e) => setAccountId(e.target.value)}
+              >
+                {accounts.map((a) => (
+                  <SelectItem key={a.id}>
+                    {`${a.label} · ${a.exchange}`}
+                  </SelectItem>
+                ))}
+              </Select>
+              {accountId && (
+                <Link
+                  href={`/accounts/${accountId}`}
+                  className="text-xs text-primary hover:underline"
+                >
+                  查看账户 →
+                </Link>
+              )}
+            </div>
           )}
           <Button
             size="sm"

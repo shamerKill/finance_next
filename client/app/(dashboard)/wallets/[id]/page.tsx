@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
 import { ApiErrorView } from "@/components/api-error";
+import { PageHeader } from "@/components/page-header";
 import {
   approveWallet,
   getWallet,
@@ -69,23 +71,53 @@ export default function WalletDetailPage() {
   };
 
   if (error) {
-    return <ApiErrorView error={error} />;
+    return (
+      <div>
+        <PageHeader
+          breadcrumb={
+            <Link href="/wallets" className="hover:underline">
+              ← 钱包
+            </Link>
+          }
+          title="钱包详情"
+        />
+        <ApiErrorView error={error} />
+      </div>
+    );
   }
   if (!wallet) {
-    return <div className="text-sm text-default-500">加载中…</div>;
+    return (
+      <div>
+        <PageHeader
+          breadcrumb={
+            <Link href="/wallets" className="hover:underline">
+              ← 钱包
+            </Link>
+          }
+          title="加载中…"
+        />
+      </div>
+    );
   }
 
   return (
     <div className="grid gap-4">
-      <h1 className="text-2xl font-semibold">{wallet.label}</h1>
-      <div className="text-xs text-default-500 font-mono">
-        {wallet.address}
-      </div>
+      <PageHeader
+        breadcrumb={
+          <Link href="/wallets" className="hover:underline">
+            ← 钱包
+          </Link>
+        }
+        title={wallet.label}
+        subtitle={
+          <span className="font-mono text-xs break-all">{wallet.address}</span>
+        }
+      />
 
       <section className="border border-default-200 rounded p-4">
         <h2 className="font-semibold mb-2">USDC 余额 + 授权额度</h2>
         {balance ? (
-          <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <div>余额：${balance.balanceUsdc.toFixed(2)}</div>
             <div>授权额度：${balance.allowanceUsdc.toFixed(2)}</div>
           </div>
@@ -103,7 +135,7 @@ export default function WalletDetailPage() {
           <code>portfolio_limits.maxOpenNotionalUsd</code> 硬性限制。
           无限额度授权在设计上不可能。需要 admin key。
         </div>
-        <div className="flex gap-2 items-end">
+        <div className="flex flex-wrap gap-2 items-end">
           <label className="text-sm flex flex-col gap-1">
             <span>金额（USDC）</span>
             <input
@@ -134,7 +166,10 @@ export default function WalletDetailPage() {
         ) : (
           <div className="grid gap-2 text-sm">
             {positions.map((p) => (
-              <div key={p.tokenId} className="flex justify-between">
+              <div
+                key={p.tokenId}
+                className="flex flex-col sm:flex-row sm:justify-between gap-1 break-all"
+              >
                 <span className="font-mono text-xs">{p.tokenId}</span>
                 <span>{p.balance.toFixed(4)}</span>
               </div>

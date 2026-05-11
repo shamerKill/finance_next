@@ -1,28 +1,46 @@
-// Recommendation detail (Phase 6).
+// Recommendation detail (Phase 6 → Phase D polish).
 //
-// Server component fetches the recommendation + the strategy it points
-// at (so we can diff current vs proposed params side-by-side). Approve/
-// reject actions live in the client subcomponent below; they call the
-// gateway via the existing api-client helpers.
+// Server component fetches:
+//   - the recommendation itself
+//   - the parent strategy (for the diff table + header "name (symbol)")
+//   - the strategy's recent performance (for at-a-glance comparison)
+// Diff numbers run through the centralised format helpers so floats like
+// `0.025637836675816615` show as `0.02564`. The rationale is rendered
+// via react-markdown so **bold** and bullet lists display correctly
+// rather than leaking raw asterisks.
 
 import Link from "next/link";
 
-import { getRecommendation, getStrategy } from "@/data/api-client";
+import {
+  getRecommendation,
+  getStrategy,
+  getStrategyPerformance,
+} from "@/data/api-client";
+import { fmtPct, fmtRawNum, fmtSharpe, deltaToneClass } from "@/data/format";
 import type {
   TypeOption,
   TypeRecommendation,
+  TypeStrategyPerformance,
 } from "@/data/type";
 
 import RecommendationActions from "./actions";
+import { ParentStrategyPanel } from "./parent-strategy-panel";
+import { Rationale } from "./rationale";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = { title: "推荐详情" };
 
-const fmt = (v: unknown): string => {
+// Render any param value for the diff table. Numbers go through fmtRawNum
+// for 4-sig-fig consistency; strings + nulls pass through; objects
+// (createPositions[]) get pretty JSON. This is intentionally local —
+// fmtRawNum lives in data/format.ts for cross-page reuse but the type
+// dispatch is page-specific.
+const fmtParam = (v: unknown): string => {
   if (v === null || v === undefined) return "—";
-  if (typeof v === "number") return v.toString();
+  if (typeof v === "number") return fmtRawNum(v);
   if (typeof v === "string") return v;
+  if (typeof v === "boolean") return v ? "true" : "false";
   return JSON.stringify(v);
 };
 
@@ -35,13 +53,28 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
 
   let rec: TypeRecommendation | null = null;
   let strategy: TypeOption | null = null;
+  let performance: TypeStrategyPerformance | null = null;
   let error: string | null = null;
 
   try {
     rec = await getRecommendation(id);
-    strategy = await getStrategy(rec.strategyId);
   } catch (e) {
     error = e instanceof Error ? e.message : "失败";
+  }
+
+  // Strategy + performance are best-effort. A deleted strategy or a
+  // missing /performance endpoint should not break the detail page.
+  if (rec) {
+    try {
+      strategy = await getStrategy(rec.strategyId);
+    } catch {
+      strategy = null;
+    }
+    try {
+      performance = await getStrategyPerformance(rec.strategyId);
+    } catch {
+      performance = null;
+    }
   }
 
   if (error || !rec) {
@@ -57,16 +90,26 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
     );
   }
 
-  // Build the union of params keys so the diff table covers every
-  // changed field, including ones added by the recommendation that
-  // weren't in the current strategy doc.
-  const currentParams: Record<string, unknown> = (strategy ?? {}) as unknown as Record<string, unknown>;
+  // Diff-table key set: every proposed key plus current-strategy keys
+  // that overlap. We don't render strategy-only keys (api keys, live
+  // config, etc.) — those aren't part of the recommendation.
+  const currentParams: Record<string, unknown> = (strategy ?? {}) as unknown as Record<
+    string,
+    unknown
+  >;
   const allKeys = Array.from(
     new Set([
       ...Object.keys(rec.proposedParams ?? {}),
       ...Object.keys(currentParams).filter((k) => k in (rec.proposedParams ?? {})),
     ]),
   ).sort();
+
+  // Header title — prefer "name (symbol)" when the strategy is still
+  // around, fall back to the rec's ObjectId. Either way the parent
+  // strategy panel below shows the same info more prominently.
+  const headerStrategyLabel = strategy
+    ? `${strategy.name} (${strategy.execSymbol})`
+    : "已删除策略";
 
   return (
     <div className="flex flex-col gap-6">
@@ -80,32 +123,36 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
           </Link>
           <h1 className="mt-1 text-2xl font-semibold">推荐详情</h1>
           <p className="text-sm text-default-500">
-            策略{" "}
-            <span className="font-mono">{rec.strategyId}</span> · Study{" "}
+            策略 <span className="font-medium">{headerStrategyLabel}</span> · Study{" "}
             <span className="font-mono">{rec.studyId}</span>
           </p>
         </div>
         <div className="text-right text-xs text-default-500">
           <div>创建于 {new Date(rec.createdAt).toLocaleString()}</div>
           <div>状态：{rec.status}</div>
-          {rec.appliedVersion && (
-            <div>应用版本：{rec.appliedVersion}</div>
-          )}
+          {rec.appliedVersion && <div>应用版本：{rec.appliedVersion}</div>}
         </div>
       </header>
 
-      {/* Expected delta + cost meter. */}
+      {/* Parent strategy snapshot — comparison anchor above the diff. */}
+      <ParentStrategyPanel strategy={strategy} performance={performance} />
+
+      {/* Expected delta. */}
       <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <div className="rounded-md bg-default-50 p-3">
           <div className="text-xs text-default-500">Δ 夏普比率（样本外）</div>
-          <div className="text-lg font-semibold">
-            {(rec.expectedDelta?.sharpe ?? 0).toFixed(3)}
+          <div
+            className={`text-lg font-semibold tabular-nums ${deltaToneClass(rec.expectedDelta?.sharpe)}`}
+          >
+            {fmtSharpe(rec.expectedDelta?.sharpe)}
           </div>
         </div>
         <div className="rounded-md bg-default-50 p-3">
           <div className="text-xs text-default-500">Δ 收益（样本外）</div>
-          <div className="text-lg font-semibold">
-            {((rec.expectedDelta?.return ?? 0) * 100).toFixed(2)}%
+          <div
+            className={`text-lg font-semibold tabular-nums ${deltaToneClass(rec.expectedDelta?.return)}`}
+          >
+            {fmtPct(rec.expectedDelta?.return)}
           </div>
         </div>
       </section>
@@ -135,10 +182,12 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
                   }`}
                 >
                   <td className="py-2 pr-4 font-mono text-xs">{k}</td>
-                  <td className="py-2 pr-4 font-mono text-xs text-default-500">
-                    {fmt(current)}
+                  <td className="py-2 pr-4 font-mono text-xs text-default-500 tabular-nums">
+                    {fmtParam(current)}
                   </td>
-                  <td className="py-2 pr-4 font-mono text-xs">{fmt(proposed)}</td>
+                  <td className="py-2 pr-4 font-mono text-xs tabular-nums">
+                    {fmtParam(proposed)}
+                  </td>
                   <td className="py-2 text-xs text-default-500">
                     {changed ? "已修改" : ""}
                   </td>
@@ -149,29 +198,33 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
         </table>
       </section>
 
-      {/* Rationale. We deliberately render plain text + paragraph splits
-          rather than reaching for react-markdown here — the prose is
-          short enough that <pre> + line-breaks reads cleanly and we
-          avoid an extra render-time dep on the server. */}
+      {/* Rationale rendered as light markdown — **bold** and bullets
+          show correctly instead of leaking asterisks. */}
       <section>
         <h2 className="text-lg font-semibold mb-2">理由</h2>
-        <div className="rounded-md border border-default-200 bg-default-50 p-4 text-sm whitespace-pre-wrap">
-          {rec.rationale || "（未生成理由）"}
-        </div>
+        <Rationale text={rec.rationale} />
       </section>
 
-      {/* Approve / reject. Hidden once the recommendation is no longer
-          actionable. */}
-      {rec.status === "pending_review" && (
-        <section className="border-t border-default-200 pt-4">
-          <RecommendationActions id={rec.id} />
+      {/* Approve / reject / backtest. The backtest button is always
+          available (operator may want to dry-run an already-applied or
+          already-rejected proposal); approve/reject hide once status is
+          no longer actionable. */}
+      <section className="border-t border-default-200 pt-4">
+        <RecommendationActions
+          id={rec.id}
+          strategyId={rec.strategyId}
+          proposedParams={rec.proposedParams ?? {}}
+          execSymbol={strategy?.execSymbol}
+          actionable={rec.status === "pending_review"}
+        />
+        {rec.status === "pending_review" && (
           <p className="mt-2 text-xs text-default-500">
             批准后将更新策略文档，自增
             <code className="mx-1">currentVersion</code>，并替代
             该策略其他所有待审核的推荐。
           </p>
-        </section>
-      )}
+        )}
+      </section>
     </div>
   );
 }

@@ -1,40 +1,73 @@
-// Recommendations list (Phase 6). Server component — fetches from the
-// gateway and renders a status-filtered table. The default filter is
-// `pending_review` because that's the only actionable state — approved /
-// rejected / superseded show up in the "All" filter for audit.
+// Recommendations list (Phase 6 → Phase D polish).
+//
+// Server component:
+//   1. Fetches recommendations filtered by status (default pending_review).
+//   2. Batch-hydrates the parent `strategyId` → strategy doc so the UI
+//      shows "name (symbol)" instead of an opaque 24-char ObjectId.
+//   3. Groups by `studyId` — optimizer runs spawn 5–8 near-identical
+//      recommendations and the cluster collapse keeps the table from
+//      looking like noise.
+// The interactive table lives in the `RecommendationsList` client
+// component (expand / bulk-reject).
 
 import Link from "next/link";
 
 import { PageHeader } from "@/components/page-header";
-import { listRecommendations } from "@/data/api-client";
+import { getStrategy, listRecommendations } from "@/data/api-client";
 import type {
+  TypeOption,
   TypeRecommendation,
   TypeRecommendationStatus,
 } from "@/data/type";
+
+import { RecommendationsList, RecommendationCluster } from "./recommendations-list";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = { title: "AI 推荐" };
 
-type StatusBadge = { label: string; color: string };
-const statusBadge = (s: TypeRecommendationStatus): StatusBadge => {
-  switch (s) {
-    case "pending_review":
-      return { label: "待审核", color: "bg-warning-100 text-warning-700" };
-    case "approved":
-      return { label: "已批准", color: "bg-success-100 text-success-700" };
-    case "rejected":
-      return { label: "已拒绝", color: "bg-default-100 text-default-700" };
-    case "superseded":
-      return { label: "已替代", color: "bg-default-100 text-default-500" };
-  }
+const FILTER_LABELS: Record<TypeRecommendationStatus, string> = {
+  pending_review: "待审核",
+  approved: "已批准",
+  rejected: "已拒绝",
+  superseded: "已替代",
 };
-
-const fmtNumber = (n: number) =>
-  Number.isFinite(n) ? n.toFixed(3) : "—";
 
 interface PageProps {
   searchParams: Promise<{ status?: TypeRecommendationStatus }>;
+}
+
+// groupByStudy collapses a flat recommendation list into per-study
+// clusters. Within a cluster the highest-ΔSharpe rec is the "primary";
+// everything else is collapsed behind an expander. Studies are sorted
+// by primary createdAt desc so the freshest study floats to the top.
+function groupByStudy(recs: TypeRecommendation[]): RecommendationCluster[] {
+  const byStudy = new Map<string, TypeRecommendation[]>();
+  for (const r of recs) {
+    const key = r.studyId || r.id; // fallback: legacy recs without studyId render as singleton clusters
+    const arr = byStudy.get(key);
+    if (arr) arr.push(r);
+    else byStudy.set(key, [r]);
+  }
+  const clusters: RecommendationCluster[] = [];
+  for (const [studyId, group] of byStudy) {
+    const sorted = [...group].sort(
+      (a, b) =>
+        (b.expectedDelta?.sharpe ?? -Infinity) -
+        (a.expectedDelta?.sharpe ?? -Infinity),
+    );
+    clusters.push({
+      studyId,
+      primary: sorted[0],
+      similar: sorted.slice(1),
+    });
+  }
+  clusters.sort(
+    (a, b) =>
+      new Date(b.primary.createdAt).getTime() -
+      new Date(a.primary.createdAt).getTime(),
+  );
+  return clusters;
 }
 
 export default async function RecommendationsListPage({ searchParams }: PageProps) {
@@ -47,6 +80,27 @@ export default async function RecommendationsListPage({ searchParams }: PageProp
   } catch (e) {
     error = e instanceof Error ? e.message : "失败";
   }
+
+  // Batch-hydrate strategy names. `Promise.allSettled` so a single
+  // deleted strategy doesn't 5xx the whole page; the entry stays
+  // undefined and the row renders "已删除策略".
+  const uniqueStrategyIds = [...new Set(recs.map((r) => r.strategyId))];
+  const strategiesById: Record<string, TypeOption | undefined> = {};
+  if (uniqueStrategyIds.length) {
+    const settled = await Promise.allSettled(
+      uniqueStrategyIds.map((id) => getStrategy(id)),
+    );
+    settled.forEach((res, i) => {
+      const id = uniqueStrategyIds[i];
+      if (res.status === "fulfilled") {
+        strategiesById[id] = res.value;
+      } else {
+        strategiesById[id] = undefined;
+      }
+    });
+  }
+
+  const clusters = groupByStudy(recs);
 
   const filters: TypeRecommendationStatus[] = [
     "pending_review",
@@ -73,7 +127,7 @@ export default async function RecommendationsListPage({ searchParams }: PageProp
                 : "border-default-200 text-default-600"
             }`}
           >
-            {statusBadge(f).label}
+            {FILTER_LABELS[f]}
           </Link>
         ))}
       </nav>
@@ -84,59 +138,13 @@ export default async function RecommendationsListPage({ searchParams }: PageProp
         </div>
       )}
 
-      <table className="w-full text-sm">
-        <thead className="border-b border-default-200 text-left text-default-500">
-          <tr>
-            <th className="py-2 pr-4">策略</th>
-            <th className="py-2 pr-4">状态</th>
-            <th className="py-2 pr-4">Δ 夏普比率</th>
-            <th className="py-2 pr-4">Δ 收益</th>
-            <th className="py-2 pr-4">创建时间</th>
-            <th className="py-2"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {recs.length === 0 && !error && (
-            <tr>
-              <td colSpan={6} className="py-6 text-center text-default-400">
-                状态为 &quot;{statusBadge(status).label}&quot; 的推荐为空。
-              </td>
-            </tr>
-          )}
-          {recs.map((r) => {
-            const badge = statusBadge(r.status);
-            return (
-              <tr key={r.id} className="border-b border-default-100">
-                <td className="py-2 pr-4 font-mono text-xs">{r.strategyId}</td>
-                <td className="py-2 pr-4">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs ${badge.color}`}
-                  >
-                    {badge.label}
-                  </span>
-                </td>
-                <td className="py-2 pr-4">
-                  {fmtNumber(r.expectedDelta?.sharpe ?? 0)}
-                </td>
-                <td className="py-2 pr-4">
-                  {fmtNumber(r.expectedDelta?.return ?? 0)}
-                </td>
-                <td className="py-2 pr-4 text-default-500">
-                  {new Date(r.createdAt).toLocaleString()}
-                </td>
-                <td className="py-2">
-                  <Link
-                    href={`/recommendations/${r.id}`}
-                    className="text-primary hover:underline"
-                  >
-                    审核 →
-                  </Link>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {!error && (
+        <RecommendationsList
+          clusters={clusters}
+          status={status}
+          strategiesById={strategiesById}
+        />
+      )}
     </div>
   );
 }

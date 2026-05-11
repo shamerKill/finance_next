@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Input, Select, SelectItem, Textarea } from "@heroui/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
 import { createBacktest, getOptions } from "@/data/api-client";
@@ -47,9 +47,34 @@ function defaultParamsFromOption(opt: TypeOption | null): string {
 
 export default function NewBacktestPage() {
   const router = useRouter();
+  // Query-string presets: when the operator clicks "回测此参数" on the
+  // recommendation detail page, we arrive here with ?strategyId=...&
+  // symbol=...&proposed=<json>&lookbackDays=30 so the form lands fully
+  // pre-filled and a single click runs the dry-run.
+  const searchParams = useSearchParams();
+  const presetStrategyId = searchParams.get("strategyId") ?? "";
+  const presetSymbol = searchParams.get("symbol") ?? "";
+  const presetProposedRaw = searchParams.get("proposed");
+  const presetLookbackDaysRaw = searchParams.get("lookbackDays");
+
+  // Initialise paramsText from the recommendation's proposed params when
+  // present; otherwise fall back to the default scaffold so first-time
+  // users still see something useful.
+  const initialParamsText = (() => {
+    if (presetProposedRaw) {
+      try {
+        return JSON.stringify(JSON.parse(presetProposedRaw), null, 2);
+      } catch {
+        // Bad JSON in the query string — silently fall back so the
+        // page still renders. The operator can paste manually.
+      }
+    }
+    return defaultParamsFromOption(null);
+  })();
+
   const [strategies, setStrategies] = useState<TypeOption[]>([]);
-  const [strategyId, setStrategyId] = useState<string>("");
-  const [paramsText, setParamsText] = useState<string>(defaultParamsFromOption(null));
+  const [strategyId, setStrategyId] = useState<string>(presetStrategyId);
+  const [paramsText, setParamsText] = useState<string>(initialParamsText);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Decimal inputs kept as strings so we don't surface float-drift like
@@ -58,6 +83,21 @@ export default function NewBacktestPage() {
   const [initialCapital, setInitialCapital] = useState("10000");
   const [commissionRate, setCommissionRate] = useState("0.0004");
   const [slippageBps, setSlippageBps] = useState("1");
+
+  // Compute the default start/end range when lookbackDays is passed in.
+  // Used as `defaultValue` on the datetime-local inputs below.
+  const lookbackDays = presetLookbackDaysRaw
+    ? Number(presetLookbackDaysRaw)
+    : null;
+  const presetEnd =
+    lookbackDays && Number.isFinite(lookbackDays) ? new Date() : null;
+  const presetStart =
+    lookbackDays && presetEnd
+      ? new Date(presetEnd.getTime() - lookbackDays * 24 * 60 * 60 * 1000)
+      : null;
+  // datetime-local wants "YYYY-MM-DDTHH:mm" without timezone — slice the
+  // ISO string accordingly.
+  const fmtDtLocal = (d: Date) => d.toISOString().slice(0, 16);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,9 +152,19 @@ export default function NewBacktestPage() {
     }
   }
 
+  // Banner shown when the form arrived pre-filled from a recommendation
+  // — gives the operator context about why the inputs are populated.
+  const fromRecommendation = !!presetProposedRaw;
+
   return (
     <div className="max-w-2xl">
       <h1 className="text-2xl font-semibold mb-6">新建回测</h1>
+      {fromRecommendation && (
+        <div className="mb-4 rounded-md border border-primary-200 bg-primary-50 p-3 text-sm text-primary-700">
+          已从 AI 推荐预填参数。检查交易对 / 时间窗口后点击「运行回测」即可
+          以这些建议参数做样本外验证。
+        </div>
+      )}
       <form className="flex flex-col gap-4" onSubmit={onSubmit}>
         {strategies.length > 0 ? (
           <Select
@@ -146,7 +196,12 @@ export default function NewBacktestPage() {
               <SelectItem key={x}>{x}</SelectItem>
             ))}
           </Select>
-          <Input name="symbol" label="交易对" defaultValue="BTCUSDT" required />
+          <Input
+            name="symbol"
+            label="交易对"
+            defaultValue={presetSymbol || "BTCUSDT"}
+            required
+          />
           <Select label="周期" name="timeframe" defaultSelectedKeys={["1h"]}>
             {TIMEFRAMES.map((tf) => (
               <SelectItem key={tf}>{tf}</SelectItem>
@@ -155,8 +210,20 @@ export default function NewBacktestPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Input name="start" type="datetime-local" label="开始时间" required />
-          <Input name="end" type="datetime-local" label="结束时间" required />
+          <Input
+            name="start"
+            type="datetime-local"
+            label="开始时间"
+            defaultValue={presetStart ? fmtDtLocal(presetStart) : undefined}
+            required
+          />
+          <Input
+            name="end"
+            type="datetime-local"
+            label="结束时间"
+            defaultValue={presetEnd ? fmtDtLocal(presetEnd) : undefined}
+            required
+          />
         </div>
 
         <div className="grid grid-cols-3 gap-3">

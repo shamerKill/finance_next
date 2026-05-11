@@ -22,6 +22,8 @@ import {
   TypeRecommendation,
   TypeRecommendationStatus,
   TypeSetLive,
+  TypeDashboardSummary,
+  TypeStrategyPerformance,
   TypeStudyHandle,
   TypeSubmitOrder,
 } from "./type";
@@ -248,6 +250,30 @@ export const getStrategies = async (): Promise<TypeOption[]> => {
 export const getStrategy = async (id: string): Promise<TypeOption> => {
   const res = await apiFetch(parseUrl(`v1/option/${id}`), { cache: "no-store" });
   return jsonOrThrow<TypeOption>(res);
+};
+
+// Wave 2 / Phase C — strategy detail performance aggregate. Single
+// gateway call returns KPIs + equity curve + last-10 orders. Designed
+// to be invoked from a server component (cache: no-store keeps each
+// router.refresh() fresh).
+export const getStrategyPerformance = async (
+  id: string,
+): Promise<TypeStrategyPerformance> => {
+  const res = await apiFetch(parseUrl(`v1/strategies/${id}/performance`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeStrategyPerformance>(res);
+};
+
+// DELETE wrapper for the legacy /option resource — drives the "Danger
+// zone" button on the strategy detail page. Returns whatever the gateway
+// returns (typically `{success:true}` or an Echo error JSON which
+// jsonOrThrow surfaces as ApiError).
+export const deleteOption = async (id: string): Promise<void> => {
+  const res = await apiFetch(parseUrl(`v1/option/${id}`), { method: "DELETE" });
+  // The Echo handler returns a small JSON envelope; we don't need its
+  // contents but we still want to bubble non-2xx as ApiError.
+  await jsonOrThrow<unknown>(res);
 };
 
 export const getOrders = async (
@@ -819,6 +845,21 @@ export const togglePredictionLive = async (
     body: JSON.stringify(body),
   });
   return jsonOrThrow<TypePredictionStrategy>(res);
+};
+
+// ---------- Wave 1B — /dashboard/summary aggregation ----------
+
+// Single-call fan-out used by the dashboard landing page. Always returns
+// SOMETHING — individual repo failures degrade to zero values for that
+// section and a `notes` entry, so consumers don't need to special-case
+// "data not loaded yet". `cache: "no-store"` keeps server-component
+// renders fresh; the client component drives router.refresh() on a 30s
+// interval to repaint.
+export const getDashboardSummary = async (): Promise<TypeDashboardSummary> => {
+  const res = await apiFetch(parseUrl("v1/dashboard/summary"), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeDashboardSummary>(res);
 };
 
 export const listPredictionOrders = async (

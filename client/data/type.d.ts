@@ -471,3 +471,100 @@ export type TypePredictionOrder = {
   submittedAt: string;
   lastEventAt: string;
 };
+
+// ---------- Wave 1B — /api/v1/dashboard/summary ----------
+//
+// Aggregated response for the redesigned dashboard landing page.
+// All numeric fields fall back to 0 server-side when the corresponding
+// repo errors; `notes` carries the per-section error strings so the UI
+// can surface them without 5xx-ing the shell.
+export type TypeDashboardSummary = {
+  system: {
+    tradingHalted: boolean;
+    haltedReason: string;
+    haltedBy: string;
+    haltedSince: string | null;
+  };
+  portfolio: {
+    totalUsd: number;
+    accountCount: number;
+    strategyCount: number;
+    walletCount: number;
+  };
+  pnl: {
+    realised24hUsd: number;
+    realised30dUsd: number;
+    tradesLast24h: number;
+  };
+  openOrders: {
+    count: number;
+    openNotionalUsd: number;
+  };
+  recommendations: {
+    pendingCount: number;
+    topPendingIds: string[];
+  };
+  aiBudget: {
+    usdSpentToday: number;
+    usdCapPerDay: number;
+    anthropicConfigured: boolean;
+    openaiConfigured: boolean;
+    currentFamily: string;
+  };
+  generatedAt: string;
+  notes?: string[];
+};
+
+// ---------- Wave 2 / Phase C — /api/v1/strategies/:id/performance ----------
+//
+// Aggregated KPIs + equity curve + recent orders for the strategy detail
+// page. Matches gateway/internal/http/handlers/dashboard.go::
+// StrategyPerformance. `equityCurve` may be empty when no live trades
+// have happened yet; `recentOrders` is capped at 10 server-side.
+export type TypeStrategyPerformanceKPIs = {
+  totalPnlUsd: number;
+  realised24hUsd: number;
+  realised30dUsd: number;
+  tradesTotal: number;
+  tradesLast24h: number;
+  winRate: number;
+  maxDrawdownPct: number;
+  lastTradeAt: string | null;
+  currentOpenNotionalUsd: number;
+};
+
+export type TypeStrategyEquityPoint = {
+  ts: string;
+  equityUsd: number;
+};
+
+// Subset of fields the recent-orders table actually renders. Extra
+// fields on the wire are tolerated by TS structural typing — the
+// backend serialises the full domain.OrderLog.
+export type TypeStrategyPerformanceOrder = {
+  clientOrderId: string;
+  exchangeOrderId?: string;
+  symbol: string;
+  side: TypeOrderSide;
+  type: TypeOrderType;
+  qty: number;
+  price?: number;
+  filled: number;
+  avgFillPrice: number;
+  status: TypeOrderStatus;
+  mode: TypeLiveMode;
+  realisedPnlUsd: number;
+  submittedAt: string;
+  lastEventAt: string;
+};
+
+export type TypeStrategyPerformance = {
+  strategyId: string;
+  userId: string;
+  isLive: boolean;
+  mode: string;
+  kpis: TypeStrategyPerformanceKPIs;
+  equityCurve: TypeStrategyEquityPoint[];
+  recentOrders: TypeStrategyPerformanceOrder[];
+  notes?: string[];
+};

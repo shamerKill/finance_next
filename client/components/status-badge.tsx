@@ -1,3 +1,11 @@
+"use client";
+
+// HeroUI's <Chip> internally calls React.createContext, which is illegal
+// in a server component. The wrapper itself doesn't render any state, but
+// it MUST cross the client boundary so the Chip's context plumbing runs
+// in the browser. Server components import this just like any other
+// client component — Next.js inserts the boundary automatically.
+
 import { Chip } from "@heroui/react";
 import { ReactNode } from "react";
 

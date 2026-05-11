@@ -34,6 +34,24 @@ func withMockBinance(t *testing.T) (*Client, *httptest.Server) {
 			"permissions": ["SPOT"]
 		}`))
 	})
+	// /sapi/v1/account/apiRestrictions is the real source of truth for
+	// per-API-key permissions; ProbePermissions hits this endpoint.
+	mux.HandleFunc("/sapi/v1/account/apiRestrictions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"ipRestrict": false,
+			"createTime": 1700000000000,
+			"enableWithdrawals": false,
+			"enableInternalTransfer": false,
+			"permitsUniversalTransfer": false,
+			"enableVanillaOptions": false,
+			"enableReading": true,
+			"enableFutures": false,
+			"enableMargin": false,
+			"enableSpotAndMarginTrading": true,
+			"tradingAuthorityExpirationTime": 0
+		}`))
+	})
 	mux.HandleFunc("/fapi/v2/positionRisk", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
@@ -58,13 +76,14 @@ func TestProbePermissions(t *testing.T) {
 		t.Fatalf("ProbePermissions: %v", err)
 	}
 	if !perms.CanTrade {
-		t.Errorf("expected canTrade=true")
+		t.Errorf("expected canTrade=true (EnableSpotAndMarginTrading=true)")
 	}
 	if perms.CanWithdraw {
-		t.Errorf("expected canWithdraw=false")
+		t.Errorf("expected canWithdraw=false (EnableWithdrawals=false)")
 	}
-	if !perms.CanDeposit {
-		t.Errorf("expected canDeposit=true")
+	if perms.CanDeposit {
+		// apiRestrictions doesn't expose deposit; we hardcode false.
+		t.Errorf("expected canDeposit=false (not surfaced by apiRestrictions)")
 	}
 }
 

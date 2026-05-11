@@ -140,7 +140,13 @@ func (r *AccountRepo) Delete(ctx context.Context, id string) error {
 }
 
 // decodeAccount maps a raw bson document into the domain shape.
+//
+// mongo-driver v2 refuses to decode ObjectID→string by default; stash _id,
+// drop it from the map so Unmarshal doesn't choke, then patch the hex back
+// onto the domain field. Same pattern as decodeMeta in exchange_meta_repo.go.
 func decodeAccount(m bson.M) (*domain.Account, error) {
+	rawID := m["_id"]
+	delete(m, "_id")
 	bs, err := bson.Marshal(m)
 	if err != nil {
 		return nil, err
@@ -149,8 +155,11 @@ func decodeAccount(m bson.M) (*domain.Account, error) {
 	if err := bson.Unmarshal(bs, &a); err != nil {
 		return nil, err
 	}
-	if oid, ok := m["_id"].(bson.ObjectID); ok {
-		a.ID = oid.Hex()
+	switch v := rawID.(type) {
+	case bson.ObjectID:
+		a.ID = v.Hex()
+	case string:
+		a.ID = v
 	}
 	return &a, nil
 }

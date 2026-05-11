@@ -54,7 +54,12 @@ func main() {
 	connectCtx, connectCancel := context.WithTimeout(rootCtx, 10*time.Second)
 	defer connectCancel()
 
-	client, err := mongo.Connect(options.Client().ApplyURI(cfg.MongoURI))
+	// ObjectIDAsHexString lets bson.Unmarshal decode `_id` (ObjectID) into
+	// our `ID string` domain fields without manual stash/restore plumbing
+	// in every decode site. mongo-driver v2 made this opt-in (default off);
+	// we set it globally on the client so every collection inherits it.
+	bsonOpts := &options.BSONOptions{ObjectIDAsHexString: true}
+	client, err := mongo.Connect(options.Client().ApplyURI(cfg.MongoURI).SetBSONOptions(bsonOpts))
 	if err != nil {
 		logger.Error("mongo connect failed", "err", err)
 		os.Exit(1)

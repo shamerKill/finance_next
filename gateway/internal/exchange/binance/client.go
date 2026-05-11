@@ -56,20 +56,26 @@ func (c *Client) SetFuturesEndpoint(u string) { c.futures.BaseURL = u }
 // by tests.
 func (c *Client) SetWSHost(host string) { c.wsHost = host }
 
-// ProbePermissions calls GET /api/v3/account and maps the canTrade /
-// canDeposit / canWithdraw fields onto our normalised shape.
+// ProbePermissions calls GET /sapi/v1/account/apiRestrictions and maps the
+// per-API-key flags onto our normalised shape.
 //
-// The handler layer is responsible for *rejecting* canWithdraw=true — this
+// IMPORTANT: do NOT use /api/v3/account.canWithdraw here. That field reflects
+// whether the *Binance account* can withdraw in general (almost always true
+// for any non-frozen account) — it has nothing to do with the API key's own
+// permissions. The api-restrictions endpoint returns EnableWithdrawals, which
+// is the actual key-level flag the security model cares about.
+//
+// The handler layer is responsible for *rejecting* CanWithdraw=true — this
 // adapter only reports the truth.
 func (c *Client) ProbePermissions(ctx context.Context) (exchange.Permissions, error) {
-	acct, err := c.spot.NewGetAccountService().Do(ctx)
+	perm, err := c.spot.NewGetAPIKeyPermission().Do(ctx)
 	if err != nil {
 		return exchange.Permissions{}, fmt.Errorf("binance: probe permissions: %w", err)
 	}
 	return exchange.Permissions{
-		CanTrade:    acct.CanTrade,
-		CanDeposit:  acct.CanDeposit,
-		CanWithdraw: acct.CanWithdraw,
+		CanTrade:    perm.EnableSpotAndMarginTrading || perm.EnableMargin || perm.EnableFutures,
+		CanDeposit:  false, // apiRestrictions doesn't expose deposit; we don't gate on it anyway.
+		CanWithdraw: perm.EnableWithdrawals,
 	}, nil
 }
 

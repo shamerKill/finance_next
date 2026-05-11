@@ -82,10 +82,15 @@ func NewRouter(d Deps) *echo.Echo {
 	e.Use(middleware.Logger())
 	// Permissive CORS for dev; phase 7 will narrow this to the configured
 	// frontend origin and add credentials handling.
+	//
+	// "X-Admin-Key" is included so the dashboard layout banner, admin pages,
+	// wallet approve, and strategy live-submit calls can reach the gateway
+	// from the browser — without it the preflight strips the header and
+	// every admin call surfaces as a 401/403 to the user.
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: []string{"*"},
 		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders: []string{"Content-Type", "Authorization"},
+		AllowHeaders: []string{"Content-Type", "Authorization", "X-Admin-Key"},
 	}))
 
 	// Phase 7 observability: register every metric the Grafana dashboards

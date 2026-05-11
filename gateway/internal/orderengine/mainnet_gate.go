@@ -14,8 +14,10 @@
 // The flow:
 //
 //   POST /api/v1/admin/mainnet/request-token  → returns a one-shot token,
-//   logs it to stderr "EMAIL CONFIRMATION REQUIRED: token=…". An external
-//   operator copy/pastes that into:
+//   writes it to **stderr ONLY** ("EMAIL CONFIRMATION REQUIRED: token=…")
+//   so structured loggers (slog handlers shipping to ELK/Datadog/CloudWatch)
+//   never see the secret. An external operator copy/pastes from the
+//   foreground stderr stream into:
 //
 //   POST /api/v1/admin/mainnet/confirm  body {token}  → registers the
 //   token as `confirmed` for 1 hour. While confirmed, [TokenStore.Allowed]
@@ -33,6 +35,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 )
@@ -116,9 +119,12 @@ func (s *TokenStore) Allowed() bool {
 // "requested", and returns it to the admin caller. The token must be
 // confirmed within RequestTTL or it is forgotten on the next sweep.
 //
-// The token is also logged at INFO with a clear marker so an operator
-// running the gateway in foreground sees "EMAIL CONFIRMATION REQUIRED:
-// token=…" — Phase 4 spec ships this stand-in for a real email send.
+// The token is written to stderr ONLY ("EMAIL CONFIRMATION REQUIRED:
+// token=…") so an operator running the gateway in foreground sees it,
+// but structured slog handlers (which typically ship to ELK / Datadog /
+// CloudWatch) never observe the secret. We additionally emit a redacted
+// slog.Info recording only the 8-char prefix for observability — see
+// CLAUDE.md §8 ("tokens go to stderr ONLY").
 func (s *TokenStore) RequestToken() (string, error) {
 	if !s.envEnabled {
 		return "", ErrEnvDisabled
@@ -132,8 +138,10 @@ func (s *TokenStore) RequestToken() (string, error) {
 	s.requested[token] = time.Now().Add(RequestTTL)
 	s.cleanLocked()
 	s.mu.Unlock()
-	// Print to stderr per spec — verifier looks for this exact string.
-	s.log.Info("EMAIL CONFIRMATION REQUIRED", "token", token, "ttl", RequestTTL.String())
+	// stderr ONLY — never through slog, which would ship to log aggregators.
+	fmt.Fprintf(os.Stderr, "EMAIL CONFIRMATION REQUIRED: token=%s ttl=%s\n", token, RequestTTL)
+	// Redacted structured-log line for observability (no secret).
+	s.log.Info("mainnet token requested", "tokenPrefix", token[:8], "ttl", RequestTTL.String())
 	return token, nil
 }
 

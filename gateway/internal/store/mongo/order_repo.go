@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -279,7 +280,14 @@ func (r *OrderRepo) SumRealisedPnlSince(ctx context.Context, strategyID string, 
 // Pre-auth, every order is the "default" user — there is no userId
 // column on order_log yet, so this returns the sum across ALL rows.
 // Phase 8 will add a userId field + filter.
+//
+// Until that refactor lands, non-"default" userIDs are explicitly
+// rejected so we 5xx loudly instead of silently leaking another tenant's
+// open notional. This is the safer foot-gun behaviour.
 func (r *OrderRepo) SumOpenNotionalForUser(ctx context.Context, userID string) (notional float64, count int, err error) {
+	if userID != domain.DefaultUserID {
+		return 0, 0, fmt.Errorf("multi-tenant userId aggregation not yet supported (got %q); see Phase 8 TODO", userID)
+	}
 	cur, aggErr := r.col.Aggregate(ctx, []bson.D{
 		{
 			{Key: "$match", Value: bson.M{
@@ -322,7 +330,14 @@ func (r *OrderRepo) SumOpenNotionalForUser(ctx context.Context, userID string) (
 // SumRealisedPnlSinceForUser is the cross-strategy variant of
 // SumRealisedPnlSince. Same caveat re: userId — Phase 7 sums across all
 // rows; Phase 8 will filter by user.
+//
+// Until that refactor lands, non-"default" userIDs are explicitly
+// rejected so we 5xx loudly instead of silently leaking another tenant's
+// realised PnL.
 func (r *OrderRepo) SumRealisedPnlSinceForUser(ctx context.Context, userID string, since time.Time) (float64, error) {
+	if userID != domain.DefaultUserID {
+		return 0, fmt.Errorf("multi-tenant userId aggregation not yet supported (got %q); see Phase 8 TODO", userID)
+	}
 	cur, err := r.col.Aggregate(ctx, []bson.D{
 		{
 			{Key: "$match", Value: bson.M{

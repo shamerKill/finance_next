@@ -38,6 +38,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,6 +50,7 @@ import (
 	"github.com/finance_next/gateway/internal/exchange/binance"
 	"github.com/finance_next/gateway/internal/exchange/bybit"
 	"github.com/finance_next/gateway/internal/exchange/okx"
+	"github.com/finance_next/gateway/internal/exchange/symbol"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	"github.com/redis/go-redis/v9"
 )
@@ -101,6 +103,11 @@ var (
 	// ErrPortfolioDailyLoss means today's cumulative realised loss across
 	// every strategy is below -`maxDailyLossUsd`.
 	ErrPortfolioDailyLoss = errors.New("orderengine: portfolio daily loss cap reached")
+	// ErrNotionalTooSmall fires when the order's notional (qty * price)
+	// is below the venue's MinNotionalUsd from exchange_meta. The
+	// reconcile loop would otherwise surface this as a venue rejection
+	// 30+ seconds late; the engine catches it pre-submit.
+	ErrNotionalTooSmall = errors.New("orderengine: order notional below exchange minimum")
 )
 
 // OrderClientFactory builds an exchange-specific order adapter for a
@@ -138,6 +145,15 @@ type PortfolioOrderStats interface {
 	SumRealisedPnlSinceForUser(ctx context.Context, userID string, since time.Time) (float64, error)
 }
 
+// ExchangeMetaProvider exposes the lookup the engine uses to validate
+// orders against the venue's published precision + min-notional before
+// sending them. Implemented by [mongostore.ExchangeMetaRepo]. Optional
+// — when nil (or when no row is found for the (venue, canonical) pair),
+// the engine logs and forwards the order unchanged.
+type ExchangeMetaProvider interface {
+	Find(ctx context.Context, exch domain.Exchange, canonical string) (*domain.ExchangeMeta, error)
+}
+
 // Deps bundles every dependency Engine needs. Keep this as a single
 // struct so wiring in cmd/gateway/main.go stays compact.
 type Deps struct {
@@ -154,6 +170,12 @@ type Deps struct {
 	// PortfolioStats provides cross-strategy aggregates. Optional; when
 	// nil, portfolio caps are skipped (per-strategy gate still runs).
 	PortfolioStats PortfolioOrderStats
+	// ExchangeMeta is the (exchange, canonical-symbol) catalog of
+	// precision + min-notional, populated by the startup refresh job.
+	// Optional — when nil the engine skips precision rounding and the
+	// min-notional check (and the venue surfaces violations 30s later
+	// via the reconcile loop, as in Phase 4 behaviour).
+	ExchangeMeta ExchangeMetaProvider
 	// Factory is optional — when nil, defaultOrderClientFactory is used
 	// (which wraps binance.NewOrderClient). Tests inject a mock.
 	Factory OrderClientFactory
@@ -496,12 +518,49 @@ func (e *Engine) processCommand(ctx context.Context, cmd domain.SubmitOrderComma
 		_ = e.markRejected(ctx, clientOID, err)
 		return nil, err
 	}
+
+	// Phase 8: validate against exchange_meta. Best-effort — when meta
+	// is missing entirely we forward the order and let the venue reject.
+	// When meta IS present, a min-notional violation hard-rejects here
+	// (catching the same case the reconcile loop would surface 30s later
+	// with status=unknown). Precision rounding mutates qty/price in-place
+	// so the venue accepts the order on the first try.
+	qty := cmd.Qty
+	price := cmd.Price
+	if e.deps.ExchangeMeta != nil {
+		canonical := canonicalForVenue(venue, cmd.Symbol)
+		meta, mErr := e.deps.ExchangeMeta.Find(ctx, venue, canonical)
+		switch {
+		case mErr == nil && meta != nil:
+			if meta.MinNotionalUsd > 0 {
+				if qty*mark < meta.MinNotionalUsd {
+					rejErr := fmt.Errorf("%w: notional=%.4f min=%.4f", ErrNotionalTooSmall, qty*mark, meta.MinNotionalUsd)
+					_ = e.markRejected(ctx, clientOID, rejErr)
+					return nil, ErrNotionalTooSmall
+				}
+			}
+			qty = roundToPrecision(qty, meta.QtyPrecision)
+			if price > 0 {
+				price = roundToPrecision(price, meta.PricePrecision)
+			}
+		case errors.Is(mErr, mongostore.ErrExchangeMetaNotFound):
+			e.log.Warn("orderengine: exchange_meta missing — skipping precision/min-notional validation",
+				"venue", venue, "canonical", canonical, "symbol", cmd.Symbol)
+		case mErr != nil:
+			// Storage lookup failure → degrade gracefully (warn + skip).
+			// Meta refresh is best-effort by design; failing closed here
+			// would convert a Mongo blip into a trading outage.
+			e.log.Warn("orderengine: exchange_meta lookup failed — skipping validation",
+				"venue", venue, "canonical", canonical, "err", mErr)
+		}
+	}
+
 	res, err := adapter.PlaceOrder(ctx, exchange.OrderRequest{
 		Symbol:        cmd.Symbol,
 		Side:          exchange.OrderSide(cmd.Side),
 		Type:          exchange.OrderType(cmd.Type),
-		Quantity:      cmd.Qty,
-		Price:         cmd.Price,
+		Quantity:      qty,
+		Price:         price,
 		ClientOrderID: clientOID,
 	})
 	if err != nil {
@@ -681,6 +740,39 @@ func defaultOrderClientFactory(gate *TokenStore) OrderClientFactory {
 			return nil, fmt.Errorf("orderengine: venue %q has no order adapter wired", venue)
 		}
 	}
+}
+
+// canonicalForVenue maps a venue-native symbol (e.g. "BTCUSDT" or
+// "BTC-USDT-SWAP") to the canonical form ("BTC/USDT:USDT") used as the
+// exchange_meta lookup key. Unrecognised venues pass the symbol through
+// unchanged — the meta repo will return ErrExchangeMetaNotFound and the
+// caller logs + skips validation.
+func canonicalForVenue(venue domain.Exchange, native string) string {
+	switch venue {
+	case domain.ExchangeBinance:
+		return string(symbol.FromBinance(native))
+	case domain.ExchangeOKX:
+		return string(symbol.FromOKX(native))
+	case domain.ExchangeBybit:
+		return string(symbol.FromBybit(native))
+	default:
+		return native
+	}
+}
+
+// roundToPrecision truncates v to `precision` decimal places. Negative
+// precision is treated as 0. We round half-up to match the venue's
+// canonical formatting (e.g. Binance rejects "0.1234567" for a 4-decimal
+// quantity step; "0.1235" is accepted).
+func roundToPrecision(v float64, precision int) float64 {
+	if precision < 0 {
+		precision = 0
+	}
+	if precision > 12 { // sanity ceiling — no venue uses more than 12 decimals
+		precision = 12
+	}
+	pow := math.Pow(10, float64(precision))
+	return math.Round(v*pow) / pow
 }
 
 // startOfUTCDay returns t truncated to UTC midnight.

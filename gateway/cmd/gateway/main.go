@@ -214,6 +214,7 @@ func main() {
 			Gate:           gate,
 			SystemRepo:     systemRepo,
 			PortfolioStats: orderRepo,
+			ExchangeMeta:   metaRepo,
 			Log:            logger,
 		})
 		go func() {

@@ -32,6 +32,7 @@ import type {
 
 import { ConfigPanel } from "./config-panel";
 import { LiveEquityChart } from "./equity-chart-live";
+import { ParamsPanel } from "./params-panel";
 import { RecentOrdersTable } from "./recent-orders";
 import TuneNowButton from "./tune-now";
 
@@ -178,9 +179,27 @@ export default async function StrategyDetailPage({ params }: PageProps) {
             {strategy.name}
             <StatusBadge tone="default">{strategy.execSymbol}</StatusBadge>
             {statusPill(isLive, String(mode))}
+            {strategy.currentVersion ? (
+              <span
+                className="text-xs font-normal text-default-500"
+                title="每次批准 AI 推荐时递增"
+              >
+                v{strategy.currentVersion}
+              </span>
+            ) : null}
           </span>
         }
-        action={<TuneNowButton strategyId={id} />}
+        action={
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/backtests/new?strategyId=${id}`}
+              className="text-sm px-3 py-1.5 rounded border border-default-300 hover:bg-default-50"
+            >
+              回测当前参数
+            </Link>
+            <TuneNowButton strategyId={id} />
+          </div>
+        }
       />
 
       {isLive && mode === "mainnet" && (
@@ -198,6 +217,8 @@ export default async function StrategyDetailPage({ params }: PageProps) {
 
         {/* ===== Middle column — performance ===== */}
         <main className="space-y-6 min-w-0">
+          <ParamsPanel strategy={strategy} />
+
           {/* KPI strip */}
           <div>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

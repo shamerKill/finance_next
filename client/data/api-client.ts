@@ -314,6 +314,22 @@ export const setRisk = async (
   return jsonOrThrow<TypeOption>(res);
 };
 
+// Partial Option update — used by the strategy-detail params panel
+// for inline edits to the core grid_dca fields (stopProfitRate,
+// stopLossRate, positionLevel, etc.). Backend DTO is `UpdateOptionDTO`
+// with pointer fields, so any subset of TypeOption is accepted.
+export const updateOption = async (
+  strategyId: string,
+  patch: Partial<TypeOption>,
+): Promise<TypeOption> => {
+  const res = await apiFetch(parseUrl(`v1/option/${strategyId}`), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return jsonOrThrow<TypeOption>(res);
+};
+
 // Admin-only manual order submission. Requires the `X-Admin-Key`
 // header — same auth pattern as /market/ingest.
 export const submitOrder = async (

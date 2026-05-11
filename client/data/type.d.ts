@@ -34,6 +34,10 @@ export type TypeOption = {
   id?: string;
   risk?: TypeRiskCaps;
   live?: TypeLiveConfig;
+  // Phase 6 — bumps by 1 each time an AI recommendation is approved
+  // against this strategy. Optional on the client because the field is
+  // absent on legacy docs that pre-date the recommendation flow.
+  currentVersion?: number;
 }
 
 // Phase 4 — strategy-level risk caps. All three fields are mandatory at

@@ -80,6 +80,8 @@ services:
         condition: service_healthy
       timescale:
         condition: service_healthy
+    env_file:
+      - ../.env
     environment:
       # Required: pulled from project-root .env via compose's env_file.
       MONGODB_URI: ${MONGODB_URI}
@@ -105,6 +107,8 @@ services:
         condition: service_healthy
       timescale:
         condition: service_healthy
+    env_file:
+      - ../.env
     environment:
       REDIS_URL: redis://redis:6379/0
       TIMESCALE_DSN: postgres://app:app@timescale:5432/finance

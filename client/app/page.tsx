@@ -1,17 +1,7 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { Button } from "@heroui/react";
-import Link from "next/link";
-
+// First-time visitors land directly inside the dashboard. /accounts is the
+// most useful starting view — strategy onboarding flows from there.
 export default function Home() {
-  return (
-    <div className="p-8 flex flex-col gap-3 max-w-sm">
-      <Link href="/accounts">
-        <Button color="primary">账户</Button>
-      </Link>
-      <Link href="/api-list">
-        <Button variant="flat">策略</Button>
-      </Link>
-    </div>
-  );
+  redirect("/accounts");
 }

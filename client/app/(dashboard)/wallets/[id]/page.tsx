@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
+import { ApiErrorView } from "@/components/api-error";
 import {
   approveWallet,
   getWallet,
@@ -21,7 +22,7 @@ export default function WalletDetailPage() {
   const [wallet, setWallet] = useState<TypeWallet | null>(null);
   const [balance, setBalance] = useState<TypeWalletBalance | null>(null);
   const [positions, setPositions] = useState<TypeWalletPosition[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [approveAmt, setApproveAmt] = useState("");
   const [approveStatus, setApproveStatus] = useState<string | null>(null);
 
@@ -36,7 +37,7 @@ export default function WalletDetailPage() {
         const p = await getWalletPositions(id).catch(() => []);
         if (!cancel) setPositions(p);
       } catch (e) {
-        if (!cancel) setError(e instanceof Error ? e.message : String(e));
+        if (!cancel) setError(e);
       }
     })();
     return () => {
@@ -67,11 +68,7 @@ export default function WalletDetailPage() {
   };
 
   if (error) {
-    return (
-      <div className="rounded border border-danger p-3 text-sm text-danger">
-        {error}
-      </div>
-    );
+    return <ApiErrorView error={error} />;
   }
   if (!wallet) {
     return <div className="text-sm text-default-500">加载中…</div>;

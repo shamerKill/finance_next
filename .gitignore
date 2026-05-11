@@ -26,3 +26,10 @@ quant/build/
 .vscode/
 .idea/
 *.swp
+
+# Other package managers (project uses yarn for client).
+**/bun.lock
+
+# Smoke-test artefacts and Claude harness scratch.
+.smoke-screenshots/
+.claude/

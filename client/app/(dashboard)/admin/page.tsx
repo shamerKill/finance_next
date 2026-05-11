@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { ApiErrorView } from "@/components/api-error";
 import {
+  ApiError,
   TypePortfolioLimits,
   TypeSystemState,
   getPortfolioLimits,
@@ -24,8 +26,11 @@ export default function AdminPage() {
   const [state, setState] = useState<TypeSystemState | null>(null);
   const [limits, setLimits] = useState<TypePortfolioLimits | null>(null);
   const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const [keyStatus, setKeyStatus] = useState<
+    "unknown" | "verifying" | "ok" | "bad"
+  >("unknown");
 
   // Load the admin key from localStorage on first paint.
   useEffect(() => {
@@ -35,7 +40,11 @@ export default function AdminPage() {
   }, []);
 
   const refresh = async () => {
-    if (!adminKey) return;
+    if (!adminKey) {
+      setKeyStatus("unknown");
+      return;
+    }
+    setKeyStatus("verifying");
     try {
       setError(null);
       const [s, l] = await Promise.all([
@@ -44,8 +53,14 @@ export default function AdminPage() {
       ]);
       setState(s);
       setLimits(l);
+      setKeyStatus("ok");
     } catch (e) {
-      setError((e as Error).message);
+      setError(e);
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        setKeyStatus("bad");
+      } else {
+        setKeyStatus("bad");
+      }
     }
   };
 
@@ -57,12 +72,13 @@ export default function AdminPage() {
 
   const onSaveKey = () => {
     window.localStorage.setItem(ADMIN_KEY_STORAGE, adminKey);
+    // Immediately re-verify so the halt / limits sections unlock.
     refresh();
   };
 
   const onHalt = async () => {
     if (!reason) {
-      setError("必须填写原因");
+      setError(new Error("必须填写原因"));
       return;
     }
     setBusy(true);
@@ -70,7 +86,7 @@ export default function AdminPage() {
       const s = await haltTrading(adminKey, reason);
       setState(s);
     } catch (e) {
-      setError((e as Error).message);
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -82,7 +98,7 @@ export default function AdminPage() {
       const s = await resumeTrading(adminKey);
       setState(s);
     } catch (e) {
-      setError((e as Error).message);
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -99,7 +115,7 @@ export default function AdminPage() {
       });
       setLimits(next);
     } catch (e) {
-      setError((e as Error).message);
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -121,13 +137,24 @@ export default function AdminPage() {
           value={adminKey}
           onChange={(e) => setAdminKey(e.target.value)}
         />
-        <button
-          className="bg-primary text-white rounded px-3 py-1"
-          onClick={onSaveKey}
-        >
-          保存密钥
-        </button>
-        {error && <div className="text-danger text-sm">{error}</div>}
+        <div className="flex items-center gap-3">
+          <button
+            className="bg-primary text-white rounded px-3 py-1"
+            onClick={onSaveKey}
+          >
+            保存密钥
+          </button>
+          {keyStatus === "verifying" && (
+            <span className="text-default-500 text-sm">验证中…</span>
+          )}
+          {keyStatus === "ok" && (
+            <span className="text-success text-sm">✓ 已验证</span>
+          )}
+          {keyStatus === "bad" && (
+            <span className="text-danger text-sm">✗ 密钥错误</span>
+          )}
+        </div>
+        <ApiErrorView error={error} />
       </section>
 
       <section className="space-y-2">

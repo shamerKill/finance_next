@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { ApiErrorView } from "@/components/api-error";
+import { IngestButton } from "@/components/ingest-button";
 import { listPredictionMarkets } from "@/data/api-client";
 import { TypePredictionMarket } from "@/data/type";
 
@@ -12,7 +14,7 @@ export default async function PredictionMarketsPage({
 }) {
   const sp = await searchParams;
   let markets: TypePredictionMarket[] = [];
-  let error: string | null = null;
+  let error: unknown = null;
   try {
     markets = await listPredictionMarkets({
       category: sp.category,
@@ -20,26 +22,28 @@ export default async function PredictionMarketsPage({
       limit: 200,
     });
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    error = e;
   }
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-4">预测市场</h1>
-      <div className="text-sm text-default-500 mb-4">
-        Polymarket 条件目录。点击市场查看订单簿和下单表单。
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h1 className="text-2xl font-semibold">预测市场</h1>
+          <div className="text-sm text-default-500">
+            Polymarket 条件目录。点击市场查看订单簿和下单表单。
+          </div>
+        </div>
+        <IngestButton path="v1/admin/ingest/prediction" />
       </div>
 
-      {error && (
-        <div className="rounded border border-danger p-3 text-sm text-danger mb-4">
-          {error}
-        </div>
-      )}
+      <div className="mb-4">
+        <ApiErrorView error={error} />
+      </div>
 
       {markets.length === 0 && !error && (
         <p className="text-default-500 text-sm">
-          尚未抓取任何市场。运行{" "}
-          <code>POST /api/v1/admin/ingest/prediction</code> 进行初始化。
+          尚未抓取任何市场。点击右上角“立即抓取数据”触发一次初始化。
         </p>
       )}
 

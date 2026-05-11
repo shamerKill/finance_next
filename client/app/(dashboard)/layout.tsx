@@ -63,9 +63,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <Link className="hover:text-primary" href="/strategies">
               策略
             </Link>
-            <Link className="hover:text-primary" href="/api-list">
-              策略（旧版）
-            </Link>
             <Link className="hover:text-primary" href="/option">
               新建策略
             </Link>

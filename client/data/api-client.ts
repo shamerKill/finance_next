@@ -31,10 +31,39 @@ import {
 const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
 const parseUrl = (path: string) => baseUrl + `/${path}`.replace("//", "/");
 
+// ApiError carries the HTTP status alongside the message so UI components
+// can render a friendly Chinese message based on the status (see
+// `client/components/api-error.tsx`). Falls back to the raw body when the
+// gateway returns a non-JSON error.
+export class ApiError extends Error {
+  status: number;
+  raw?: string;
+
+  constructor(status: number, message: string, raw?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.raw = raw;
+  }
+}
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`HTTP ${res.status}: ${text}`);
+    let message = text;
+    try {
+      const parsed = JSON.parse(text);
+      // Echo-style {message: "..."} or {error: "..."}.
+      if (parsed && typeof parsed === "object") {
+        message =
+          (parsed as { message?: string; error?: string }).message ??
+          (parsed as { message?: string; error?: string }).error ??
+          text;
+      }
+    } catch {
+      // Non-JSON body; keep the raw text as the message.
+    }
+    throw new ApiError(res.status, message, text);
   }
   return (await res.json()) as T;
 }

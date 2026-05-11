@@ -1,6 +1,8 @@
 // Phase 8 on-chain explorer. Defaults to BTC hash rate; same plain
 // table layout as the macro page.
 
+import { ApiErrorView } from "@/components/api-error";
+import { IngestButton } from "@/components/ingest-button";
 import { getOnchainMetrics } from "@/data/api-client";
 import type { TypeOnchainPoint } from "@/data/type";
 
@@ -11,28 +13,30 @@ const DEFAULT_METRIC = "hash_rate";
 
 export default async function OnchainPage() {
   let points: TypeOnchainPoint[] = [];
-  let error: string | null = null;
+  let error: unknown = null;
   try {
     points = await getOnchainMetrics(DEFAULT_CHAIN, DEFAULT_METRIC);
   } catch (e) {
-    error = e instanceof Error ? e.message : "加载链上数据失败";
+    error = e;
   }
   const rows = [...points].reverse().slice(0, 200);
   return (
     <div className="flex flex-col gap-4">
-      <header>
-        <h1 className="text-2xl font-semibold">
-          链上 — {DEFAULT_CHAIN}:{DEFAULT_METRIC}
-        </h1>
-        <p className="text-sm text-default-500">
-          显示最近 {rows.length} 条观测数据。
-        </p>
-      </header>
-      {error && (
-        <div className="text-sm text-warning border border-warning rounded p-2">
-          {error}
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">
+            链上 — {DEFAULT_CHAIN}:{DEFAULT_METRIC}
+          </h1>
+          <p className="text-sm text-default-500">
+            显示最近 {rows.length} 条观测数据。
+          </p>
         </div>
-      )}
+        <IngestButton
+          path="v1/admin/ingest/onchain"
+          body={{ chain: DEFAULT_CHAIN, metric: DEFAULT_METRIC }}
+        />
+      </header>
+      <ApiErrorView error={error} />
       <table className="text-sm border border-default-200">
         <thead className="bg-default-100">
           <tr>

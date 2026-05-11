@@ -2,6 +2,8 @@
 // (cu2412); the chart component is reused from /markets.
 
 import { OhlcvChart } from "@/app/(dashboard)/markets/chart";
+import { ApiErrorView } from "@/components/api-error";
+import { IngestButton } from "@/components/ingest-button";
 import { getFuturesOhlcv, type TypeOhlcvBar } from "@/data/api-client";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +16,7 @@ export default async function FuturesPage() {
   const end = new Date();
   const start = new Date(end.getTime() - 180 * 24 * 60 * 60 * 1000);
   let bars: TypeOhlcvBar[] = [];
-  let error: string | null = null;
+  let error: unknown = null;
   try {
     bars = await getFuturesOhlcv(
       DEFAULT_EXCHANGE,
@@ -24,21 +26,23 @@ export default async function FuturesPage() {
       end,
     );
   } catch (e) {
-    error = e instanceof Error ? e.message : "加载期货数据失败";
+    error = e;
   }
   return (
     <div className="flex flex-col gap-4">
-      <header>
-        <h1 className="text-2xl font-semibold">期货 — {DEFAULT_CONTRACT}</h1>
-        <p className="text-sm text-default-500">
-          {DEFAULT_EXCHANGE.toUpperCase()} · {DEFAULT_TIMEFRAME} · 近 180 天
-        </p>
-      </header>
-      {error && (
-        <div className="text-sm text-warning border border-warning rounded p-2">
-          {error}
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">期货 — {DEFAULT_CONTRACT}</h1>
+          <p className="text-sm text-default-500">
+            {DEFAULT_EXCHANGE.toUpperCase()} · {DEFAULT_TIMEFRAME} · 近 180 天
+          </p>
         </div>
-      )}
+        <IngestButton
+          path="v1/admin/ingest/futures"
+          body={{ exchange: DEFAULT_EXCHANGE, contract: DEFAULT_CONTRACT }}
+        />
+      </header>
+      <ApiErrorView error={error} />
       <OhlcvChart bars={bars} />
     </div>
   );

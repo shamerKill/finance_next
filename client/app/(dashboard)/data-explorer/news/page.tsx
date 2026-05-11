@@ -2,6 +2,8 @@
 // items, sentiment-coloured. Symbol filter is left for a follow-up
 // (the gateway endpoint already accepts ?symbols=).
 
+import { ApiErrorView } from "@/components/api-error";
+import { IngestButton } from "@/components/ingest-button";
 import { getNews } from "@/data/api-client";
 import type { TypeNewsItem } from "@/data/type";
 
@@ -15,26 +17,25 @@ function sentimentClass(s: number): string {
 
 export default async function NewsPage() {
   let items: TypeNewsItem[] = [];
-  let error: string | null = null;
+  let error: unknown = null;
   try {
     items = await getNews(undefined, undefined, 100);
   } catch (e) {
-    error = e instanceof Error ? e.message : "加载新闻失败";
+    error = e;
   }
   return (
     <div className="flex flex-col gap-4">
-      <header>
-        <h1 className="text-2xl font-semibold">新闻与情绪</h1>
-        <p className="text-sm text-default-500">
-          来自 CryptoPanic / AKShare 财联社 / RSS 的最新 {items.length} 条。
-          情绪为占位词典打分 — 不构成投资建议。
-        </p>
-      </header>
-      {error && (
-        <div className="text-sm text-warning border border-warning rounded p-2">
-          {error}
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">新闻与情绪</h1>
+          <p className="text-sm text-default-500">
+            来自 CryptoPanic / AKShare 财联社 / RSS 的最新 {items.length} 条。
+            情绪为占位词典打分 — 不构成投资建议。
+          </p>
         </div>
-      )}
+        <IngestButton path="v1/admin/ingest/news" body={{ limit: 100 }} />
+      </header>
+      <ApiErrorView error={error} />
       <ul className="flex flex-col gap-2">
         {items.map((n) => (
           <li

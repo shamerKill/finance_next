@@ -3,6 +3,8 @@
 // because the macro series cadence (monthly) doesn't fit lightweight-charts'
 // candlestick API cleanly.
 
+import { ApiErrorView } from "@/components/api-error";
+import { IngestButton } from "@/components/ingest-button";
 import { getMacroIndicators } from "@/data/api-client";
 import type { TypeMacroPoint } from "@/data/type";
 
@@ -13,29 +15,31 @@ const DEFAULT_CODE = "CPIAUCSL";
 
 export default async function MacroPage() {
   let points: TypeMacroPoint[] = [];
-  let error: string | null = null;
+  let error: unknown = null;
   try {
     points = await getMacroIndicators(DEFAULT_SOURCE, DEFAULT_CODE);
   } catch (e) {
-    error = e instanceof Error ? e.message : "加载宏观数据失败";
+    error = e;
   }
   // Display newest first.
   const rows = [...points].reverse().slice(0, 200);
   return (
     <div className="flex flex-col gap-4">
-      <header>
-        <h1 className="text-2xl font-semibold">
-          宏观 — {DEFAULT_SOURCE}:{DEFAULT_CODE}
-        </h1>
-        <p className="text-sm text-default-500">
-          显示最近 {rows.length} 条观测数据。
-        </p>
-      </header>
-      {error && (
-        <div className="text-sm text-warning border border-warning rounded p-2">
-          {error}
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">
+            宏观 — {DEFAULT_SOURCE}:{DEFAULT_CODE}
+          </h1>
+          <p className="text-sm text-default-500">
+            显示最近 {rows.length} 条观测数据。
+          </p>
         </div>
-      )}
+        <IngestButton
+          path="v1/admin/ingest/macro"
+          body={{ source: DEFAULT_SOURCE, code: DEFAULT_CODE }}
+        />
+      </header>
+      <ApiErrorView error={error} />
       <table className="text-sm border border-default-200">
         <thead className="bg-default-100">
           <tr>

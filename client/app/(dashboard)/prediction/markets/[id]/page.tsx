@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
+import { ApiErrorView } from "@/components/api-error";
 import {
   getPredictionMarket,
   getPredictionQuotes,
@@ -21,7 +22,7 @@ export default function PredictionMarketDetailPage() {
   const [market, setMarket] = useState<TypePredictionMarket | null>(null);
   const [quotes, setQuotes] = useState<TypePredictionQuote[]>([]);
   const [trades, setTrades] = useState<TypePredictionTrade[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     let cancel = false;
@@ -36,7 +37,7 @@ export default function PredictionMarketDetailPage() {
         const q = await getPredictionQuotes(id).catch(() => []);
         if (!cancel) setQuotes(q);
       } catch (e) {
-        if (!cancel) setError(e instanceof Error ? e.message : String(e));
+        if (!cancel) setError(e);
       }
     })();
     return () => {
@@ -45,11 +46,7 @@ export default function PredictionMarketDetailPage() {
   }, [id]);
 
   if (error) {
-    return (
-      <div className="rounded border border-danger p-3 text-sm text-danger">
-        {error}
-      </div>
-    );
+    return <ApiErrorView error={error} />;
   }
   if (!market) {
     return <div className="text-sm text-default-500">加载中…</div>;

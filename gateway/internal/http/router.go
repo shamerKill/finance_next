@@ -71,6 +71,13 @@ type Deps struct {
 	PredictionOrderRepo   *mongostore.PredictionOrderRepo
 	WalletRPC             walletpkg.RPC
 	PredictionEngine      *predictionengine.Engine
+
+	// CORS + WebSocket origin allowlist. Empty (default) preserves the
+	// dev-friendly behaviour: CORS allows "*" and the WS upgrade uses
+	// InsecureSkipVerify. Non-empty switches both surfaces to strict
+	// allowlisting. Entries are full origin URLs (e.g.
+	// "http://localhost:3000"); the WS handler extracts the host part.
+	AllowedOrigins []string
 }
 
 // NewRouter wires up middleware, the /api/v1 group, /ws, and resource handlers.
@@ -85,17 +92,21 @@ func NewRouter(d Deps) *echo.Echo {
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestID())
 	e.Use(middleware.Logger())
-	// Permissive CORS for dev; phase 7 will narrow this to the configured
-	// frontend origin and add credentials handling.
+	// CORS: dev defaults to "*", production locks down via ALLOWED_ORIGINS.
 	//
 	// "X-Admin-Key" is included so the dashboard layout banner, admin pages,
 	// wallet approve, and strategy live-submit calls can reach the gateway
 	// from the browser — without it the preflight strips the header and
-	// every admin call surfaces as a 401/403 to the user.
+	// every admin call surfaces as a 401/403 to the user. "X-User-Id" is
+	// allowed for the R2 multi-tenant boundary middleware.
+	corsOrigins := d.AllowedOrigins
+	if len(corsOrigins) == 0 {
+		corsOrigins = []string{"*"}
+	}
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"*"},
+		AllowOrigins: corsOrigins,
 		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders: []string{"Content-Type", "Authorization", "X-Admin-Key"},
+		AllowHeaders: []string{"Content-Type", "Authorization", "X-Admin-Key", "X-User-Id"},
 	}))
 
 	// Phase 7 observability: register every metric the Grafana dashboards
@@ -249,7 +260,7 @@ func NewRouter(d Deps) *echo.Echo {
 	// Forward orderengine package import to keep build happy when nil.
 	_ = orderengine.CommandSubmitStream
 	hub := ws.NewHubFull(accountHandler.UpstreamFactoryFor(), genericFactory, nil)
-	wsHandler := ws.NewHandler(hub, nil)
+	wsHandler := ws.NewHandler(hub, nil, d.AllowedOrigins)
 	e.GET("/ws", wsHandler.Handle)
 
 	e.GET("/healthz", func(c echo.Context) error {

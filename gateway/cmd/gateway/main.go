@@ -321,7 +321,8 @@ func main() {
 		WalletRPC:              walletRPC,
 		PredictionEngine:       predEngine,
 
-		RequireUserID: cfg.RequireUserID,
+		RequireUserID:  cfg.RequireUserID,
+		AllowedOrigins: cfg.AllowedOrigins,
 	})
 
 	addr := ":" + cfg.Port

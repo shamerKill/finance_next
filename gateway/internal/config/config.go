@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -40,6 +41,17 @@ type Config struct {
 	// the verified subject as `X-User-Id`. Until that proxy is in place
 	// the header is trust-the-frontend.
 	RequireUserID bool
+
+	// AllowedOrigins is the comma-split, trimmed list parsed from the
+	// `ALLOWED_ORIGINS` env var. Empty (default) → CORS allows "*" and
+	// the WebSocket Accept uses InsecureSkipVerify (dev-friendly).
+	// Non-empty → CORS allowlist is strict, and the WS upgrade uses
+	// `OriginPatterns` to reject mismatched Origin headers (returns
+	// 403). Entries are full origin URLs like `http://localhost:3000`
+	// or `https://app.example.com`; the WS layer extracts the host
+	// portion because nhooyr/coder OriginPatterns are host patterns,
+	// not full URLs.
+	AllowedOrigins []string
 }
 
 // Load reads env (with optional .env file), validates, and returns Config.
@@ -59,8 +71,9 @@ func Load() (*Config, error) {
 		TimescaleDSN:  os.Getenv("TIMESCALE_DSN"),
 		QuantGRPCAddr: os.Getenv("QUANT_GRPC_ADDR"),
 		AdminKey:      os.Getenv("ADMIN_KEY"),
-		RedisURL:      os.Getenv("REDIS_URL"),
-		RequireUserID: os.Getenv("REQUIRE_USER_ID") == "true",
+		RedisURL:       os.Getenv("REDIS_URL"),
+		RequireUserID:  os.Getenv("REQUIRE_USER_ID") == "true",
+		AllowedOrigins: parseAllowedOrigins(os.Getenv("ALLOWED_ORIGINS")),
 	}
 	if cfg.Port == "" {
 		cfg.Port = "3001"
@@ -80,4 +93,29 @@ func Load() (*Config, error) {
 		return nil, errors.New("ENCRYPTION_KEY must be a 64-char hex string (32 bytes)")
 	}
 	return cfg, nil
+}
+
+// parseAllowedOrigins splits the comma-separated ALLOWED_ORIGINS value
+// into a clean list. Whitespace around each entry is trimmed and empty
+// fragments (e.g. a trailing comma) are dropped. Returning nil for an
+// empty input lets callers distinguish "unset" (allow all) from a
+// configured allowlist with zero remaining entries.
+func parseAllowedOrigins(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -18,24 +19,68 @@ import (
 type Handler struct {
 	hub *Hub
 	log *slog.Logger
+	// originPatterns are host patterns (not full URLs) passed to
+	// websocket.AcceptOptions.OriginPatterns. Derived from the
+	// allowedOrigins URLs supplied at construction time. Empty slice
+	// signals "no allowlist configured" and Handle falls back to
+	// InsecureSkipVerify for the dev workflow.
+	originPatterns []string
 }
 
 // NewHandler returns a handler bound to hub.
-func NewHandler(hub *Hub, log *slog.Logger) *Handler {
+//
+// allowedOrigins is the operator-configured CORS allowlist (full origin URLs
+// like "http://localhost:3000"). When non-empty, the WS upgrade rejects any
+// browser whose Origin header is not on the list (HTTP 403). Empty / nil
+// keeps the dev-friendly InsecureSkipVerify behaviour so a `yarn dev` on a
+// different port still works without per-developer config.
+func NewHandler(hub *Hub, log *slog.Logger, allowedOrigins []string) *Handler {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Handler{hub: hub, log: log}
+	return &Handler{
+		hub:            hub,
+		log:            log,
+		originPatterns: originPatternsFromURLs(allowedOrigins),
+	}
+}
+
+// originPatternsFromURLs extracts the host portion of each allowed origin
+// URL. The coder/websocket AcceptOptions.OriginPatterns field matches
+// against the Origin header's host (case-insensitive path.Match), not the
+// full URL — so "http://localhost:3000" must become "localhost:3000".
+// Entries that fail to parse are passed through verbatim so an operator
+// can also supply a raw host pattern if they choose to.
+func originPatternsFromURLs(origins []string) []string {
+	if len(origins) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(origins))
+	for _, o := range origins {
+		u, err := url.Parse(o)
+		if err != nil || u.Host == "" {
+			out = append(out, o)
+			continue
+		}
+		out = append(out, u.Host)
+	}
+	return out
 }
 
 // Handle is the Echo handler for GET /ws.
 func (h *Handler) Handle(c echo.Context) error {
-	// AcceptOptions: in dev the browser hits ws://localhost:3001 from
-	// localhost:3000. We accept any origin here for now and TODO(phase 7) lock
-	// it to the configured frontend origin.
-	conn, err := websocket.Accept(c.Response(), c.Request(), &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
+	// AcceptOptions: when no origin allowlist is configured (dev), we keep
+	// InsecureSkipVerify so a developer running yarn dev on an arbitrary
+	// port can connect without per-machine config. In production
+	// ALLOWED_ORIGINS is set and we switch to OriginPatterns, which causes
+	// coder/websocket to return 403 on mismatched Origin headers.
+	opts := &websocket.AcceptOptions{}
+	if len(h.originPatterns) > 0 {
+		opts.OriginPatterns = h.originPatterns
+	} else {
+		opts.InsecureSkipVerify = true
+	}
+	conn, err := websocket.Accept(c.Response(), c.Request(), opts)
 	if err != nil {
 		return err
 	}

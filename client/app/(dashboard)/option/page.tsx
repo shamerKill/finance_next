@@ -4,15 +4,21 @@ import {
   Button,
   Input,
   NumberInput,
+  Select,
+  SelectItem,
   Switch,
   Tooltip,
 } from "@heroui/react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FC, FormEvent, useState } from "react";
 
 import { ApiErrorView } from "@/components/api-error";
+import { Callout } from "@/components/callout";
 import { createOption } from "@/data/api-client";
 import type { TypeOption } from "@/data/type";
+
+type StrategyKind = "grid_dca" | "polymarket_event";
 
 type PositionRow = { marginRate: number; lossAddRate: number };
 
@@ -22,6 +28,7 @@ type PositionRow = { marginRate: number; lossAddRate: number };
 // the request shape is well-formed.
 const NewStrategyPage: FC = () => {
   const router = useRouter();
+  const [kind, setKind] = useState<StrategyKind>("grid_dca");
   const [name, setName] = useState("");
   const [positionLevel, setPositionLevel] = useState<number>(5);
   const [openPositionStopTime, setOpenPositionStopTime] = useState<number>(30);
@@ -88,6 +95,37 @@ const NewStrategyPage: FC = () => {
 
       <ApiErrorView error={error} />
 
+      <Select
+        label="策略类型"
+        description="选择策略的执行引擎；不同类型的字段不同"
+        selectedKeys={[kind]}
+        onSelectionChange={(keys) => {
+          const k = Array.from(keys)[0] as StrategyKind | undefined;
+          if (k) setKind(k);
+        }}
+      >
+        <SelectItem key="grid_dca">Grid DCA（网格定投）</SelectItem>
+        <SelectItem key="polymarket_event">
+          Polymarket Event（预测市场）
+        </SelectItem>
+      </Select>
+
+      {kind === "polymarket_event" ? (
+        <Callout variant="info" title="Polymarket 策略请使用专用页面">
+          <p className="mb-2">
+            预测市场策略的风控字段与 Grid DCA 不同（maxNotionalUsd /
+            maxOpenMarkets / maxSlippageBps / dailyLossCapUsd），
+            并需要绑定 Polygon 钱包。请前往专用表单创建。
+          </p>
+          <Link
+            href="/prediction/strategies/new"
+            className="text-primary underline"
+          >
+            前往预测策略创建 →
+          </Link>
+        </Callout>
+      ) : null}
+
       <Input
         label="名称"
         description="3-8 个字符，必须唯一"
@@ -96,7 +134,10 @@ const NewStrategyPage: FC = () => {
         isRequired
       />
 
-      <div className="grid grid-cols-2 gap-3">
+      <div
+        className="grid grid-cols-2 gap-3"
+        style={{ display: kind === "polymarket_event" ? "none" : undefined }}
+      >
         <Tooltip content="对应交易所的杠杆倍数，1-125">
           <NumberInput
             label="杠杆倍数"
@@ -175,7 +216,10 @@ const NewStrategyPage: FC = () => {
         </div>
       </div>
 
-      <div className="space-y-2">
+      <div
+        className="space-y-2"
+        style={{ display: kind === "polymarket_event" ? "none" : undefined }}
+      >
         <div className="flex items-center justify-between">
           <label className="text-sm font-medium">分批开仓</label>
           <Button size="sm" variant="flat" onPress={addRow}>
@@ -221,7 +265,10 @@ const NewStrategyPage: FC = () => {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-3">
+      <div
+        className="grid grid-cols-1 gap-3"
+        style={{ display: kind === "polymarket_event" ? "none" : undefined }}
+      >
         <Input
           label="邮箱"
           type="email"
@@ -245,7 +292,12 @@ const NewStrategyPage: FC = () => {
       </div>
 
       <div className="flex gap-2">
-        <Button type="submit" color="primary" isLoading={busy}>
+        <Button
+          type="submit"
+          color="primary"
+          isLoading={busy}
+          isDisabled={kind === "polymarket_event"}
+        >
           创建策略
         </Button>
         <Button variant="flat" onPress={() => router.push("/strategies")}>

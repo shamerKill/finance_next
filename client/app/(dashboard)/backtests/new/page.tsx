@@ -1,6 +1,14 @@
 "use client";
 
-import { Button, Input, Select, SelectItem, Textarea } from "@heroui/react";
+import {
+  Button,
+  Input,
+  Radio,
+  RadioGroup,
+  Select,
+  SelectItem,
+  Textarea,
+} from "@heroui/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
@@ -84,20 +92,66 @@ export default function NewBacktestPage() {
   const [commissionRate, setCommissionRate] = useState("0.0004");
   const [slippageBps, setSlippageBps] = useState("1");
 
-  // Compute the default start/end range when lookbackDays is passed in.
-  // Used as `defaultValue` on the datetime-local inputs below.
-  const lookbackDays = presetLookbackDaysRaw
-    ? Number(presetLookbackDaysRaw)
-    : null;
-  const presetEnd =
-    lookbackDays && Number.isFinite(lookbackDays) ? new Date() : null;
-  const presetStart =
-    lookbackDays && presetEnd
-      ? new Date(presetEnd.getTime() - lookbackDays * 24 * 60 * 60 * 1000)
-      : null;
   // datetime-local wants "YYYY-MM-DDTHH:mm" without timezone — slice the
   // ISO string accordingly.
   const fmtDtLocal = (d: Date) => d.toISOString().slice(0, 16);
+
+  // Resolve initial date window. Priority:
+  //   1. ?lookbackDays=N (from the "回测此参数" jump) wins.
+  //   2. Otherwise default to 30 days.
+  const initialPreset = (() => {
+    const ld = presetLookbackDaysRaw ? Number(presetLookbackDaysRaw) : null;
+    if (ld && Number.isFinite(ld)) {
+      if (ld === 7) return "7d";
+      if (ld === 30) return "30d";
+      if (ld === 90) return "90d";
+    }
+    return "30d";
+  })();
+  const computeRange = (
+    preset: string,
+  ): { start: string; end: string } | null => {
+    const end = new Date();
+    let days: number | null = null;
+    let start: Date | null = null;
+    if (preset === "7d") days = 7;
+    else if (preset === "30d") days = 30;
+    else if (preset === "90d") days = 90;
+    else if (preset === "ytd") {
+      start = new Date(Date.UTC(end.getUTCFullYear(), 0, 1));
+    }
+    if (days !== null) {
+      start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+    }
+    if (!start) return null;
+    return { start: fmtDtLocal(start), end: fmtDtLocal(end) };
+  };
+  const initialRange = computeRange(initialPreset) ?? {
+    start: "",
+    end: "",
+  };
+  const [datePreset, setDatePreset] = useState<string>(initialPreset);
+  const [startTs, setStartTs] = useState<string>(initialRange.start);
+  const [endTs, setEndTs] = useState<string>(initialRange.end);
+
+  // Selecting a preset overwrites both date inputs; "custom" leaves
+  // them alone so the user can type freely.
+  const onPresetChange = (next: string) => {
+    setDatePreset(next);
+    if (next === "custom") return;
+    const r = computeRange(next);
+    if (r) {
+      setStartTs(r.start);
+      setEndTs(r.end);
+    }
+  };
+  // When the user manually edits either date input, flip the preset
+  // back to "custom" so the active pill matches reality.
+  const onManualDateEdit = (which: "start" | "end", v: string) => {
+    if (which === "start") setStartTs(v);
+    else setEndTs(v);
+    if (datePreset !== "custom") setDatePreset("custom");
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -138,8 +192,8 @@ export default function NewBacktestPage() {
           | "5m"
           | "1h"
           | "1d",
-        start: new Date(String(fd.get("start"))).toISOString(),
-        end: new Date(String(fd.get("end"))).toISOString(),
+        start: new Date(startTs).toISOString(),
+        end: new Date(endTs).toISOString(),
         initialCapital: Number(initialCapital || "10000"),
         commissionRate: Number(commissionRate || "0.0004"),
         slippageBps: Number(slippageBps || "1"),
@@ -209,21 +263,38 @@ export default function NewBacktestPage() {
           </Select>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Input
-            name="start"
-            type="datetime-local"
-            label="开始时间"
-            defaultValue={presetStart ? fmtDtLocal(presetStart) : undefined}
-            required
-          />
-          <Input
-            name="end"
-            type="datetime-local"
-            label="结束时间"
-            defaultValue={presetEnd ? fmtDtLocal(presetEnd) : undefined}
-            required
-          />
+        <div className="space-y-2">
+          <RadioGroup
+            label="时间范围"
+            orientation="horizontal"
+            size="sm"
+            value={datePreset}
+            onValueChange={onPresetChange}
+          >
+            <Radio value="7d">7 天</Radio>
+            <Radio value="30d">30 天</Radio>
+            <Radio value="90d">90 天</Radio>
+            <Radio value="ytd">本年</Radio>
+            <Radio value="custom">自定义</Radio>
+          </RadioGroup>
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              name="start"
+              type="datetime-local"
+              label="开始时间"
+              value={startTs}
+              onValueChange={(v) => onManualDateEdit("start", v)}
+              required
+            />
+            <Input
+              name="end"
+              type="datetime-local"
+              label="结束时间"
+              value={endTs}
+              onValueChange={(v) => onManualDateEdit("end", v)}
+              required
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-3">

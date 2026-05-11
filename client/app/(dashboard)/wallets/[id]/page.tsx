@@ -10,6 +10,7 @@ import {
   getWalletBalance,
   getWalletPositions,
 } from "@/data/api-client";
+import { useAdminKey } from "@/data/use-admin-key";
 import {
   TypeWallet,
   TypeWalletBalance,
@@ -19,6 +20,7 @@ import {
 export default function WalletDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
+  const adminKey = useAdminKey();
   const [wallet, setWallet] = useState<TypeWallet | null>(null);
   const [balance, setBalance] = useState<TypeWalletBalance | null>(null);
   const [positions, setPositions] = useState<TypeWalletPosition[]>([]);
@@ -47,7 +49,6 @@ export default function WalletDetailPage() {
 
   const approve = async () => {
     setApproveStatus(null);
-    const adminKey = window.localStorage.getItem("finance_next_admin_key");
     if (!adminKey) {
       setApproveStatus("localStorage 中未设置 admin key");
       return;

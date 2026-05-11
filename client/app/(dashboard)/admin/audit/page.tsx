@@ -3,24 +3,18 @@
 import { useEffect, useState } from "react";
 
 import { TypeAuditEntry, listAudit } from "@/data/api-client";
-
-const ADMIN_KEY_STORAGE = "finance_next_admin_key";
+import { useAdminKey } from "@/data/use-admin-key";
 
 // Phase 7 audit viewer. Renders the most recent rows from /admin/audit
 // with simple filter controls. The admin key is read from localStorage
 // (set on the /admin page); without it, every request 401s and we show
 // an empty list.
 export default function AuditPage() {
-  const [adminKey, setAdminKey] = useState("");
+  const adminKey = useAdminKey();
   const [entries, setEntries] = useState<TypeAuditEntry[]>([]);
   const [actor, setActor] = useState("");
   const [resourceType, setResourceType] = useState("");
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAdminKey(window.localStorage.getItem(ADMIN_KEY_STORAGE) ?? "");
-  }, []);
 
   const refresh = async () => {
     if (!adminKey) return;

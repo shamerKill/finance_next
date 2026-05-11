@@ -6,10 +6,15 @@
 
 import Link from "next/link";
 import { FC } from "react";
+
+import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 import { getStrategies } from "@/data/api-client";
 import { TypeOption } from "@/data/type";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "策略" };
 
 const PageStrategies: FC = async () => {
   let strategies: TypeOption[] = [];
@@ -21,19 +26,35 @@ const PageStrategies: FC = async () => {
   }
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">策略</h1>
-        <Link
-          href="/option"
-          className="rounded bg-primary px-3 py-1.5 text-sm text-white"
-        >
-          新建策略
-        </Link>
-      </div>
+      <PageHeader
+        title="策略"
+        action={
+          <Link
+            href="/option"
+            className="rounded bg-primary px-3 py-1.5 text-sm text-white"
+          >
+            新建策略
+          </Link>
+        }
+      />
       {error && (
         <div className="rounded border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700">
           加载策略失败：{error}
         </div>
+      )}
+      {strategies.length === 0 && !error && (
+        <EmptyState
+          title="暂无策略"
+          description="点击右上角“新建策略”创建第一个策略配置。"
+          action={
+            <Link
+              href="/option"
+              className="rounded bg-primary px-3 py-1.5 text-sm text-white"
+            >
+              新建策略
+            </Link>
+          }
+        />
       )}
       <table className="w-full text-sm">
         <thead className="text-left text-default-500">

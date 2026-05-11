@@ -5,9 +5,12 @@
 import { OhlcvChart } from "@/app/(dashboard)/markets/chart";
 import { ApiErrorView } from "@/components/api-error";
 import { IngestButton } from "@/components/ingest-button";
+import { PageHeader } from "@/components/page-header";
 import { getEquitiesOhlcv, type TypeOhlcvBar } from "@/data/api-client";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "股票数据" };
 
 const DEFAULT_EXCHANGE = "nasdaq";
 const DEFAULT_SYMBOL = "AAPL.nasdaq";
@@ -31,18 +34,16 @@ export default async function EquitiesPage() {
   }
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">股票 — {DEFAULT_SYMBOL}</h1>
-          <p className="text-sm text-default-500">
-            {DEFAULT_EXCHANGE.toUpperCase()} · {DEFAULT_TIMEFRAME} · 近 90 天
-          </p>
-        </div>
-        <IngestButton
-          path="v1/admin/ingest/equities"
-          body={{ exchange: DEFAULT_EXCHANGE, symbol: DEFAULT_SYMBOL }}
-        />
-      </header>
+      <PageHeader
+        title={`股票 — ${DEFAULT_SYMBOL}`}
+        subtitle={`${DEFAULT_EXCHANGE.toUpperCase()} · ${DEFAULT_TIMEFRAME} · 近 90 天`}
+        action={
+          <IngestButton
+            path="v1/admin/ingest/equities"
+            body={{ exchange: DEFAULT_EXCHANGE, symbol: DEFAULT_SYMBOL }}
+          />
+        }
+      />
       <ApiErrorView error={error} />
       <OhlcvChart bars={bars} />
     </div>

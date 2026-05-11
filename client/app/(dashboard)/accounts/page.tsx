@@ -1,8 +1,13 @@
 import Link from "next/link";
+
+import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 import { listAccounts } from "@/data/api-client";
 import { TypeAccount } from "@/data/type";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "账户" };
 
 // Accounts list page. Server component fetches from the gateway directly so
 // the first paint is filled in.
@@ -17,15 +22,17 @@ export default async function AccountsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">账户</h1>
-        <Link
-          href="/accounts/new"
-          className="px-3 py-2 rounded bg-primary text-white text-sm"
-        >
-          + 添加账户
-        </Link>
-      </div>
+      <PageHeader
+        title="账户"
+        action={
+          <Link
+            href="/accounts/new"
+            className="px-3 py-2 rounded bg-primary text-white text-sm"
+          >
+            + 添加账户
+          </Link>
+        }
+      />
 
       {error && (
         <div className="rounded border border-danger p-3 text-sm text-danger mb-4">
@@ -34,9 +41,18 @@ export default async function AccountsPage() {
       )}
 
       {accounts.length === 0 && !error && (
-        <p className="text-default-500 text-sm">
-          暂无账户。请先添加一个 Binance 只读密钥开始使用。
-        </p>
+        <EmptyState
+          title="暂无账户"
+          description="请先添加一个 Binance 只读密钥开始使用。"
+          action={
+            <Link
+              href="/accounts/new"
+              className="px-3 py-2 rounded bg-primary text-white text-sm"
+            >
+              + 添加账户
+            </Link>
+          }
+        />
       )}
 
       <div className="grid gap-3">

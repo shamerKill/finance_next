@@ -5,10 +5,13 @@
 
 import { ApiErrorView } from "@/components/api-error";
 import { IngestButton } from "@/components/ingest-button";
+import { PageHeader } from "@/components/page-header";
 import { getMacroIndicators } from "@/data/api-client";
 import type { TypeMacroPoint } from "@/data/type";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "宏观指标" };
 
 const DEFAULT_SOURCE = "fred";
 const DEFAULT_CODE = "CPIAUCSL";
@@ -25,20 +28,16 @@ export default async function MacroPage() {
   const rows = [...points].reverse().slice(0, 200);
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">
-            宏观 — {DEFAULT_SOURCE}:{DEFAULT_CODE}
-          </h1>
-          <p className="text-sm text-default-500">
-            显示最近 {rows.length} 条观测数据。
-          </p>
-        </div>
-        <IngestButton
-          path="v1/admin/ingest/macro"
-          body={{ source: DEFAULT_SOURCE, code: DEFAULT_CODE }}
-        />
-      </header>
+      <PageHeader
+        title={`宏观 — ${DEFAULT_SOURCE}:${DEFAULT_CODE}`}
+        subtitle={`显示最近 ${rows.length} 条观测数据。`}
+        action={
+          <IngestButton
+            path="v1/admin/ingest/macro"
+            body={{ source: DEFAULT_SOURCE, code: DEFAULT_CODE }}
+          />
+        }
+      />
       <ApiErrorView error={error} />
       <table className="text-sm border border-default-200">
         <thead className="bg-default-100">

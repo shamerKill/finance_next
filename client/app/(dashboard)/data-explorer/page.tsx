@@ -4,6 +4,10 @@
 
 import Link from "next/link";
 
+import { PageHeader } from "@/components/page-header";
+
+export const metadata = { title: "数据浏览" };
+
 const ENTRIES: Array<{
   href: string;
   title: string;
@@ -39,12 +43,10 @@ const ENTRIES: Array<{
 export default function DataExplorerLanding() {
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-2xl font-semibold">数据浏览</h1>
-        <p className="text-sm text-default-500">
-          浏览所有 Phase 8 数据源。只读 — 持有 admin-key 的用户可在管理页面额外触发临时数据采集。
-        </p>
-      </header>
+      <PageHeader
+        title="数据浏览"
+        subtitle="浏览所有 Phase 8 数据源。只读 — 持有 admin-key 的用户可在管理页面额外触发临时数据采集。"
+      />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {ENTRIES.map((e) => (
           <Link

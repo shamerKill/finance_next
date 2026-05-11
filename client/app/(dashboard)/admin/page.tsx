@@ -14,6 +14,7 @@ import {
   resumeTrading,
   setPortfolioLimits,
 } from "@/data/api-client";
+import { useAdminKey } from "@/data/use-admin-key";
 
 const ADMIN_KEY_STORAGE = "finance_next_admin_key";
 
@@ -26,6 +27,10 @@ const USER_ID_STORAGE = "finance_next_user_id";
 // has three sections: kill switch toggle, portfolio limits editor, and
 // a link to the audit viewer.
 export default function AdminPage() {
+  // Persisted key from the shared hook (also listens to cross-tab updates).
+  const persistedKey = useAdminKey();
+  // Local draft tied to the password input; initialised from the persisted
+  // value once hydration completes.
   const [adminKey, setAdminKey] = useState("");
   const [userId, setUserId] = useState("");
   const [state, setState] = useState<TypeSystemState | null>(null);
@@ -37,17 +42,19 @@ export default function AdminPage() {
     "unknown" | "verifying" | "ok" | "bad"
   >("unknown");
 
-  // Load the admin key + userId from localStorage on first paint. We do
-  // this inside an effect rather than via lazy initializer because
-  // `window.localStorage` is unavailable during SSR (this is a client
-  // component but Next still pre-renders on the server). The setState
-  // calls fire exactly once after hydration; the cascading-render lint
-  // rule is acknowledged via the inline disables.
+  // Sync the draft input from the persisted hook value once on mount /
+  // whenever another tab updates the key. We deliberately do not
+  // overwrite mid-edit when the user is typing — the dependency is the
+  // hook's value, which only changes on real localStorage events.
   useEffect(() => {
-    const k = window.localStorage.getItem(ADMIN_KEY_STORAGE) ?? "";
-    const u = window.localStorage.getItem(USER_ID_STORAGE) ?? "";
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAdminKey(k);
+    setAdminKey(persistedKey);
+  }, [persistedKey]);
+
+  // userId comes from a separate storage slot and isn't covered by the
+  // admin-key hook; keep the original effect-based load.
+  useEffect(() => {
+    const u = window.localStorage.getItem(USER_ID_STORAGE) ?? "";
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setUserId(u);
   }, []);
@@ -251,11 +258,21 @@ export default function AdminPage() {
         </p>
         {limits && (
           <div className="grid grid-cols-2 gap-3">
+            {/*
+              Explicit min/step + no max. A previous iteration of this
+              page accidentally clamped the inputs to a 0 ceiling
+              (aria-valuemax="0"), which silently rejected every edit. We
+              now declare bounds explicitly so the ARIA hints match the
+              actual server constraint ("0 = no cap, any positive number
+              is valid").
+            */}
             <label className="text-sm">
               最大未平仓名义金额（USD）
               <input
                 className="border rounded px-2 py-1 w-full"
                 type="number"
+                min={0}
+                step={100}
                 value={limits.maxOpenNotionalUsd}
                 onChange={(e) =>
                   setLimits({
@@ -270,6 +287,8 @@ export default function AdminPage() {
               <input
                 className="border rounded px-2 py-1 w-full"
                 type="number"
+                min={0}
+                step={1}
                 value={limits.maxOpenPositionsCount}
                 onChange={(e) =>
                   setLimits({
@@ -284,6 +303,8 @@ export default function AdminPage() {
               <input
                 className="border rounded px-2 py-1 w-full"
                 type="number"
+                min={0}
+                step={100}
                 value={limits.maxDailyLossUsd}
                 onChange={(e) =>
                   setLimits({

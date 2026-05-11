@@ -17,6 +17,8 @@ import RecommendationActions from "./actions";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "推荐详情" };
+
 const fmt = (v: unknown): string => {
   if (v === null || v === undefined) return "—";
   if (typeof v === "number") return v.toString();

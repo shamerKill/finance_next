@@ -6,7 +6,12 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "我的下单",
+  // Default + template lets individual pages export a short title (e.g.
+  // "账户") and Next.js will compose it as "账户 · finance_next".
+  title: {
+    default: "finance_next",
+    template: "%s · finance_next",
+  },
   description: "赚钱",
 };
 

@@ -5,6 +5,7 @@
 
 import Link from "next/link";
 
+import { PageHeader } from "@/components/page-header";
 import { listRecommendations } from "@/data/api-client";
 import type {
   TypeRecommendation,
@@ -12,6 +13,8 @@ import type {
 } from "@/data/type";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "AI 推荐" };
 
 type StatusBadge = { label: string; color: string };
 const statusBadge = (s: TypeRecommendationStatus): StatusBadge => {
@@ -54,12 +57,10 @@ export default async function RecommendationsListPage({ searchParams }: PageProp
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">AI 推荐</h1>
-        <p className="text-sm text-default-500">
-          AI 生成的策略参数推荐。所有变更均需人工显式批准——不存在自动应用。
-        </p>
-      </header>
+      <PageHeader
+        title="AI 推荐"
+        subtitle="AI 生成的策略参数推荐。所有变更均需人工显式批准——不存在自动应用。"
+      />
 
       <nav className="flex gap-2 text-sm">
         {filters.map((f) => (

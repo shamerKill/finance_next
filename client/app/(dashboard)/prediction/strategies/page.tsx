@@ -1,9 +1,13 @@
 import Link from "next/link";
 
+import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 import { listPredictionStrategies } from "@/data/api-client";
 import { TypePredictionStrategy } from "@/data/type";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "预测策略" };
 
 export default async function PredictionStrategiesPage() {
   let strategies: TypePredictionStrategy[] = [];
@@ -15,15 +19,17 @@ export default async function PredictionStrategiesPage() {
   }
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-semibold">预测策略</h1>
-        <Link
-          href="/prediction/strategies/new"
-          className="px-3 py-2 rounded bg-primary text-white text-sm"
-        >
-          + 新建
-        </Link>
-      </div>
+      <PageHeader
+        title="预测策略"
+        action={
+          <Link
+            href="/prediction/strategies/new"
+            className="px-3 py-2 rounded bg-primary text-white text-sm"
+          >
+            + 新建
+          </Link>
+        }
+      />
 
       {error && (
         <div className="rounded border border-danger p-3 text-sm text-danger mb-4">
@@ -31,7 +37,18 @@ export default async function PredictionStrategiesPage() {
         </div>
       )}
       {strategies.length === 0 && !error && (
-        <p className="text-default-500 text-sm">暂无策略。</p>
+        <EmptyState
+          title="暂无策略"
+          description="新建一个预测策略以开始监控 Polymarket 市场。"
+          action={
+            <Link
+              href="/prediction/strategies/new"
+              className="px-3 py-2 rounded bg-primary text-white text-sm"
+            >
+              + 新建
+            </Link>
+          }
+        />
       )}
 
       <div className="grid gap-3">

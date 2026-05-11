@@ -4,9 +4,12 @@
 import { OhlcvChart } from "@/app/(dashboard)/markets/chart";
 import { ApiErrorView } from "@/components/api-error";
 import { IngestButton } from "@/components/ingest-button";
+import { PageHeader } from "@/components/page-header";
 import { getFuturesOhlcv, type TypeOhlcvBar } from "@/data/api-client";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "期货数据" };
 
 const DEFAULT_EXCHANGE = "shfe";
 const DEFAULT_CONTRACT = "cu2412";
@@ -30,18 +33,16 @@ export default async function FuturesPage() {
   }
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">期货 — {DEFAULT_CONTRACT}</h1>
-          <p className="text-sm text-default-500">
-            {DEFAULT_EXCHANGE.toUpperCase()} · {DEFAULT_TIMEFRAME} · 近 180 天
-          </p>
-        </div>
-        <IngestButton
-          path="v1/admin/ingest/futures"
-          body={{ exchange: DEFAULT_EXCHANGE, contract: DEFAULT_CONTRACT }}
-        />
-      </header>
+      <PageHeader
+        title={`期货 — ${DEFAULT_CONTRACT}`}
+        subtitle={`${DEFAULT_EXCHANGE.toUpperCase()} · ${DEFAULT_TIMEFRAME} · 近 180 天`}
+        action={
+          <IngestButton
+            path="v1/admin/ingest/futures"
+            body={{ exchange: DEFAULT_EXCHANGE, contract: DEFAULT_CONTRACT }}
+          />
+        }
+      />
       <ApiErrorView error={error} />
       <OhlcvChart bars={bars} />
     </div>

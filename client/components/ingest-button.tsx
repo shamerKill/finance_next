@@ -2,11 +2,11 @@
 
 import { Button, Tooltip } from "@heroui/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ApiError } from "@/data/api-client";
+import { useAdminKey } from "@/data/use-admin-key";
 
-const ADMIN_KEY_STORAGE = "finance_next_admin_key";
 const baseUrl =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
 
@@ -31,18 +31,13 @@ export function IngestButton({
   refresh = true,
 }: IngestButtonProps) {
   const router = useRouter();
-  const [adminKey, setAdminKey] = useState<string | null>(null);
+  const adminKey = useAdminKey();
   const [status, setStatus] = useState<
     | { kind: "idle" }
     | { kind: "busy" }
     | { kind: "ok"; message: string }
     | { kind: "err"; message: string }
   >({ kind: "idle" });
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAdminKey(window.localStorage.getItem(ADMIN_KEY_STORAGE));
-  }, []);
 
   const onClick = async () => {
     if (!adminKey) return;

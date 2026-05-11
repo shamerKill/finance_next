@@ -4,8 +4,11 @@
 
 import { ApiErrorView } from "@/components/api-error";
 import { IngestButton } from "@/components/ingest-button";
+import { PageHeader } from "@/components/page-header";
 import { getNews } from "@/data/api-client";
 import type { TypeNewsItem } from "@/data/type";
+
+export const metadata = { title: "新闻与情绪" };
 
 export const dynamic = "force-dynamic";
 
@@ -25,16 +28,11 @@ export default async function NewsPage() {
   }
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">新闻与情绪</h1>
-          <p className="text-sm text-default-500">
-            来自 CryptoPanic / AKShare 财联社 / RSS 的最新 {items.length} 条。
-            情绪为占位词典打分 — 不构成投资建议。
-          </p>
-        </div>
-        <IngestButton path="v1/admin/ingest/news" body={{ limit: 100 }} />
-      </header>
+      <PageHeader
+        title="新闻与情绪"
+        subtitle={`来自 CryptoPanic / AKShare 财联社 / RSS 的最新 ${items.length} 条。情绪为占位词典打分 — 不构成投资建议。`}
+        action={<IngestButton path="v1/admin/ingest/news" body={{ limit: 100 }} />}
+      />
       <ApiErrorView error={error} />
       <ul className="flex flex-col gap-2">
         {items.map((n) => (

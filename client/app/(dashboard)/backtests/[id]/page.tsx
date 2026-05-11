@@ -16,6 +16,8 @@ import { LiveProgress } from "./live-progress";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "回测详情" };
+
 const stateLabel = (s: number) => {
   switch (s) {
     case 1: return { label: "等待中", color: "bg-default-100 text-default-700" };

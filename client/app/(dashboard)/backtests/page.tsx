@@ -6,10 +6,14 @@
 
 import Link from "next/link";
 
+import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 import { listBacktests } from "@/data/api-client";
 import type { TypeBacktest } from "@/data/type";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "回测" };
 
 const stateLabel = (s: number): { label: string; color: string } => {
   switch (s) {
@@ -40,20 +44,18 @@ export default async function BacktestsListPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">回测</h1>
-          <p className="text-sm text-default-500">
-            向量化策略运行，持久化到 Mongo + TimescaleDB
-          </p>
-        </div>
-        <Link
-          href="/backtests/new"
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600"
-        >
-          新建回测
-        </Link>
-      </header>
+      <PageHeader
+        title="回测"
+        subtitle="向量化策略运行，持久化到 Mongo + TimescaleDB"
+        action={
+          <Link
+            href="/backtests/new"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600"
+          >
+            新建回测
+          </Link>
+        }
+      />
 
       {error ? (
         <div className="rounded border border-warning-200 bg-warning-50 p-3 text-sm">
@@ -62,9 +64,18 @@ export default async function BacktestsListPage() {
       ) : null}
 
       {runs.length === 0 && !error ? (
-        <div className="text-sm text-default-500">
-          暂无回测。点击 <em>新建回测</em> 运行一次。
-        </div>
+        <EmptyState
+          title="暂无回测"
+          description="点击右上角“新建回测”运行第一次。"
+          action={
+            <Link
+              href="/backtests/new"
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600"
+            >
+              新建回测
+            </Link>
+          }
+        />
       ) : null}
 
       <div className="overflow-x-auto">

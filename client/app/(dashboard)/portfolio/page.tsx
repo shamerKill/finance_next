@@ -5,10 +5,13 @@
 // price provider on the gateway is best-effort (Timescale latest close
 // of `<asset>USDT` on binance) — anything missing surfaces in `notes`.
 
+import { PageHeader } from "@/components/page-header";
 import { getPortfolioSummary } from "@/data/api-client";
 import type { TypePortfolioSummary } from "@/data/type";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "投资组合" };
 
 function formatUsd(v: number): string {
   return v.toLocaleString("en-US", {
@@ -29,13 +32,15 @@ export default async function PortfolioPage() {
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold">投资组合</h1>
-        <p className="text-sm text-default-500 mt-1">
-          跨交易所资产快照。USD 估值取自 Timescale 中{" "}
-          <code>&lt;asset&gt;USDT</code> 的最新收盘价；缺失行情按 0 计入总值。
-        </p>
-      </header>
+      <PageHeader
+        title="投资组合"
+        subtitle={
+          <>
+            跨交易所资产快照。USD 估值取自 Timescale 中{" "}
+            <code>&lt;asset&gt;USDT</code> 的最新收盘价；缺失行情按 0 计入总值。
+          </>
+        }
+      />
 
       {error && (
         <div className="rounded border border-danger p-3 text-sm text-danger">

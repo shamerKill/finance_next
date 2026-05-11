@@ -5,6 +5,8 @@ import RefreshButton from "./refresh-button";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "账户详情" };
+
 type PageProps = { params: Promise<{ id: string }> };
 
 // Tri-state fetch result. `data` may be empty on success (account has no

@@ -10,6 +10,8 @@ import { OhlcvChart } from "./chart";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "行情" };
+
 const DEFAULT_EXCHANGE = "binance";
 const DEFAULT_SYMBOL = "BTCUSDT";
 const DEFAULT_TIMEFRAME = "1h";

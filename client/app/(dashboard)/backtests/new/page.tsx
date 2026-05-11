@@ -52,6 +52,12 @@ export default function NewBacktestPage() {
   const [paramsText, setParamsText] = useState<string>(defaultParamsFromOption(null));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Decimal inputs kept as strings so we don't surface float-drift like
+  // 0.0004 → 0.00039999998989515007 from the browser number-input
+  // step-button arithmetic. Parsed at submit time.
+  const [initialCapital, setInitialCapital] = useState("10000");
+  const [commissionRate, setCommissionRate] = useState("0.0004");
+  const [slippageBps, setSlippageBps] = useState("1");
 
   useEffect(() => {
     let cancelled = false;
@@ -94,9 +100,9 @@ export default function NewBacktestPage() {
           | "1d",
         start: new Date(String(fd.get("start"))).toISOString(),
         end: new Date(String(fd.get("end"))).toISOString(),
-        initialCapital: Number(fd.get("initialCapital") ?? 10000),
-        commissionRate: Number(fd.get("commissionRate") ?? 0.0004),
-        slippageBps: Number(fd.get("slippageBps") ?? 1),
+        initialCapital: Number(initialCapital || "10000"),
+        commissionRate: Number(commissionRate || "0.0004"),
+        slippageBps: Number(slippageBps || "1"),
       });
       router.push(`/backtests/${handle.runId}`);
     } catch (err) {
@@ -156,27 +162,27 @@ export default function NewBacktestPage() {
         <div className="grid grid-cols-3 gap-3">
           <Input
             name="initialCapital"
-            type="number"
+            type="text"
+            inputMode="decimal"
             label="初始资金"
-            defaultValue="10000"
-            min="0"
-            step="100"
+            value={initialCapital}
+            onValueChange={setInitialCapital}
           />
           <Input
             name="commissionRate"
-            type="number"
+            type="text"
+            inputMode="decimal"
             label="手续费率"
-            defaultValue="0.0004"
-            min="0"
-            step="0.0001"
+            value={commissionRate}
+            onValueChange={setCommissionRate}
           />
           <Input
             name="slippageBps"
-            type="number"
+            type="text"
+            inputMode="decimal"
             label="滑点（bps）"
-            defaultValue="1"
-            min="0"
-            step="1"
+            value={slippageBps}
+            onValueChange={setSlippageBps}
           />
         </div>
 

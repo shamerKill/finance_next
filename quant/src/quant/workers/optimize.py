@@ -26,6 +26,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from quant.ai._protocol import AIClient
 from quant.ai.claude_client import ClaudeClient, MissingAPIKeyError
 from quant.ai.cost_ledger import BudgetGate
 from quant.ai.optimizer import OptimizationResult, run_study
@@ -157,7 +158,7 @@ async def run_optimization_for_strategy(
     mongo_db: Any,
     redis_client: Any | None,
     ohlcv_loader: Any,
-    claude_client: ClaudeClient | None = None,
+    claude_client: AIClient | None = None,
     n_trials_override: int | None = None,
 ) -> OptimizationResult:
     """End-to-end Phase 6 cycle for one strategy.
@@ -483,13 +484,38 @@ async def daily_optimize_cron(ctx: dict[str, Any]) -> dict[str, Any]:
     return {"enqueued_count": len(enqueued), "strategy_ids": enqueued}
 
 
-def _build_default_claude_client() -> ClaudeClient | None:
-    """Return a configured client when ``ANTHROPIC_API_KEY`` is set, else None.
+def _build_default_ai_client() -> AIClient | None:
+    """Return a configured AI client based on ``AI_MODEL_FAMILY``.
 
-    Returning ``None`` lets the optimizer skip every Claude call (default
+    * ``AI_MODEL_FAMILY=openai`` (or ``gpt``) — build a
+      :class:`quant.ai.gpt_client.GPTClient` using ``OPENAI_API_KEY`` (or
+      ``ANTHROPIC_API_KEY`` fallback — the proxy uses one credential).
+    * Anything else (default) — build a :class:`ClaudeClient` using
+      ``ANTHROPIC_API_KEY``.
+
+    Returning ``None`` lets the optimizer skip every AI call (default
     search space + fallback rationale) — useful in dev environments and
-    when the budget gate would refuse anyway.
+    when the budget gate would refuse anyway. We return ``None`` rather
+    than constructing a client that will crash on first call: a missing
+    key is a config issue, not a bug, and the optimizer's fallback is
+    designed for exactly this case.
     """
+    family = os.getenv("AI_MODEL_FAMILY", "claude").strip().lower()
+    if family in ("openai", "gpt"):
+        from quant.ai.gpt_client import GPTClient
+
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            log.info(
+                "AI_MODEL_FAMILY=%s but neither OPENAI_API_KEY nor "
+                "ANTHROPIC_API_KEY is set; running optimization with default "
+                "search space (no AI calls)",
+                family,
+            )
+            return None
+        return GPTClient()
+
+    # Default: Anthropic Claude path.
     if not os.getenv("ANTHROPIC_API_KEY"):
         log.info(
             "ANTHROPIC_API_KEY unset; running optimization with default search "
@@ -497,3 +523,7 @@ def _build_default_claude_client() -> ClaudeClient | None:
         )
         return None
     return ClaudeClient()
+
+
+# Backwards-compatible alias — existing imports keep working.
+_build_default_claude_client = _build_default_ai_client

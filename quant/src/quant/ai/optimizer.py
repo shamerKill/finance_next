@@ -39,13 +39,13 @@ from typing import Any
 
 import pandas as pd
 
+from quant.ai._protocol import AIClient
 from quant.ai.claude_client import (
     HAIKU_MODEL,
     ROLE_DEFINE,
     ROLE_RATIONALE,
     ROLE_REFINE,
     SONNET_MODEL,
-    ClaudeClient,
     ClaudeUsage,
     compute_usd_cost,
 )
@@ -159,7 +159,7 @@ async def run_study(
     current_params: dict[str, Any],
     base_request: dict[str, Any],
     ohlcv_loader: OhlcvLoader,
-    claude_client: ClaudeClient | None,
+    claude_client: AIClient | None,
     budget_gate: BudgetGate,
     n_trials: int | None = None,
     timeout_seconds: int | None = None,
@@ -467,7 +467,7 @@ def _study_context_text(strategy_kind: str, current_params: dict[str, Any]) -> s
 
 async def _try_define_search_space(
     *,
-    claude_client: ClaudeClient | None,
+    claude_client: AIClient | None,
     budget_gate: BudgetGate,
     strategy_kind: str,
     current_params: dict[str, Any],
@@ -534,7 +534,7 @@ async def _try_define_search_space(
 
 async def _try_refine(
     *,
-    claude_client: ClaudeClient,
+    claude_client: AIClient,
     budget_gate: BudgetGate,
     search_space: dict[str, Any],
     top_trials_summary: list[dict[str, Any]],
@@ -568,7 +568,7 @@ async def _try_refine(
 
 async def _try_write_rationale(
     *,
-    claude_client: ClaudeClient | None,
+    claude_client: AIClient | None,
     budget_gate: BudgetGate,
     strategy_kind: str,
     current_params: dict[str, Any],

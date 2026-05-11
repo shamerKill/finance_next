@@ -32,6 +32,10 @@ dependencies = [
     # `anthropic` is only used by quant/ai/claude_client.py at study
     # boundaries; `optuna` powers the per-trial TPE sampler.
     "anthropic>=0.40",
+    # OpenAI SDK for the alternate `gpt_client.py` path (Responses API).
+    # Selected at runtime via AI_MODEL_FAMILY=openai env. 1.50+ is required
+    # for the Responses streaming interface used here.
+    "openai>=1.50",
     "optuna>=4.0",
     # Phase 8: extended data sources. yfinance pulls intl equities;
     # feedparser drives the generic RSS news aggregator. Everything

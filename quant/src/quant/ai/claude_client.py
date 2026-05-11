@@ -20,12 +20,12 @@ the user.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from dataclasses import dataclass
 from typing import Any
 
+from quant.ai._protocol import _parse_search_space_json
 from quant.ai.prompts import (
     DEFINE_SEARCH_SPACE_SYSTEM,
     FINAL_RATIONALE_SYSTEM,
@@ -280,32 +280,8 @@ class ClaudeClient:
         return text.strip(), usage
 
 
-def _parse_search_space_json(text: str) -> dict[str, Any]:
-    """Be lenient: strip code fences and trailing prose if the model
-    decides to add them despite the system prompt asking for JSON only.
-    Returns the parsed object or raises ``ValueError``.
-    """
-    s = text.strip()
-    # Strip ```json … ``` fences if present.
-    if s.startswith("```"):
-        # drop first fence line + closing fence
-        lines = s.splitlines()
-        # find first '{' line and last '}' line
-        try:
-            start = next(i for i, line in enumerate(lines) if line.lstrip().startswith("{"))
-        except StopIteration:
-            raise ValueError("no JSON object found in response") from None
-        # find last '}' from end
-        end = len(lines) - 1
-        while end > start and not lines[end].rstrip().endswith("}"):
-            end -= 1
-        s = "\n".join(lines[start : end + 1])
-    try:
-        obj = json.loads(s)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"failed to parse Claude JSON output: {exc}") from exc
-    if not isinstance(obj, dict) or "params" not in obj:
-        raise ValueError("response missing required 'params' key")
-    if not isinstance(obj["params"], list):
-        raise ValueError("'params' must be a list")
-    return obj
+# ``_parse_search_space_json`` now lives in :mod:`quant.ai._protocol` so the
+# GPT client can reuse it without importing from this module. The name is
+# re-exported above (``from quant.ai._protocol import _parse_search_space_json``)
+# so existing callers / tests that import it from ``claude_client`` still
+# resolve correctly.

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { ApiError } from "@/data/api-client";
 
 // Friendly Chinese rendering for API errors. Accepts any value (string,
@@ -26,6 +28,14 @@ export function ApiErrorView({ error }: { error: unknown }) {
   return (
     <div className="rounded border border-danger-200 bg-danger-50 text-danger px-3 py-2 text-sm">
       {text}
+      {(status === 401 || status === 403) && (
+        <>
+          {" "}
+          <Link href="/admin" className="underline font-medium hover:opacity-80">
+            前往设置 →
+          </Link>
+        </>
+      )}
     </div>
   );
 }
@@ -34,7 +44,10 @@ function friendlyMessage(status: number, raw: string): string {
   switch (status) {
     case 401:
     case 403:
-      return "无权访问 — 请确认管理员密钥已配置。";
+      // Covers three real cases: key never set, key set but wrong, gateway
+      // restarted with a different ADMIN_KEY. The /admin link points the
+      // user to where they can update / verify the key.
+      return "无权访问 — 管理员密钥缺失或不正确。";
     case 404:
       return "资源不存在";
     case 400:

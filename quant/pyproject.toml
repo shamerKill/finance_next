@@ -91,6 +91,13 @@ filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::PendingDeprecationWarning",
 ]
+# Custom markers. `integration` tests hit a running gateway+quant+stores
+# stack and are excluded from the default `uv run pytest` run via the
+# addopts below; opt in with `uv run pytest -m integration`.
+markers = [
+    "integration: end-to-end tests requiring a running gateway+quant stack",
+]
+addopts = "-m 'not integration'"
 
 [tool.ruff]
 line-length = 100

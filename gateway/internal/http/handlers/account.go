@@ -103,12 +103,12 @@ func (h *AccountHandler) create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	if !dto.Exchange.IsValid() {
-		return echo.NewHTTPError(http.StatusBadRequest, "unknown exchange")
+		return echo.NewHTTPError(http.StatusBadRequest, "不支持的交易所")
 	}
 	// OKX-only: passphrase is required. validator/v10's required_if doesn't
 	// compose cleanly with our enum type so we check by hand.
 	if dto.Exchange == domain.ExchangeOKX && dto.Passphrase == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "passphrase required for OKX accounts")
+		return echo.NewHTTPError(http.StatusBadRequest, "OKX 账户必须填写 passphrase")
 	}
 
 	// Build a transient client to probe permissions BEFORE persisting anything.
@@ -120,11 +120,15 @@ func (h *AccountHandler) create(c echo.Context) error {
 	defer cancel()
 	perms, err := cli.ProbePermissions(probeCtx)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadGateway, "credential probe failed: "+err.Error())
+		// Probe failures are almost always client-side: wrong key, wrong secret,
+		// IP not whitelisted, missing permission. Map to 400 so the UI shows a
+		// "请求参数错误" hint rather than the misleading 502 ("服务器错误").
+		// Genuine upstream outages will resurface via /healthz checks anyway.
+		return echo.NewHTTPError(http.StatusBadRequest, "凭据校验失败："+err.Error())
 	}
 	if perms.CanWithdraw {
 		// Hard rejection. Phase 1 contract: stored keys must be read+trade max.
-		return echo.NewHTTPError(http.StatusForbidden, "API keys with withdraw permission are rejected; revoke withdraw and retry")
+		return echo.NewHTTPError(http.StatusForbidden, "API 密钥包含提现权限 — 出于安全考虑不允许添加。请先在交易所撤销提现权限后重试。")
 	}
 
 	// Envelope-encrypt credentials. One DEK per account; sealed with the

@@ -388,6 +388,8 @@ func (r *OrderRepo) SumRealisedPnlSinceForUser(ctx context.Context, userID strin
 // decodeOrder mirrors decodeOption / decodeAccount. We use a marshal
 // round-trip so legacy fields don't trip strict decoding.
 func decodeOrder(m bson.M) (*domain.OrderLog, error) {
+	rawID := m["_id"]
+	delete(m, "_id")
 	bs, err := bson.Marshal(m)
 	if err != nil {
 		return nil, err
@@ -396,8 +398,11 @@ func decodeOrder(m bson.M) (*domain.OrderLog, error) {
 	if err := bson.Unmarshal(bs, &o); err != nil {
 		return nil, err
 	}
-	if oid, ok := m["_id"].(bson.ObjectID); ok {
-		o.ID = oid.Hex()
+	switch v := rawID.(type) {
+	case bson.ObjectID:
+		o.ID = v.Hex()
+	case string:
+		o.ID = v
 	}
 	return &o, nil
 }

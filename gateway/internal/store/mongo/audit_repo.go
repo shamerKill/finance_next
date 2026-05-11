@@ -123,6 +123,8 @@ func (r *AuditRepo) List(ctx context.Context, q AuditQuery) ([]domain.AuditEntry
 		if err := cur.Decode(&raw); err != nil {
 			return nil, err
 		}
+		rawID := raw["_id"]
+		delete(raw, "_id")
 		bs, err := bson.Marshal(raw)
 		if err != nil {
 			return nil, err
@@ -131,8 +133,11 @@ func (r *AuditRepo) List(ctx context.Context, q AuditQuery) ([]domain.AuditEntry
 		if err := bson.Unmarshal(bs, &e); err != nil {
 			return nil, err
 		}
-		if oid, ok := raw["_id"].(bson.ObjectID); ok {
-			e.ID = oid.Hex()
+		switch v := rawID.(type) {
+		case bson.ObjectID:
+			e.ID = v.Hex()
+		case string:
+			e.ID = v
 		}
 		out = append(out, e)
 	}

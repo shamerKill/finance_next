@@ -13,6 +13,7 @@ patch (via monkeypatch on the underlying ccxt exchange instance).
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -95,7 +96,26 @@ class CcxtSource:
         cls_name = self._CCXT_CLASS[self.exchange]
         cls = getattr(module, cls_name)
         # enableRateLimit=False because OUR token bucket governs throughput.
-        self._client = cls({"enableRateLimit": False})
+        # timeout bumped to 60s because the first call (load_markets →
+        # /fapi/v1/exchangeInfo) downloads a multi-MB catalog that can
+        # exceed ccxt's 10s default over slower links / cold paths.
+        cfg: dict[str, Any] = {"enableRateLimit": False, "timeout": 60_000}
+        # Honor system-level HTTP(S)_PROXY env vars. ccxt's async backend
+        # (aiohttp) doesn't auto-detect these; passing httpsProxy explicitly
+        # is needed in network-restricted environments where direct egress
+        # to api.binance.com / fapi.binance.com is blocked but a local
+        # SOCKS/HTTP tunnel is available.
+        proxy = (
+            os.environ.get("HTTPS_PROXY")
+            or os.environ.get("https_proxy")
+            or os.environ.get("HTTP_PROXY")
+            or os.environ.get("http_proxy")
+        )
+        if proxy:
+            # ccxt rejects setting both http- and https- proxies simultaneously;
+            # since every supported exchange uses HTTPS, only httpsProxy matters.
+            cfg["httpsProxy"] = proxy
+        self._client = cls(cfg)
         self._bucket = rate_registry.get(self.exchange)
 
     async def close(self) -> None:

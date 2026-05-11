@@ -320,10 +320,16 @@ class QuantServicer(quant_pb2_grpc.QuantServicer):  # type: ignore[misc]
             # works without an Arq worker. Caller still gets the handle
             # synchronously; the optimization continues in the background.
             from quant.data import timescale
+            from quant.workers.optimize import _build_default_claude_client
 
             async def _ohlcv_loader(**kwargs: Any) -> Any:
                 return await timescale.fetch_ohlcv(**kwargs)
 
+            # Build the Claude client here too — the Arq path does this
+            # internally but the in-process path used to pass claude_client=None
+            # implicitly, which forced "Claude unavailable" fallback even when
+            # ANTHROPIC_API_KEY was configured.
+            claude_client = _build_default_claude_client()
             asyncio.ensure_future(
                 run_optimization_for_strategy(
                     study_id=study_id,
@@ -331,6 +337,7 @@ class QuantServicer(quant_pb2_grpc.QuantServicer):  # type: ignore[misc]
                     mongo_db=self._mongo,
                     redis_client=self._redis,
                     ohlcv_loader=_ohlcv_loader,
+                    claude_client=claude_client,
                     n_trials_override=n_trials,
                 )
             )

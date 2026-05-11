@@ -170,8 +170,12 @@ func (r *OptionRepo) Delete(ctx context.Context, id string) error {
 // legacy documents with extra fields like __v don't trip strict decoding, and
 // so we can stringify _id ourselves.
 func decodeOption(m bson.M) (*domain.Option, error) {
-	// Re-marshal raw to bytes then decode into the typed struct (drops _id).
-	// Using mongo's bson.Marshal/Unmarshal keeps types coherent.
+	// Same pattern as decodeMeta / decodeAccount: stash _id, drop it from
+	// the map so bson.Unmarshal (which doesn't honor the client-level
+	// ObjectIDAsHexString option) doesn't choke on ObjectID→string, then
+	// patch the hex back in.
+	rawID := m["_id"]
+	delete(m, "_id")
 	bs, err := bson.Marshal(m)
 	if err != nil {
 		return nil, err
@@ -180,8 +184,11 @@ func decodeOption(m bson.M) (*domain.Option, error) {
 	if err := bson.Unmarshal(bs, &o); err != nil {
 		return nil, err
 	}
-	if oid, ok := m["_id"].(bson.ObjectID); ok {
-		o.ID = oid.Hex()
+	switch v := rawID.(type) {
+	case bson.ObjectID:
+		o.ID = v.Hex()
+	case string:
+		o.ID = v
 	}
 	return &o, nil
 }

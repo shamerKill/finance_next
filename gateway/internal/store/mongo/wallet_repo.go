@@ -163,6 +163,8 @@ func (r *WalletRepo) UpdateCachedBalance(ctx context.Context, id string, balance
 }
 
 func decodeWallet(m bson.M) (*domain.Wallet, error) {
+	rawID := m["_id"]
+	delete(m, "_id")
 	bs, err := bson.Marshal(m)
 	if err != nil {
 		return nil, err
@@ -171,8 +173,11 @@ func decodeWallet(m bson.M) (*domain.Wallet, error) {
 	if err := bson.Unmarshal(bs, &w); err != nil {
 		return nil, err
 	}
-	if oid, ok := m["_id"].(bson.ObjectID); ok {
-		w.ID = oid.Hex()
+	switch v := rawID.(type) {
+	case bson.ObjectID:
+		w.ID = v.Hex()
+	case string:
+		w.ID = v
 	}
 	return &w, nil
 }

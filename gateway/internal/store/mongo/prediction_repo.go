@@ -183,6 +183,8 @@ func (r *PredictionStrategyRepo) Update(ctx context.Context, id string, set bson
 }
 
 func decodePredictionStrategy(m bson.M) (*domain.PredictionStrategy, error) {
+	rawID := m["_id"]
+	delete(m, "_id")
 	bs, err := bson.Marshal(m)
 	if err != nil {
 		return nil, err
@@ -191,8 +193,11 @@ func decodePredictionStrategy(m bson.M) (*domain.PredictionStrategy, error) {
 	if err := bson.Unmarshal(bs, &s); err != nil {
 		return nil, err
 	}
-	if oid, ok := m["_id"].(bson.ObjectID); ok {
-		s.ID = oid.Hex()
+	switch v := rawID.(type) {
+	case bson.ObjectID:
+		s.ID = v.Hex()
+	case string:
+		s.ID = v
 	}
 	return &s, nil
 }
@@ -452,6 +457,8 @@ func (r *PredictionOrderRepo) ListOpenForWallet(ctx context.Context, walletID st
 }
 
 func decodePredictionOrder(m bson.M) (*domain.PredictionOrderLog, error) {
+	rawID := m["_id"]
+	delete(m, "_id")
 	bs, err := bson.Marshal(m)
 	if err != nil {
 		return nil, err
@@ -460,8 +467,11 @@ func decodePredictionOrder(m bson.M) (*domain.PredictionOrderLog, error) {
 	if err := bson.Unmarshal(bs, &o); err != nil {
 		return nil, err
 	}
-	if oid, ok := m["_id"].(bson.ObjectID); ok {
-		o.ID = oid.Hex()
+	switch v := rawID.(type) {
+	case bson.ObjectID:
+		o.ID = v.Hex()
+	case string:
+		o.ID = v
 	}
 	return &o, nil
 }

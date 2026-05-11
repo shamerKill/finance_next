@@ -9,6 +9,7 @@ until phases 6 and 4 respectively.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from datetime import UTC, datetime
@@ -451,6 +452,51 @@ class QuantServicer(quant_pb2_grpc.QuantServicer):  # type: ignore[misc]
 
     async def EvaluateSignal(self, request, context):  # noqa: N802
         await context.abort(grpc.StatusCode.UNIMPLEMENTED, "Phase 4")
+
+    # ------------------------------------------------------------------
+    # AI config introspection (backs gateway /admin/ai/prompts)
+    # ------------------------------------------------------------------
+
+    async def GetAIConfig(  # noqa: N802
+        self,
+        request: quant_pb2.GetAIConfigRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> quant_pb2.AIConfigResponse:
+        """Return the three static prompts + currently-resolved model IDs.
+
+        Mongo-overridable fields (model family / model names / base
+        URLs) come from :func:`quant.ai.config.load_effective_config`,
+        which falls back to env when Mongo isn't configured or the
+        ``aiConfig`` doc is absent. Prompts themselves are static
+        module constants — they are NOT user-tunable from the UI.
+        """
+        from quant.ai import config as ai_config
+        from quant.ai import prompts
+
+        text1 = prompts.DEFINE_SEARCH_SPACE_SYSTEM
+        text2 = prompts.REFINE_SEARCH_SPACE_SYSTEM
+        text3 = prompts.FINAL_RATIONALE_SYSTEM
+        concat = (text1 + text2 + text3).encode("utf-8")
+        prompts_hash = hashlib.sha256(concat).hexdigest()
+
+        cfg = await ai_config.load_effective_config(self._mongo)
+        if cfg.model_family == "openai":
+            primary = cfg.openai_primary_model
+            refine = cfg.openai_refine_model
+        else:
+            primary = cfg.anthropic_primary_model
+            refine = cfg.anthropic_refine_model
+
+        return quant_pb2.AIConfigResponse(
+            define_search_space_prompt=text1,
+            refine_search_space_prompt=text2,
+            final_rationale_prompt=text3,
+            prompts_version=getattr(prompts, "VERSION", "0.0.0"),
+            prompts_hash=prompts_hash,
+            model_family_active=cfg.model_family,
+            primary_model_active=primary,
+            refine_model_active=refine,
+        )
 
 
 def _serializable(d: dict[str, Any]) -> dict[str, Any]:

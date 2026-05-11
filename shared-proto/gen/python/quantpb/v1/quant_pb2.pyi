@@ -220,6 +220,30 @@ class EvaluateRequest(_message.Message):
     ts: _timestamp_pb2.Timestamp
     def __init__(self, strategy_id: _Optional[str] = ..., exchange: _Optional[str] = ..., symbol: _Optional[str] = ..., timeframe: _Optional[str] = ..., ts: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
+class GetAIConfigRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class AIConfigResponse(_message.Message):
+    __slots__ = ("define_search_space_prompt", "refine_search_space_prompt", "final_rationale_prompt", "prompts_version", "prompts_hash", "model_family_active", "primary_model_active", "refine_model_active")
+    DEFINE_SEARCH_SPACE_PROMPT_FIELD_NUMBER: _ClassVar[int]
+    REFINE_SEARCH_SPACE_PROMPT_FIELD_NUMBER: _ClassVar[int]
+    FINAL_RATIONALE_PROMPT_FIELD_NUMBER: _ClassVar[int]
+    PROMPTS_VERSION_FIELD_NUMBER: _ClassVar[int]
+    PROMPTS_HASH_FIELD_NUMBER: _ClassVar[int]
+    MODEL_FAMILY_ACTIVE_FIELD_NUMBER: _ClassVar[int]
+    PRIMARY_MODEL_ACTIVE_FIELD_NUMBER: _ClassVar[int]
+    REFINE_MODEL_ACTIVE_FIELD_NUMBER: _ClassVar[int]
+    define_search_space_prompt: str
+    refine_search_space_prompt: str
+    final_rationale_prompt: str
+    prompts_version: str
+    prompts_hash: str
+    model_family_active: str
+    primary_model_active: str
+    refine_model_active: str
+    def __init__(self, define_search_space_prompt: _Optional[str] = ..., refine_search_space_prompt: _Optional[str] = ..., final_rationale_prompt: _Optional[str] = ..., prompts_version: _Optional[str] = ..., prompts_hash: _Optional[str] = ..., model_family_active: _Optional[str] = ..., primary_model_active: _Optional[str] = ..., refine_model_active: _Optional[str] = ...) -> None: ...
+
 class SignalDecision(_message.Message):
     __slots__ = ("action", "size", "reason")
     class Action(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):

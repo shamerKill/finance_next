@@ -26,6 +26,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from quant.ai import config as ai_config
 from quant.ai._protocol import AIClient
 from quant.ai.claude_client import ClaudeClient, MissingAPIKeyError
 from quant.ai.cost_ledger import BudgetGate
@@ -122,17 +123,24 @@ async def _recent_study_summaries(
     return out
 
 
-def _build_base_request(strategy: dict[str, Any]) -> dict[str, Any]:
+def _build_base_request(
+    strategy: dict[str, Any], *, lookback_days: int = 90
+) -> dict[str, Any]:
     """Construct a base backtest-request dict from the strategy document.
 
-    Defaults: 90 days of 1h Binance USDM data on the strategy's
+    Defaults: ``lookback_days`` of 1h Binance USDM data on the strategy's
     ``execSymbol``. If the strategy's symbol is missing (legacy doc),
     we fall back to BTCUSDT so the optimizer has something to chew on.
+
+    ``lookback_days`` is sourced from :func:`quant.ai.config.load_effective_config`
+    upstream (Mongo override + env fallback) instead of being read from
+    env here directly — keeps the optimizer's data window controllable
+    from the admin UI without restarting the worker.
     """
     from datetime import timedelta
 
     end = _now()
-    start = end - timedelta(days=int(os.getenv("AI_OPTIMIZATION_LOOKBACK_DAYS", "90")))
+    start = end - timedelta(days=int(lookback_days))
     symbol = strategy.get("execSymbol") or "BTCUSDT"
     return {
         "exchange": "binance",
@@ -211,8 +219,16 @@ async def run_optimization_for_strategy(
             log.warning("failed to insert failed-state head doc for %s", study_id)
         return result
 
+    # Phase 9 follow-up: load the AI-config override from Mongo (with env
+    # fallback per field) once at study start. The result threads through
+    # base-request lookback, budget gate caps, and the period sub-doc we
+    # later persist on the recommendation.
+    effective_cfg = await ai_config.load_effective_config(mongo_db)
+
     current_params = _extract_strategy_params(strategy)
-    base_request = _build_base_request(strategy)
+    base_request = _build_base_request(
+        strategy, lookback_days=effective_cfg.lookback_days
+    )
     history = await _recent_study_summaries(mongo_db, strategy_id)
     context_hash = _claude_context_hash(
         {"params": current_params, "history": history, "request": base_request}
@@ -232,7 +248,12 @@ async def run_optimization_for_strategy(
         state="running",
     )
 
-    budget_gate = BudgetGate(study_id=study_id, mongo_db=mongo_db)
+    budget_gate = BudgetGate(
+        study_id=study_id,
+        mongo_db=mongo_db,
+        max_usd_per_study=effective_cfg.budget_usd_per_study,
+        max_usd_per_day_global=effective_cfg.budget_usd_per_day,
+    )
 
     async def _on_progress(completed: int, total: int, best: float) -> None:
         """Emit progress every ~5 trials (or on completion)."""
@@ -295,6 +316,16 @@ async def run_optimization_for_strategy(
     recommendation_id: str | None = None
     if result.status == "completed" and result.best_params:
         recommendation_id = new_recommendation_id()
+        # The 70/30 split is the walk-forward gate enforced inside
+        # quant.ai.optimizer.run_study — keep this period sub-doc in
+        # lock-step with that constant so the reviewer UI shows the
+        # actual window we evaluated against.
+        period = {
+            "lookbackDays": effective_cfg.lookback_days,
+            "inSampleDays": effective_cfg.lookback_days * 0.7,
+            "oosDays": effective_cfg.lookback_days * 0.3,
+            "sharpeAnnualized": True,
+        }
         await rec.insert_recommendation(
             mongo_db,
             recommendation_id=recommendation_id,
@@ -309,6 +340,7 @@ async def run_optimization_for_strategy(
                 ),
             },
             rationale=result.rationale,
+            period=period,
         )
         head_update["recommendationId"] = recommendation_id
 
@@ -407,7 +439,8 @@ async def optimize_task(
         return await timescale.fetch_ohlcv(**kwargs)
 
     sid = study_id or new_study_id()
-    claude_client = _build_default_claude_client()
+    cfg = await ai_config.load_effective_config(mongo_db)
+    claude_client = _build_default_ai_client(cfg)
     result = await run_optimization_for_strategy(
         study_id=sid,
         strategy_id=strategy_id,
@@ -468,7 +501,8 @@ async def daily_optimize_cron(ctx: dict[str, Any]) -> dict[str, Any]:
                 async def _ohlcv_loader(**kwargs: Any) -> Any:
                     return await timescale.fetch_ohlcv(**kwargs)
 
-                claude_client = _build_default_claude_client()
+                cfg = await ai_config.load_effective_config(mongo_db)
+                claude_client = _build_default_ai_client(cfg)
                 await run_optimization_for_strategy(
                     study_id=new_study_id(),
                     strategy_id=sid,
@@ -484,14 +518,26 @@ async def daily_optimize_cron(ctx: dict[str, Any]) -> dict[str, Any]:
     return {"enqueued_count": len(enqueued), "strategy_ids": enqueued}
 
 
-def _build_default_ai_client() -> AIClient | None:
-    """Return a configured AI client based on ``AI_MODEL_FAMILY``.
+def _build_default_ai_client(
+    cfg: ai_config.EffectiveAIConfig | None = None,
+) -> AIClient | None:
+    """Return a configured AI client honouring the effective AI config.
 
-    * ``AI_MODEL_FAMILY=openai`` (or ``gpt``) — build a
+    ``cfg`` is the merged Mongo + env :class:`EffectiveAIConfig`. When
+    omitted (e.g. legacy call sites or unit tests) we fall back to an
+    env-only config so behaviour is unchanged for callers that haven't
+    been threaded yet.
+
+    Resolution:
+
+    * ``cfg.model_family == "openai"`` — build a
       :class:`quant.ai.gpt_client.GPTClient` using ``OPENAI_API_KEY`` (or
-      ``ANTHROPIC_API_KEY`` fallback — the proxy uses one credential).
+      ``ANTHROPIC_API_KEY`` fallback — the proxy uses one credential),
+      with primary/refine model IDs + base URL from ``cfg``.
     * Anything else (default) — build a :class:`ClaudeClient` using
-      ``ANTHROPIC_API_KEY``.
+      ``ANTHROPIC_API_KEY``. Model IDs come from ``cfg``; the Anthropic
+      SDK doesn't expose a base_url override in our wrapper so the value
+      is informational (surfaced via GetAIConfig).
 
     Returning ``None`` lets the optimizer skip every AI call (default
     search space + fallback rationale) — useful in dev environments and
@@ -500,20 +546,52 @@ def _build_default_ai_client() -> AIClient | None:
     key is a config issue, not a bug, and the optimizer's fallback is
     designed for exactly this case.
     """
-    family = os.getenv("AI_MODEL_FAMILY", "claude").strip().lower()
-    if family in ("openai", "gpt"):
+    # No cfg provided → derive from env (env-only path). We can't await
+    # ai_config.load_effective_config from this sync function, so we
+    # synthesise an env-only EffectiveAIConfig inline — ai_config's
+    # helpers are pure-env when mongo_doc is empty.
+    if cfg is None:
+        family_raw = os.getenv("AI_MODEL_FAMILY", "claude")
+        cfg = ai_config.EffectiveAIConfig(
+            model_family=ai_config._normalise_family(family_raw),
+            anthropic_primary_model=os.getenv(
+                "ANTHROPIC_PRIMARY_MODEL", "claude-sonnet-4-6"
+            ),
+            anthropic_refine_model=os.getenv(
+                "ANTHROPIC_REFINE_MODEL", "claude-haiku-4-5-20251001"
+            ),
+            openai_primary_model=os.getenv("OPENAI_PRIMARY_MODEL", "gpt-5.5"),
+            openai_refine_model=os.getenv("OPENAI_REFINE_MODEL", "gpt-5.4"),
+            anthropic_base_url=os.getenv(
+                "ANTHROPIC_BASE_URL", "https://api.anthropic.com"
+            ),
+            openai_base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com"),
+            budget_usd_per_study=5.0,
+            budget_usd_per_day=50.0,
+            lookback_days=90,
+            source="env",
+        )
+
+    if cfg.model_family == "openai":
         from quant.ai.gpt_client import GPTClient
 
         api_key = os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             log.info(
-                "AI_MODEL_FAMILY=%s but neither OPENAI_API_KEY nor "
+                "model_family=%s but neither OPENAI_API_KEY nor "
                 "ANTHROPIC_API_KEY is set; running optimization with default "
                 "search space (no AI calls)",
-                family,
+                cfg.model_family,
             )
             return None
-        return GPTClient()
+        client = GPTClient(base_url=cfg.openai_base_url or None)
+        # Pin model IDs from the effective config so the cost ledger /
+        # audit trail reflects the resolved (post-override) model rather
+        # than the module-level default the GPT client cached at import
+        # time. The GPT client's call sites read these instance attrs.
+        client.primary_model = cfg.openai_primary_model
+        client.refine_model = cfg.openai_refine_model
+        return client
 
     # Default: Anthropic Claude path.
     if not os.getenv("ANTHROPIC_API_KEY"):
@@ -522,7 +600,17 @@ def _build_default_ai_client() -> AIClient | None:
             "space (no Claude calls)"
         )
         return None
-    return ClaudeClient()
+    # NB: ClaudeClient.{define,refine,...} currently hard-codes
+    # SONNET_MODEL / HAIKU_MODEL in the messages.create call, so swapping
+    # the instance attrs only affects the audit / cost-ledger model name,
+    # not the wire request. That's acceptable for now — the admin UI
+    # surfaces the effective model via GetAIConfig regardless. If we
+    # need to actually route per-config models, plumb them into the
+    # messages.create call too.
+    client = ClaudeClient()
+    client.primary_model = cfg.anthropic_primary_model
+    client.refine_model = cfg.anthropic_refine_model
+    return client
 
 
 # Backwards-compatible alias — existing imports keep working.

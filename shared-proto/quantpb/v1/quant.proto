@@ -48,6 +48,13 @@ service Quant {
 
   // Phase 4: ask Python to evaluate a strategy signal for a given bar.
   rpc EvaluateSignal(EvaluateRequest) returns (SignalDecision);
+
+  // AI-config introspection: returns the three static system prompts the
+  // optimizer uses (define / refine / final-rationale), plus a content
+  // hash + version label and the currently-resolved model family /
+  // primary / refine model IDs after Mongo + env merge. Backs the
+  // gateway's /admin/ai/prompts admin endpoint.
+  rpc GetAIConfig(GetAIConfigRequest) returns (AIConfigResponse);
 }
 
 // ---- Phase 2 (IngestNow) ----------------------------------------------------
@@ -205,6 +212,29 @@ message EvaluateRequest {
   string timeframe = 4;
   // Latest bar at which to evaluate (closed bar, no look-ahead).
   google.protobuf.Timestamp ts = 5;
+}
+
+// ---- AI config introspection -----------------------------------------------
+
+message GetAIConfigRequest {}
+
+message AIConfigResponse {
+  // Three static system prompts the optimizer feeds the AI client. Sent
+  // verbatim so the admin UI can render diffs against the in-repo copy.
+  string define_search_space_prompt = 1;
+  string refine_search_space_prompt = 2;
+  string final_rationale_prompt = 3;
+  // Coarse version label sourced from quant.ai.prompts.VERSION.
+  string prompts_version = 4;
+  // sha256 hex of the UTF-8 concatenation of the three prompts above;
+  // lets the UI detect drift without diffing the full text.
+  string prompts_hash = 5;
+  // Currently-resolved model family ("claude" | "openai") after merging
+  // the Mongo system_state.aiConfig override over the env defaults.
+  string model_family_active = 6;
+  // Resolved primary + refine model IDs for the active family.
+  string primary_model_active = 7;
+  string refine_model_active = 8;
 }
 
 message SignalDecision {

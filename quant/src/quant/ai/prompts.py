@@ -14,6 +14,11 @@ which clears the 4096-token caching threshold for Sonnet 4.6 once tools
 
 from __future__ import annotations
 
+# Coarse semver-ish label for the trio of prompts below. Bump on any
+# observable text change. Surfaced over gRPC via ``GetAIConfig`` so the
+# admin UI can pin / diff prompt revisions.
+VERSION = "0.0.1"
+
 # ---------------------------------------------------------------------------
 # Define-search-space (Sonnet 4.6, called once per study)
 # ---------------------------------------------------------------------------

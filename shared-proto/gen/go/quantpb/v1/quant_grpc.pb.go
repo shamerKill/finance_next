@@ -39,6 +39,7 @@ const (
 	Quant_StreamOptimizationProgress_FullMethodName = "/quantpb.v1.Quant/StreamOptimizationProgress"
 	Quant_IngestNow_FullMethodName                  = "/quantpb.v1.Quant/IngestNow"
 	Quant_EvaluateSignal_FullMethodName             = "/quantpb.v1.Quant/EvaluateSignal"
+	Quant_GetAIConfig_FullMethodName                = "/quantpb.v1.Quant/GetAIConfig"
 )
 
 // QuantClient is the client API for Quant service.
@@ -67,6 +68,12 @@ type QuantClient interface {
 	IngestNow(ctx context.Context, in *IngestRequest, opts ...grpc.CallOption) (*IngestAck, error)
 	// Phase 4: ask Python to evaluate a strategy signal for a given bar.
 	EvaluateSignal(ctx context.Context, in *EvaluateRequest, opts ...grpc.CallOption) (*SignalDecision, error)
+	// AI-config introspection: returns the three static system prompts the
+	// optimizer uses (define / refine / final-rationale), plus a content
+	// hash + version label and the currently-resolved model family /
+	// primary / refine model IDs after Mongo + env merge. Backs the
+	// gateway's /admin/ai/prompts admin endpoint.
+	GetAIConfig(ctx context.Context, in *GetAIConfigRequest, opts ...grpc.CallOption) (*AIConfigResponse, error)
 }
 
 type quantClient struct {
@@ -175,6 +182,16 @@ func (c *quantClient) EvaluateSignal(ctx context.Context, in *EvaluateRequest, o
 	return out, nil
 }
 
+func (c *quantClient) GetAIConfig(ctx context.Context, in *GetAIConfigRequest, opts ...grpc.CallOption) (*AIConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AIConfigResponse)
+	err := c.cc.Invoke(ctx, Quant_GetAIConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QuantServer is the server API for Quant service.
 // All implementations must embed UnimplementedQuantServer
 // for forward compatibility.
@@ -201,6 +218,12 @@ type QuantServer interface {
 	IngestNow(context.Context, *IngestRequest) (*IngestAck, error)
 	// Phase 4: ask Python to evaluate a strategy signal for a given bar.
 	EvaluateSignal(context.Context, *EvaluateRequest) (*SignalDecision, error)
+	// AI-config introspection: returns the three static system prompts the
+	// optimizer uses (define / refine / final-rationale), plus a content
+	// hash + version label and the currently-resolved model family /
+	// primary / refine model IDs after Mongo + env merge. Backs the
+	// gateway's /admin/ai/prompts admin endpoint.
+	GetAIConfig(context.Context, *GetAIConfigRequest) (*AIConfigResponse, error)
 	mustEmbedUnimplementedQuantServer()
 }
 
@@ -234,6 +257,9 @@ func (UnimplementedQuantServer) IngestNow(context.Context, *IngestRequest) (*Ing
 }
 func (UnimplementedQuantServer) EvaluateSignal(context.Context, *EvaluateRequest) (*SignalDecision, error) {
 	return nil, status.Error(codes.Unimplemented, "method EvaluateSignal not implemented")
+}
+func (UnimplementedQuantServer) GetAIConfig(context.Context, *GetAIConfigRequest) (*AIConfigResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAIConfig not implemented")
 }
 func (UnimplementedQuantServer) mustEmbedUnimplementedQuantServer() {}
 func (UnimplementedQuantServer) testEmbeddedByValue()               {}
@@ -386,6 +412,24 @@ func _Quant_EvaluateSignal_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Quant_GetAIConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAIConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QuantServer).GetAIConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Quant_GetAIConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QuantServer).GetAIConfig(ctx, req.(*GetAIConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Quant_ServiceDesc is the grpc.ServiceDesc for Quant service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -416,6 +460,10 @@ var Quant_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EvaluateSignal",
 			Handler:    _Quant_EvaluateSignal_Handler,
+		},
+		{
+			MethodName: "GetAIConfig",
+			Handler:    _Quant_GetAIConfig_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

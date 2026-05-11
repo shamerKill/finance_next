@@ -203,7 +203,7 @@ func (x SignalDecision_Action) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SignalDecision_Action.Descriptor instead.
 func (SignalDecision_Action) EnumDescriptor() ([]byte, []int) {
-	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{12, 0}
+	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{14, 0}
 }
 
 type IngestRequest struct {
@@ -1175,6 +1175,150 @@ func (x *EvaluateRequest) GetTs() *timestamppb.Timestamp {
 	return nil
 }
 
+type GetAIConfigRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAIConfigRequest) Reset() {
+	*x = GetAIConfigRequest{}
+	mi := &file_quantpb_v1_quant_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAIConfigRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAIConfigRequest) ProtoMessage() {}
+
+func (x *GetAIConfigRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_quantpb_v1_quant_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAIConfigRequest.ProtoReflect.Descriptor instead.
+func (*GetAIConfigRequest) Descriptor() ([]byte, []int) {
+	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{12}
+}
+
+type AIConfigResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Three static system prompts the optimizer feeds the AI client. Sent
+	// verbatim so the admin UI can render diffs against the in-repo copy.
+	DefineSearchSpacePrompt string `protobuf:"bytes,1,opt,name=define_search_space_prompt,json=defineSearchSpacePrompt,proto3" json:"define_search_space_prompt,omitempty"`
+	RefineSearchSpacePrompt string `protobuf:"bytes,2,opt,name=refine_search_space_prompt,json=refineSearchSpacePrompt,proto3" json:"refine_search_space_prompt,omitempty"`
+	FinalRationalePrompt    string `protobuf:"bytes,3,opt,name=final_rationale_prompt,json=finalRationalePrompt,proto3" json:"final_rationale_prompt,omitempty"`
+	// Coarse version label sourced from quant.ai.prompts.VERSION.
+	PromptsVersion string `protobuf:"bytes,4,opt,name=prompts_version,json=promptsVersion,proto3" json:"prompts_version,omitempty"`
+	// sha256 hex of the UTF-8 concatenation of the three prompts above;
+	// lets the UI detect drift without diffing the full text.
+	PromptsHash string `protobuf:"bytes,5,opt,name=prompts_hash,json=promptsHash,proto3" json:"prompts_hash,omitempty"`
+	// Currently-resolved model family ("claude" | "openai") after merging
+	// the Mongo system_state.aiConfig override over the env defaults.
+	ModelFamilyActive string `protobuf:"bytes,6,opt,name=model_family_active,json=modelFamilyActive,proto3" json:"model_family_active,omitempty"`
+	// Resolved primary + refine model IDs for the active family.
+	PrimaryModelActive string `protobuf:"bytes,7,opt,name=primary_model_active,json=primaryModelActive,proto3" json:"primary_model_active,omitempty"`
+	RefineModelActive  string `protobuf:"bytes,8,opt,name=refine_model_active,json=refineModelActive,proto3" json:"refine_model_active,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *AIConfigResponse) Reset() {
+	*x = AIConfigResponse{}
+	mi := &file_quantpb_v1_quant_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AIConfigResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AIConfigResponse) ProtoMessage() {}
+
+func (x *AIConfigResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_quantpb_v1_quant_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AIConfigResponse.ProtoReflect.Descriptor instead.
+func (*AIConfigResponse) Descriptor() ([]byte, []int) {
+	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *AIConfigResponse) GetDefineSearchSpacePrompt() string {
+	if x != nil {
+		return x.DefineSearchSpacePrompt
+	}
+	return ""
+}
+
+func (x *AIConfigResponse) GetRefineSearchSpacePrompt() string {
+	if x != nil {
+		return x.RefineSearchSpacePrompt
+	}
+	return ""
+}
+
+func (x *AIConfigResponse) GetFinalRationalePrompt() string {
+	if x != nil {
+		return x.FinalRationalePrompt
+	}
+	return ""
+}
+
+func (x *AIConfigResponse) GetPromptsVersion() string {
+	if x != nil {
+		return x.PromptsVersion
+	}
+	return ""
+}
+
+func (x *AIConfigResponse) GetPromptsHash() string {
+	if x != nil {
+		return x.PromptsHash
+	}
+	return ""
+}
+
+func (x *AIConfigResponse) GetModelFamilyActive() string {
+	if x != nil {
+		return x.ModelFamilyActive
+	}
+	return ""
+}
+
+func (x *AIConfigResponse) GetPrimaryModelActive() string {
+	if x != nil {
+		return x.PrimaryModelActive
+	}
+	return ""
+}
+
+func (x *AIConfigResponse) GetRefineModelActive() string {
+	if x != nil {
+		return x.RefineModelActive
+	}
+	return ""
+}
+
 type SignalDecision struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Action SignalDecision_Action  `protobuf:"varint,1,opt,name=action,proto3,enum=quantpb.v1.SignalDecision_Action" json:"action,omitempty"`
@@ -1188,7 +1332,7 @@ type SignalDecision struct {
 
 func (x *SignalDecision) Reset() {
 	*x = SignalDecision{}
-	mi := &file_quantpb_v1_quant_proto_msgTypes[12]
+	mi := &file_quantpb_v1_quant_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1200,7 +1344,7 @@ func (x *SignalDecision) String() string {
 func (*SignalDecision) ProtoMessage() {}
 
 func (x *SignalDecision) ProtoReflect() protoreflect.Message {
-	mi := &file_quantpb_v1_quant_proto_msgTypes[12]
+	mi := &file_quantpb_v1_quant_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1213,7 +1357,7 @@ func (x *SignalDecision) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalDecision.ProtoReflect.Descriptor instead.
 func (*SignalDecision) Descriptor() ([]byte, []int) {
-	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{12}
+	return file_quantpb_v1_quant_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SignalDecision) GetAction() SignalDecision_Action {
@@ -1334,7 +1478,17 @@ const file_quantpb_v1_quant_proto_rawDesc = "" +
 	"\bexchange\x18\x02 \x01(\tR\bexchange\x12\x16\n" +
 	"\x06symbol\x18\x03 \x01(\tR\x06symbol\x12\x1c\n" +
 	"\ttimeframe\x18\x04 \x01(\tR\ttimeframe\x12*\n" +
-	"\x02ts\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x02ts\"\xdf\x01\n" +
+	"\x02ts\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x02ts\"\x14\n" +
+	"\x12GetAIConfigRequest\"\xa0\x03\n" +
+	"\x10AIConfigResponse\x12;\n" +
+	"\x1adefine_search_space_prompt\x18\x01 \x01(\tR\x17defineSearchSpacePrompt\x12;\n" +
+	"\x1arefine_search_space_prompt\x18\x02 \x01(\tR\x17refineSearchSpacePrompt\x124\n" +
+	"\x16final_rationale_prompt\x18\x03 \x01(\tR\x14finalRationalePrompt\x12'\n" +
+	"\x0fprompts_version\x18\x04 \x01(\tR\x0epromptsVersion\x12!\n" +
+	"\fprompts_hash\x18\x05 \x01(\tR\vpromptsHash\x12.\n" +
+	"\x13model_family_active\x18\x06 \x01(\tR\x11modelFamilyActive\x120\n" +
+	"\x14primary_model_active\x18\a \x01(\tR\x12primaryModelActive\x12.\n" +
+	"\x13refine_model_active\x18\b \x01(\tR\x11refineModelActive\"\xdf\x01\n" +
 	"\x0eSignalDecision\x129\n" +
 	"\x06action\x18\x01 \x01(\x0e2!.quantpb.v1.SignalDecision.ActionR\x06action\x12\x12\n" +
 	"\x04size\x18\x02 \x01(\x01R\x04size\x12\x16\n" +
@@ -1361,7 +1515,7 @@ const file_quantpb_v1_quant_proto_rawDesc = "" +
 	"\rOPT_COMPLETED\x10\x03\x12\x0e\n" +
 	"\n" +
 	"OPT_FAILED\x10\x04\x12\x17\n" +
-	"\x13OPT_BUDGET_EXCEEDED\x10\x052\x8c\x05\n" +
+	"\x13OPT_BUDGET_EXCEEDED\x10\x052\xd9\x05\n" +
 	"\x05Quant\x12F\n" +
 	"\vRunBacktest\x12\x1b.quantpb.v1.BacktestRequest\x1a\x1a.quantpb.v1.BacktestHandle\x12U\n" +
 	"\x11GetBacktestStatus\x12$.quantpb.v1.GetBacktestStatusRequest\x1a\x1a.quantpb.v1.BacktestStatus\x12^\n" +
@@ -1370,7 +1524,8 @@ const file_quantpb_v1_quant_proto_rawDesc = "" +
 	"\x15GetOptimizationStatus\x12\x17.quantpb.v1.StudyHandle\x1a\x1e.quantpb.v1.OptimizationStatus\x12Y\n" +
 	"\x1aStreamOptimizationProgress\x12\x17.quantpb.v1.StudyHandle\x1a .quantpb.v1.OptimizationProgress0\x01\x12=\n" +
 	"\tIngestNow\x12\x19.quantpb.v1.IngestRequest\x1a\x15.quantpb.v1.IngestAck\x12I\n" +
-	"\x0eEvaluateSignal\x12\x1b.quantpb.v1.EvaluateRequest\x1a\x1a.quantpb.v1.SignalDecisionB@Z>github.com/finance_next/shared-proto/gen/go/quantpb/v1;quantv1b\x06proto3"
+	"\x0eEvaluateSignal\x12\x1b.quantpb.v1.EvaluateRequest\x1a\x1a.quantpb.v1.SignalDecision\x12K\n" +
+	"\vGetAIConfig\x12\x1e.quantpb.v1.GetAIConfigRequest\x1a\x1c.quantpb.v1.AIConfigResponseB@Z>github.com/finance_next/shared-proto/gen/go/quantpb/v1;quantv1b\x06proto3"
 
 var (
 	file_quantpb_v1_quant_proto_rawDescOnce sync.Once
@@ -1385,7 +1540,7 @@ func file_quantpb_v1_quant_proto_rawDescGZIP() []byte {
 }
 
 var file_quantpb_v1_quant_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_quantpb_v1_quant_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_quantpb_v1_quant_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_quantpb_v1_quant_proto_goTypes = []any{
 	(BacktestState)(0),               // 0: quantpb.v1.BacktestState
 	(OptimizationState)(0),           // 1: quantpb.v1.OptimizationState
@@ -1402,31 +1557,33 @@ var file_quantpb_v1_quant_proto_goTypes = []any{
 	(*OptimizationStatus)(nil),       // 12: quantpb.v1.OptimizationStatus
 	(*OptimizationProgress)(nil),     // 13: quantpb.v1.OptimizationProgress
 	(*EvaluateRequest)(nil),          // 14: quantpb.v1.EvaluateRequest
-	(*SignalDecision)(nil),           // 15: quantpb.v1.SignalDecision
-	nil,                              // 16: quantpb.v1.BacktestStatus.MetricsEntry
-	(*timestamppb.Timestamp)(nil),    // 17: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),          // 18: google.protobuf.Struct
+	(*GetAIConfigRequest)(nil),       // 15: quantpb.v1.GetAIConfigRequest
+	(*AIConfigResponse)(nil),         // 16: quantpb.v1.AIConfigResponse
+	(*SignalDecision)(nil),           // 17: quantpb.v1.SignalDecision
+	nil,                              // 18: quantpb.v1.BacktestStatus.MetricsEntry
+	(*timestamppb.Timestamp)(nil),    // 19: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),          // 20: google.protobuf.Struct
 }
 var file_quantpb_v1_quant_proto_depIdxs = []int32{
-	17, // 0: quantpb.v1.IngestRequest.start:type_name -> google.protobuf.Timestamp
-	17, // 1: quantpb.v1.IngestRequest.end:type_name -> google.protobuf.Timestamp
-	17, // 2: quantpb.v1.IngestAck.from_ts:type_name -> google.protobuf.Timestamp
-	17, // 3: quantpb.v1.IngestAck.to_ts:type_name -> google.protobuf.Timestamp
-	18, // 4: quantpb.v1.BacktestRequest.params:type_name -> google.protobuf.Struct
-	17, // 5: quantpb.v1.BacktestRequest.start:type_name -> google.protobuf.Timestamp
-	17, // 6: quantpb.v1.BacktestRequest.end:type_name -> google.protobuf.Timestamp
-	17, // 7: quantpb.v1.BacktestHandle.enqueued_at:type_name -> google.protobuf.Timestamp
+	19, // 0: quantpb.v1.IngestRequest.start:type_name -> google.protobuf.Timestamp
+	19, // 1: quantpb.v1.IngestRequest.end:type_name -> google.protobuf.Timestamp
+	19, // 2: quantpb.v1.IngestAck.from_ts:type_name -> google.protobuf.Timestamp
+	19, // 3: quantpb.v1.IngestAck.to_ts:type_name -> google.protobuf.Timestamp
+	20, // 4: quantpb.v1.BacktestRequest.params:type_name -> google.protobuf.Struct
+	19, // 5: quantpb.v1.BacktestRequest.start:type_name -> google.protobuf.Timestamp
+	19, // 6: quantpb.v1.BacktestRequest.end:type_name -> google.protobuf.Timestamp
+	19, // 7: quantpb.v1.BacktestHandle.enqueued_at:type_name -> google.protobuf.Timestamp
 	0,  // 8: quantpb.v1.BacktestStatus.state:type_name -> quantpb.v1.BacktestState
-	16, // 9: quantpb.v1.BacktestStatus.metrics:type_name -> quantpb.v1.BacktestStatus.MetricsEntry
-	17, // 10: quantpb.v1.BacktestStatus.started_at:type_name -> google.protobuf.Timestamp
-	17, // 11: quantpb.v1.BacktestStatus.finished_at:type_name -> google.protobuf.Timestamp
+	18, // 9: quantpb.v1.BacktestStatus.metrics:type_name -> quantpb.v1.BacktestStatus.MetricsEntry
+	19, // 10: quantpb.v1.BacktestStatus.started_at:type_name -> google.protobuf.Timestamp
+	19, // 11: quantpb.v1.BacktestStatus.finished_at:type_name -> google.protobuf.Timestamp
 	0,  // 12: quantpb.v1.BacktestProgress.state:type_name -> quantpb.v1.BacktestState
-	17, // 13: quantpb.v1.StudyHandle.enqueued_at:type_name -> google.protobuf.Timestamp
+	19, // 13: quantpb.v1.StudyHandle.enqueued_at:type_name -> google.protobuf.Timestamp
 	1,  // 14: quantpb.v1.OptimizationStatus.state:type_name -> quantpb.v1.OptimizationState
-	17, // 15: quantpb.v1.OptimizationStatus.started_at:type_name -> google.protobuf.Timestamp
-	17, // 16: quantpb.v1.OptimizationStatus.finished_at:type_name -> google.protobuf.Timestamp
+	19, // 15: quantpb.v1.OptimizationStatus.started_at:type_name -> google.protobuf.Timestamp
+	19, // 16: quantpb.v1.OptimizationStatus.finished_at:type_name -> google.protobuf.Timestamp
 	1,  // 17: quantpb.v1.OptimizationProgress.state:type_name -> quantpb.v1.OptimizationState
-	17, // 18: quantpb.v1.EvaluateRequest.ts:type_name -> google.protobuf.Timestamp
+	19, // 18: quantpb.v1.EvaluateRequest.ts:type_name -> google.protobuf.Timestamp
 	2,  // 19: quantpb.v1.SignalDecision.action:type_name -> quantpb.v1.SignalDecision.Action
 	5,  // 20: quantpb.v1.Quant.RunBacktest:input_type -> quantpb.v1.BacktestRequest
 	7,  // 21: quantpb.v1.Quant.GetBacktestStatus:input_type -> quantpb.v1.GetBacktestStatusRequest
@@ -1436,16 +1593,18 @@ var file_quantpb_v1_quant_proto_depIdxs = []int32{
 	11, // 25: quantpb.v1.Quant.StreamOptimizationProgress:input_type -> quantpb.v1.StudyHandle
 	3,  // 26: quantpb.v1.Quant.IngestNow:input_type -> quantpb.v1.IngestRequest
 	14, // 27: quantpb.v1.Quant.EvaluateSignal:input_type -> quantpb.v1.EvaluateRequest
-	6,  // 28: quantpb.v1.Quant.RunBacktest:output_type -> quantpb.v1.BacktestHandle
-	8,  // 29: quantpb.v1.Quant.GetBacktestStatus:output_type -> quantpb.v1.BacktestStatus
-	9,  // 30: quantpb.v1.Quant.StreamBacktestProgress:output_type -> quantpb.v1.BacktestProgress
-	11, // 31: quantpb.v1.Quant.StartOptimization:output_type -> quantpb.v1.StudyHandle
-	12, // 32: quantpb.v1.Quant.GetOptimizationStatus:output_type -> quantpb.v1.OptimizationStatus
-	13, // 33: quantpb.v1.Quant.StreamOptimizationProgress:output_type -> quantpb.v1.OptimizationProgress
-	4,  // 34: quantpb.v1.Quant.IngestNow:output_type -> quantpb.v1.IngestAck
-	15, // 35: quantpb.v1.Quant.EvaluateSignal:output_type -> quantpb.v1.SignalDecision
-	28, // [28:36] is the sub-list for method output_type
-	20, // [20:28] is the sub-list for method input_type
+	15, // 28: quantpb.v1.Quant.GetAIConfig:input_type -> quantpb.v1.GetAIConfigRequest
+	6,  // 29: quantpb.v1.Quant.RunBacktest:output_type -> quantpb.v1.BacktestHandle
+	8,  // 30: quantpb.v1.Quant.GetBacktestStatus:output_type -> quantpb.v1.BacktestStatus
+	9,  // 31: quantpb.v1.Quant.StreamBacktestProgress:output_type -> quantpb.v1.BacktestProgress
+	11, // 32: quantpb.v1.Quant.StartOptimization:output_type -> quantpb.v1.StudyHandle
+	12, // 33: quantpb.v1.Quant.GetOptimizationStatus:output_type -> quantpb.v1.OptimizationStatus
+	13, // 34: quantpb.v1.Quant.StreamOptimizationProgress:output_type -> quantpb.v1.OptimizationProgress
+	4,  // 35: quantpb.v1.Quant.IngestNow:output_type -> quantpb.v1.IngestAck
+	17, // 36: quantpb.v1.Quant.EvaluateSignal:output_type -> quantpb.v1.SignalDecision
+	16, // 37: quantpb.v1.Quant.GetAIConfig:output_type -> quantpb.v1.AIConfigResponse
+	29, // [29:38] is the sub-list for method output_type
+	20, // [20:29] is the sub-list for method input_type
 	20, // [20:20] is the sub-list for extension type_name
 	20, // [20:20] is the sub-list for extension extendee
 	0,  // [0:20] is the sub-list for field type_name
@@ -1462,7 +1621,7 @@ func file_quantpb_v1_quant_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_quantpb_v1_quant_proto_rawDesc), len(file_quantpb_v1_quant_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   14,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

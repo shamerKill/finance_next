@@ -75,6 +75,11 @@ class QuantStub(object):
                 request_serializer=quantpb_dot_v1_dot_quant__pb2.EvaluateRequest.SerializeToString,
                 response_deserializer=quantpb_dot_v1_dot_quant__pb2.SignalDecision.FromString,
                 _registered_method=True)
+        self.GetAIConfig = channel.unary_unary(
+                '/quantpb.v1.Quant/GetAIConfig',
+                request_serializer=quantpb_dot_v1_dot_quant__pb2.GetAIConfigRequest.SerializeToString,
+                response_deserializer=quantpb_dot_v1_dot_quant__pb2.AIConfigResponse.FromString,
+                _registered_method=True)
 
 
 class QuantServicer(object):
@@ -141,6 +146,17 @@ class QuantServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetAIConfig(self, request, context):
+        """AI-config introspection: returns the three static system prompts the
+        optimizer uses (define / refine / final-rationale), plus a content
+        hash + version label and the currently-resolved model family /
+        primary / refine model IDs after Mongo + env merge. Backs the
+        gateway's /admin/ai/prompts admin endpoint.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_QuantServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -183,6 +199,11 @@ def add_QuantServicer_to_server(servicer, server):
                     servicer.EvaluateSignal,
                     request_deserializer=quantpb_dot_v1_dot_quant__pb2.EvaluateRequest.FromString,
                     response_serializer=quantpb_dot_v1_dot_quant__pb2.SignalDecision.SerializeToString,
+            ),
+            'GetAIConfig': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetAIConfig,
+                    request_deserializer=quantpb_dot_v1_dot_quant__pb2.GetAIConfigRequest.FromString,
+                    response_serializer=quantpb_dot_v1_dot_quant__pb2.AIConfigResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -402,6 +423,33 @@ class Quant(object):
             '/quantpb.v1.Quant/EvaluateSignal',
             quantpb_dot_v1_dot_quant__pb2.EvaluateRequest.SerializeToString,
             quantpb_dot_v1_dot_quant__pb2.SignalDecision.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetAIConfig(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/quantpb.v1.Quant/GetAIConfig',
+            quantpb_dot_v1_dot_quant__pb2.GetAIConfigRequest.SerializeToString,
+            quantpb_dot_v1_dot_quant__pb2.AIConfigResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -103,25 +103,34 @@ async def insert_recommendation(
     proposed_params: dict[str, Any],
     expected_delta: dict[str, float],
     rationale: str,
+    period: dict[str, Any] | None = None,
 ) -> None:
-    """Insert a fresh pending_review recommendation."""
+    """Insert a fresh pending_review recommendation.
+
+    ``period`` (optional, default ``None``) is the walk-forward window
+    sub-doc — ``{lookbackDays, inSampleDays, oosDays, sharpeAnnualized}``
+    — that the optimizer measured against. Gateway readers default
+    missing values to 90/63/27 for legacy docs created before this
+    field landed.
+    """
     now = _now()
-    await mongo_db[RECOMMENDATIONS_COLLECTION].insert_one(
-        {
-            "_id": recommendation_id,
-            "strategyId": strategy_id,
-            "studyId": study_id,
-            "proposedParams": proposed_params,
-            "expectedDelta": expected_delta,
-            "rationale": rationale,
-            "status": STATUS_PENDING_REVIEW,
-            "reviewedBy": None,
-            "reviewedAt": None,
-            "appliedVersion": None,
-            "createdAt": now,
-            "updatedAt": now,
-        }
-    )
+    doc: dict[str, Any] = {
+        "_id": recommendation_id,
+        "strategyId": strategy_id,
+        "studyId": study_id,
+        "proposedParams": proposed_params,
+        "expectedDelta": expected_delta,
+        "rationale": rationale,
+        "status": STATUS_PENDING_REVIEW,
+        "reviewedBy": None,
+        "reviewedAt": None,
+        "appliedVersion": None,
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    if period is not None:
+        doc["period"] = period
+    await mongo_db[RECOMMENDATIONS_COLLECTION].insert_one(doc)
 
 
 # Index helpers — Mongo-side index creation is driven by the Go gateway

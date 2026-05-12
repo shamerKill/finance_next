@@ -97,10 +97,17 @@ async def run_backtest_task(
     the run. Mongo/Timescale failures DO surface as FAILED state.
     """
     ctx = ctx or {}
-    mongo_db = mongo_db or _resolve_mongo(ctx)
-    redis_client = redis_client or ctx.get("redis")
-    ohlcv_loader = ohlcv_loader or _default_ohlcv_loader
-    equity_writer = equity_writer or _default_equity_writer
+    # pymongo Database raises NotImplementedError on bool()/`or`. Must use
+    # explicit `is None` checks; otherwise the entire backtest task crashes
+    # before doing any work, leaving the head doc forever stuck at PENDING.
+    if mongo_db is None:
+        mongo_db = _resolve_mongo(ctx)
+    if redis_client is None:
+        redis_client = ctx.get("redis")
+    if ohlcv_loader is None:
+        ohlcv_loader = _default_ohlcv_loader
+    if equity_writer is None:
+        equity_writer = _default_equity_writer
 
     started_at = _utcnow()
     error_msg = ""

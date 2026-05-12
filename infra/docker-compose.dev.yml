@@ -1,0 +1,58 @@
+# Dev override — composes ON TOP of docker-compose.yml.
+#
+# Usage:
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up
+#
+# Goals:
+#   - All datastore ports exposed to host for local tooling (mongo shell,
+#     redis-cli, psql, etc.)
+#   - Source code bind-mounted into gateway / quant for fast iteration.
+#     NOTE: bind-mounts do NOT trigger rebuilds — restart the container
+#     (`docker compose restart gateway`) to pick up Go binary changes. For
+#     Python, FastAPI/uvicorn reload would need to be wired into the image;
+#     today we keep the default entrypoint.
+#   - LOG_LEVEL=debug everywhere
+#   - tty/stdin_open so `docker compose attach` works for pdb / dlv
+#
+# DO NOT use this file in prod — bind-mounts + open ports + debug logs.
+services:
+  mongo:
+    ports:
+      - "27017:27017"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  timescale:
+    ports:
+      - "5432:5432"
+
+  gateway:
+    # Bind-mount source. Container's /app already holds the prod binary
+    # from the multi-stage build; the mount shadows it. Devs typically run
+    # `go run ./cmd/gateway` on the host instead — this mount is only
+    # useful when you want the compose-managed environment but read source
+    # from your editor.
+    volumes:
+      - ../gateway:/app/src:ro
+    ports:
+      - "3001:3001"
+    tty: true
+    stdin_open: true
+    environment:
+      LOG_LEVEL: debug
+
+  quant:
+    # Same caveat as gateway: bind-mount is read-only convenience for
+    # inspecting source from inside the container. uv-installed deps live
+    # in the image, not /app/src.
+    volumes:
+      - ../quant:/app/src:ro
+    ports:
+      - "8000:8000"
+      - "50051:50051"
+    tty: true
+    stdin_open: true
+    environment:
+      LOG_LEVEL: debug

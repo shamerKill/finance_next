@@ -106,6 +106,47 @@ uv run pytest -q && uv run ruff check .
 小时窗口内。任一缺失即拒。AI 推荐永远 `pending_review`，无 auto-apply 路径。
 完整安全模型见 CLAUDE.md §8。
 
+## 生产部署 (prod)
+
+`infra/docker-compose.prod.yml` 是 production override，**叠加**在主 compose
+文件上：删除所有 host port 映射（仅 Caddy 暴露 :80/:443）、`restart: always`、
+启用 `AUTH_COOKIE_SECURE`、加入 Caddy 反向代理（自动 Let's Encrypt TLS）。
+
+```bash
+# 1) 准备 .env（必填项 + AUTH_COOKIE_SECURE 由 prod override 自动注入）
+cp .env.example .env && $EDITOR .env
+
+# 2) 设置域名（Caddy 自动签 TLS；不设走 localhost 自签）
+export DOMAIN=trading.example.com
+
+# 3) 启动
+docker compose \
+  -f infra/docker-compose.yml \
+  -f infra/docker-compose.prod.yml \
+  up -d
+
+# 4) 验证
+curl -k https://$DOMAIN/api/v1/auth/me  # 401 未登录是预期
+```
+
+注意：前端 (`client/`) 不在 compose 内。Caddyfile 默认把 `/` 反代到
+`host.docker.internal:3000`；生产请改为独立 `frontend` 服务或静态导出。
+详细见 `docs/deployment/02-production.md`（即将提供）。
+
+## 开发 (dev override，hot reload 友好)
+
+`infra/docker-compose.dev.yml` 暴露所有数据库端口（mongo/redis/timescale），
+开启 `LOG_LEVEL=debug`、tty/stdin，源代码 bind-mount 进容器只读以便从容器内
+查看 source；Go binary / Python 进程不会自动重启，改完后
+`docker compose restart gateway` 即可。
+
+```bash
+docker compose \
+  -f infra/docker-compose.yml \
+  -f infra/docker-compose.dev.yml \
+  up
+```
+
 ## 详细文档
 
 - [USAGE.md](./USAGE.md) — **日常使用指南**：抓行情 / 建策略 / AI 优化 / 审批推荐 / 监控运维 / 错误诊断

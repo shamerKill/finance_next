@@ -15,6 +15,19 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// AuthVerifier validates the inbound WebSocket upgrade request and
+// returns the authenticated userId + role on success. Phase 1.A.4
+// requires the `auth_token` cookie to carry a valid JWT; the router
+// builds a closure that delegates to handlers.ParseJWT (same parser
+// /api/v1 cookie auth uses) and passes it in here.
+//
+// nil verifier disables WS auth entirely — the legacy behaviour. The
+// router only passes nil when no JWT secret is configured (dev), in
+// which case the upgrade goes through without populating session
+// userId / role and downstream ownership checks fall back to the
+// no-resolver no-op path.
+type AuthVerifier func(r *http.Request) (userID, role string, err error)
+
 // Handler upgrades incoming HTTP requests to WebSocket and bridges them to the
 // Hub.
 type Handler struct {
@@ -26,6 +39,11 @@ type Handler struct {
 	// signals "no allowlist configured" and Handle falls back to
 	// InsecureSkipVerify for the dev workflow.
 	originPatterns []string
+	// authVerifier is the Phase 1.A.4 cookie / JWT check executed
+	// *before* the websocket upgrade. Failure returns HTTP 403 and
+	// the upgrade never happens, so an unauthenticated browser can't
+	// even establish the WS frame stream.
+	authVerifier AuthVerifier
 }
 
 // NewHandler returns a handler bound to hub.
@@ -44,6 +62,15 @@ func NewHandler(hub *Hub, log *slog.Logger, allowedOrigins []string) *Handler {
 		log:            log,
 		originPatterns: originPatternsFromURLs(allowedOrigins),
 	}
+}
+
+// NewHandlerWithAuth is like NewHandler but also wires an AuthVerifier
+// that runs before the WS upgrade. The Phase 1.A.4 production path
+// uses this. Passing a nil verifier is equivalent to NewHandler.
+func NewHandlerWithAuth(hub *Hub, log *slog.Logger, allowedOrigins []string, verifier AuthVerifier) *Handler {
+	h := NewHandler(hub, log, allowedOrigins)
+	h.authVerifier = verifier
+	return h
 }
 
 // originPatternsFromURLs extracts the host portion of each allowed origin
@@ -70,6 +97,30 @@ func originPatternsFromURLs(origins []string) []string {
 
 // Handle is the Echo handler for GET /ws.
 func (h *Handler) Handle(c echo.Context) error {
+	// Phase 1.A.4: validate the auth cookie *before* doing the websocket
+	// upgrade. We respond with a plain 403 + body — the browser sees the
+	// upgrade fail (status 403) and the WS Dial promise rejects. No
+	// session is created, no upstream is started, and the audit log
+	// captures the failure as a normal HTTP request (because the audit
+	// middleware sits on /api/v1, not /ws — note: /ws is exempt per the
+	// design doc and we keep that, only adding auth here).
+	var (
+		userID string
+		role   string
+	)
+	if h.authVerifier != nil {
+		uid, r, err := h.authVerifier(c.Request())
+		if err != nil || uid == "" {
+			// Distinguish "no cookie" from "invalid cookie" only in the
+			// log line — the wire response is the same so we don't leak
+			// which JWTs the operator's secret can decode.
+			h.log.Debug("ws auth rejected", "err", err)
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "unauthorized"})
+		}
+		userID = uid
+		role = r
+	}
+
 	// AcceptOptions: when no origin allowlist is configured (dev), we keep
 	// InsecureSkipVerify so a developer running yarn dev on an arbitrary
 	// port can connect without per-machine config. In production
@@ -88,7 +139,7 @@ func (h *Handler) Handle(c echo.Context) error {
 
 	sessionID := uuid.NewString()
 	sink := newConnSink(conn)
-	h.hub.Register(sessionID, sink)
+	h.hub.RegisterAuthed(sessionID, sink, userID, role)
 	defer h.hub.Unregister(sessionID)
 
 	ctx := c.Request().Context()
@@ -131,6 +182,19 @@ func (h *Handler) Handle(c echo.Context) error {
 				continue
 			}
 			if err := h.hub.Subscribe(ctx, sessionID, topicKind, topicID); err != nil {
+				// Phase 1.A.4: a denied subscription means the authenticated
+				// user doesn't own the requested resource (or no resolver is
+				// registered for the topic). Emit a clear error frame
+				// without revealing whether the resource exists.
+				if errors.Is(err, ErrOwnershipDenied) || errors.Is(err, ErrOwnershipUnknown) {
+					_ = sink.SendJSON(ctx, map[string]any{
+						"type":  "error",
+						"topic": string(topicKind),
+						"id":    topicID,
+						"error": "forbidden",
+					})
+					continue
+				}
 				// ErrUpstreamRetired is a soft signal: the venue retired the
 				// upstream (e.g. Binance spot user-data /api/v3/userDataStream
 				// returns 410 Gone). The subscription itself succeeded as a

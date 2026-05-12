@@ -88,9 +88,16 @@ type SessionSink interface {
 }
 
 type session struct {
-	id        string
-	sink      SessionSink
-	subs      map[topicKey]struct{}
+	id   string
+	sink SessionSink
+	subs map[topicKey]struct{}
+	// userID / role are populated at Register time from the authenticated
+	// JWT claims. The Hub uses them to enforce per-subscription ownership
+	// (see ownership.go). Empty userID denotes an anonymous session and
+	// will fail every ownership check — Phase 1.A.4 forbids unauthenticated
+	// /ws upgrades, so this should never happen in production.
+	userID    string
+	role      string
 	closeOnce sync.Once
 }
 
@@ -115,6 +122,12 @@ type Hub struct {
 	acctFactory    AccountUpstreamFactory
 	genericFactory GenericUpstreamFactory
 
+	// Phase 1.A.4: per-topic-kind ownership resolver. A subscribe request
+	// for (kind, id) is admitted iff the session's userID matches the
+	// owner returned by resolvers[kind] — or the session has role=admin.
+	// Topic kinds without a registered resolver fail-closed.
+	resolvers map[TopicKind]OwnerResolver
+
 	log *slog.Logger
 }
 
@@ -136,18 +149,53 @@ func NewHubFull(acctF AccountUpstreamFactory, genF GenericUpstreamFactory, log *
 		upstream:       map[topicKey]*upstream{},
 		acctFactory:    acctF,
 		genericFactory: genF,
+		resolvers:      map[TopicKind]OwnerResolver{},
 		log:            log,
 	}
 }
 
+// SetOwnerResolver registers (or replaces) the ownership resolver for a
+// topic kind. Mounted by the router at startup for each kind whose
+// underlying repo is non-nil. Topic kinds with no resolver fail-closed:
+// Subscribe returns ErrOwnershipUnknown.
+//
+// Passing a nil resolver removes the entry, which is sometimes useful
+// in tests but should not happen in production wiring.
+func (h *Hub) SetOwnerResolver(kind TopicKind, r OwnerResolver) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if r == nil {
+		delete(h.resolvers, kind)
+		return
+	}
+	h.resolvers[kind] = r
+}
+
 // Register adds a new browser session.
+//
+// Legacy entry point: no authenticated user attached. Equivalent to
+// RegisterAuthed(id, sink, "", ""). Phase 1.A.4 production wiring uses
+// RegisterAuthed so the per-subscription ownership check has something
+// to compare against; the parameter-less form remains for the handful
+// of test sites that pre-date auth.
 func (h *Hub) Register(id string, sink SessionSink) {
+	h.RegisterAuthed(id, sink, "", "")
+}
+
+// RegisterAuthed adds a new browser session with the authenticated
+// userID + role attached. The handler obtains these by validating the
+// `auth_token` cookie at WS upgrade time; an unauthenticated upgrade
+// is rejected before Register is reached, so userID is non-empty in
+// production.
+func (h *Hub) RegisterAuthed(id string, sink SessionSink, userID, role string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.sessions[id] = &session{
-		id:   id,
-		sink: sink,
-		subs: map[topicKey]struct{}{},
+		id:     id,
+		sink:   sink,
+		subs:   map[topicKey]struct{}{},
+		userID: userID,
+		role:   role,
 	}
 }
 
@@ -167,11 +215,47 @@ func (h *Hub) Unregister(id string) {
 
 // Subscribe binds a session to a (kind, id) topic. Convenience wrappers
 // SubscribeAccount / SubscribeBacktest exist for the common cases.
+//
+// Phase 1.A.4 ownership gate: when a resolver is registered for `kind`,
+// Subscribe looks up the resource owner and rejects with
+// ErrOwnershipDenied unless the session's userID matches (or the
+// session's role is "admin"). Topic kinds with no resolver registered
+// fall back to legacy "no-check" behaviour — the router *always*
+// registers resolvers, so this fallback only fires in unit tests that
+// pre-date auth.
 func (h *Hub) Subscribe(ctx context.Context, sessionID string, kind TopicKind, id string) error {
+	// Ownership check runs *before* we take the hub lock so the resolver
+	// (which may hit Mongo) doesn't block other sessions. We grab the
+	// session snapshot under the lock first to read userID / role.
+	h.mu.Lock()
+	s, ok := h.sessions[sessionID]
+	if !ok {
+		h.mu.Unlock()
+		return errors.New("ws: unknown session")
+	}
+	sessUserID := s.userID
+	sessRole := s.role
+	resolver, hasResolver := h.resolvers[kind]
+	h.mu.Unlock()
+
+	if hasResolver && sessRole != AdminRole {
+		owner, err := resolver.OwnerOf(ctx, id)
+		if err != nil {
+			// Lookup failure — fail-closed (don't smuggle resource access
+			// through a transient Mongo error).
+			return ErrOwnershipDenied
+		}
+		if owner == "" || owner != sessUserID {
+			return ErrOwnershipDenied
+		}
+	}
+
 	tk := topicKey{Kind: kind, ID: id}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	s, ok := h.sessions[sessionID]
+	// Re-fetch the session under the lock in case it raced with
+	// Unregister between the ownership check and now.
+	s, ok = h.sessions[sessionID]
 	if !ok {
 		return errors.New("ws: unknown session")
 	}

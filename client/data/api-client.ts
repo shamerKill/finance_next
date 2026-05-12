@@ -51,6 +51,29 @@ function userIdHeader(): Record<string, string> {
   }
 }
 
+// Server-side cookie forwarding. Node's fetch has no cookie jar, so on
+// server components we must read the incoming request's cookies via
+// `next/headers` and attach them as a `Cookie` request header — otherwise
+// every server-rendered page would get 401 from the gateway. We use a
+// dynamic import so client bundles don't pull `next/headers` (which is
+// server-only). Wrapped in try/catch so any failure (no request context,
+// non-Next runtime) silently degrades to "no cookie", consistent with
+// auth-server.ts's getMeServer pattern.
+async function serverCookieHeader(): Promise<Record<string, string>> {
+  if (typeof window !== "undefined") return {};
+  try {
+    const { cookies } = await import("next/headers");
+    const c = await cookies();
+    const joined = c
+      .getAll()
+      .map(({ name, value }) => `${name}=${value}`)
+      .join("; ");
+    return joined ? { Cookie: joined } : {};
+  } catch {
+    return {};
+  }
+}
+
 // apiFetch is the project-wide fetch wrapper. It merges in the X-User-Id
 // header (when localStorage has one), preserves all other init fields,
 // and crucially sets `credentials: "include"` so the cookie-based JWT
@@ -66,11 +89,13 @@ export async function apiFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},
 ): Promise<Response> {
+  const serverCookie = await serverCookieHeader();
   const merged: RequestInit = {
     credentials: "include",
     ...init,
     headers: {
       ...userIdHeader(),
+      ...serverCookie,
       ...(init.headers ?? {}),
     },
   };

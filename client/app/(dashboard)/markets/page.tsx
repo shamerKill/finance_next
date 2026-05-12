@@ -3,11 +3,19 @@
 // window, fetches OHLCV, and renders the chart + a compact stats row.
 // The control bar (client) writes new params via router.push so the
 // page re-renders.
+//
+// Node 2.C.5.c — adopts the design system: <PageHeader> for the title
+// row, <Section> wrapping the control bar as a toolbar, <ChartShell>
+// (via OhlcvChart in chart.tsx) for the OHLCV plot, and <Stat> cards
+// for the compact stats row. The chart instantiation logic stays in
+// lightweight-charts but is now owned by <ChartShell>.
 
 import { ApiErrorView } from "@/components/api-error";
 import { IngestButton } from "@/components/ingest-button";
 import { PageHeader } from "@/components/page-header";
 import { RecentTracker } from "@/components/recent-tracker";
+import { Section } from "@/components/section";
+import { Stat, type StatDirection } from "@/components/stat";
 import { getOhlcv, type TypeOhlcvBar } from "@/data/api-client";
 import type { TypeExchange } from "@/data/type";
 
@@ -108,6 +116,13 @@ export default async function MarketsPage({
   };
 
   const stats = computeStats(bars, timeframe);
+  const changeDir: StatDirection = stats
+    ? stats.change24 > 0
+      ? "up"
+      : stats.change24 < 0
+        ? "down"
+        : "flat"
+    : "flat";
 
   return (
     <div className="flex flex-col gap-4">
@@ -123,46 +138,37 @@ export default async function MarketsPage({
         action={<IngestButton path="v1/market/ingest" body={ingestBody} />}
       />
 
-      <MarketsControls
-        exchange={exchange}
-        symbol={symbol}
-        timeframe={timeframe}
-        range={range}
-      />
+      <Section title="筛选条件">
+        <MarketsControls
+          exchange={exchange}
+          symbol={symbol}
+          timeframe={timeframe}
+          range={range}
+        />
+      </Section>
 
       <ApiErrorView error={error} />
 
       <OhlcvChart bars={bars} />
 
       {stats ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm rounded-md border border-default-200 p-3">
-          <div>
-            <div className="text-xs text-default-500">最新收盘</div>
-            <div className="text-lg font-semibold">${fmtPrice(stats.close)}</div>
-          </div>
-          <div>
-            <div className="text-xs text-default-500">24h 涨跌</div>
-            <div
-              className={`text-lg font-semibold ${
-                stats.change24 >= 0 ? "text-success" : "text-danger"
-              }`}
-            >
-              {fmtPct(stats.change24)}
-            </div>
-          </div>
-          <div>
-            <div className="text-xs text-default-500">区间最高</div>
-            <div className="text-lg font-semibold">${fmtPrice(stats.high)}</div>
-          </div>
-          <div>
-            <div className="text-xs text-default-500">区间最低</div>
-            <div className="text-lg font-semibold">${fmtPrice(stats.low)}</div>
-          </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Stat label="最新收盘" value={`$${fmtPrice(stats.close)}`} />
+          <Stat
+            label="24h 涨跌"
+            value={fmtPct(stats.change24)}
+            delta={{
+              value: fmtPct(stats.change24),
+              direction: changeDir,
+            }}
+          />
+          <Stat label="区间最高" value={`$${fmtPrice(stats.high)}`} />
+          <Stat label="区间最低" value={`$${fmtPrice(stats.low)}`} />
         </div>
       ) : null}
 
       {!error && bars.length === 0 ? (
-        <div className="text-sm text-default-500">
+        <div className="text-sm text-text-tertiary">
           请求时间窗口内暂无 K 线数据。点击右上角“立即抓取数据”触发一次入库。
         </div>
       ) : null}

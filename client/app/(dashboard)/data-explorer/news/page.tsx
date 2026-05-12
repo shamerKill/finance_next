@@ -1,9 +1,18 @@
 // Phase 8 news explorer. Server-rendered list of the most recent 100
 // items, sentiment-coloured. Symbol filter is left for a follow-up
 // (the gateway endpoint already accepts ?symbols=).
+//
+// Node 2.C.5.d — migrated list rendering to <DataTable> (which
+// transparently swaps to a card-list on mobile) and sentiment chip to
+// <StatusBadge>. Business logic unchanged; ingest still uses the
+// IngestWithVerify wrapper.
 
 import { ApiErrorView } from "@/components/api-error";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { Section } from "@/components/section";
+import { StatusBadge, type StatusTone } from "@/components/status-badge";
 import { getNews } from "@/data/api-client";
 import type { TypeNewsItem } from "@/data/type";
 
@@ -13,11 +22,68 @@ export const metadata = { title: "新闻与情绪" };
 
 export const dynamic = "force-dynamic";
 
-function sentimentClass(s: number): string {
-  if (s > 0.2) return "text-success";
-  if (s < -0.2) return "text-danger";
-  return "text-default-500";
+function sentimentTone(s: number): StatusTone {
+  if (s > 0.2) return "success";
+  if (s < -0.2) return "danger";
+  return "default";
 }
+
+function fmtSentiment(s: number): string {
+  return `${s >= 0 ? "+" : ""}${s.toFixed(2)}`;
+}
+
+const COLUMNS: DataTableColumn<TypeNewsItem>[] = [
+  {
+    key: "ts",
+    label: "时间",
+    render: (n) => (
+      <span className="font-mono text-xs text-text-secondary">{n.ts}</span>
+    ),
+  },
+  {
+    key: "source",
+    label: "来源",
+    render: (n) => <span className="text-text-secondary">{n.source}</span>,
+  },
+  {
+    key: "sentiment",
+    label: "情绪",
+    render: (n) => (
+      <StatusBadge tone={sentimentTone(n.sentiment)} variant="flat" size="sm">
+        {fmtSentiment(n.sentiment)}
+      </StatusBadge>
+    ),
+  },
+  {
+    key: "title",
+    label: "标题",
+    render: (n) =>
+      n.url ? (
+        <a
+          href={n.url}
+          className="text-sm text-text-primary hover:underline"
+          target="_blank"
+          rel="noreferrer"
+        >
+          {n.title}
+        </a>
+      ) : (
+        <span className="text-sm text-text-primary">{n.title}</span>
+      ),
+  },
+  {
+    key: "symbols",
+    label: "标的",
+    render: (n) =>
+      n.symbols.length > 0 ? (
+        <span className="text-xs text-text-tertiary">
+          {n.symbols.join(", ")}
+        </span>
+      ) : (
+        <span className="text-xs text-text-tertiary">—</span>
+      ),
+  },
+];
 
 export default async function NewsPage() {
   let items: TypeNewsItem[] = [];
@@ -35,40 +101,20 @@ export default async function NewsPage() {
         action={<IngestWithVerify />}
       />
       <ApiErrorView error={error} />
-      <ul className="flex flex-col gap-2">
-        {items.map((n) => (
-          <li
-            key={n.id}
-            className="border border-default-200 rounded p-3 flex flex-col gap-1"
-          >
-            <div className="flex items-center gap-2 text-xs">
-              <span className="font-mono text-default-400">{n.ts}</span>
-              <span className="text-default-500">{n.source}</span>
-              <span className={sentimentClass(n.sentiment)}>
-                {n.sentiment >= 0 ? "+" : ""}
-                {n.sentiment.toFixed(2)}
-              </span>
-              {n.symbols.length > 0 && (
-                <span className="ml-auto text-default-400">
-                  {n.symbols.join(", ")}
-                </span>
-              )}
-            </div>
-            {n.url ? (
-              <a
-                href={n.url}
-                className="text-sm hover:underline"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {n.title}
-              </a>
-            ) : (
-              <span className="text-sm">{n.title}</span>
-            )}
-          </li>
-        ))}
-      </ul>
+      <Section title="最新新闻">
+        <DataTable
+          ariaLabel="news list"
+          columns={COLUMNS}
+          rows={items}
+          getRowKey={(n) => n.id}
+          emptyState={
+            <EmptyState
+              title="暂无新闻"
+              description="尚未抓取到任何新闻条目。点击右上角“立即抓取数据”触发一次采集。"
+            />
+          }
+        />
+      </Section>
     </div>
   );
 }

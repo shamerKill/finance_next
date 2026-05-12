@@ -1,9 +1,15 @@
-// Phase 8 on-chain explorer. Defaults to BTC hash rate; same plain
-// table layout as the macro page.
+// Phase 8 on-chain explorer. Defaults to BTC hash rate.
+//
+// Node 2.C.5.d — line ChartShell + DataTable wrapped in Sections.
+// Business logic unchanged.
 
 import { ApiErrorView } from "@/components/api-error";
+import { ChartShell, type ChartBar } from "@/components/chart-shell";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
 import { IngestButton } from "@/components/ingest-button";
 import { PageHeader } from "@/components/page-header";
+import { Section } from "@/components/section";
 import { getOnchainMetrics } from "@/data/api-client";
 import type { TypeOnchainPoint } from "@/data/type";
 
@@ -13,6 +19,33 @@ export const dynamic = "force-dynamic";
 
 const DEFAULT_CHAIN = "btc";
 const DEFAULT_METRIC = "hash_rate";
+
+const COLUMNS: DataTableColumn<TypeOnchainPoint>[] = [
+  {
+    key: "ts",
+    label: "时间",
+    render: (r) => (
+      <span className="font-mono text-text-secondary">{r.ts}</span>
+    ),
+  },
+  {
+    key: "value",
+    label: "数值",
+    align: "end",
+    render: (r) => (
+      <span className="font-mono tnum text-text-primary">{r.value}</span>
+    ),
+  },
+  {
+    key: "source",
+    label: "来源",
+    render: (r) => r.source,
+  },
+];
+
+function toChartBars(points: TypeOnchainPoint[]): ChartBar[] {
+  return points.map((p) => ({ time: p.ts, value: p.value }));
+}
 
 export default async function OnchainPage() {
   let points: TypeOnchainPoint[] = [];
@@ -36,24 +69,30 @@ export default async function OnchainPage() {
         }
       />
       <ApiErrorView error={error} />
-      <table className="text-sm border border-default-200">
-        <thead className="bg-default-100">
-          <tr>
-            <th className="text-left px-3 py-2">时间</th>
-            <th className="text-right px-3 py-2">数值</th>
-            <th className="text-left px-3 py-2">来源</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((p) => (
-            <tr key={p.ts} className="border-t border-default-200">
-              <td className="px-3 py-1 font-mono">{p.ts}</td>
-              <td className="px-3 py-1 text-right font-mono">{p.value}</td>
-              <td className="px-3 py-1">{p.source}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <Section title="走势">
+        {points.length > 0 ? (
+          <ChartShell type="line" data={toChartBars(points)} />
+        ) : (
+          <EmptyState
+            title="暂无观测数据"
+            description="该链上指标尚未入库。点击右上角“立即抓取数据”触发一次采集。"
+          />
+        )}
+      </Section>
+      <Section title="最近观测">
+        <DataTable
+          ariaLabel="onchain metrics"
+          columns={COLUMNS}
+          rows={rows}
+          getRowKey={(r) => `${r.source}-${r.ts}`}
+          emptyState={
+            <EmptyState
+              title="暂无数据"
+              description="尚未抓取或时间窗口内无观测。"
+            />
+          }
+        />
+      </Section>
     </div>
   );
 }

@@ -1,10 +1,15 @@
 // Phase 8 futures explorer. Defaults to the SHFE copper front-month
-// (cu2412); the chart component is reused from /markets.
+// (cu2412).
+//
+// Node 2.C.5.d — ChartShell candle + Section wrapper + EmptyState.
+// Business logic unchanged.
 
-import { OhlcvChart } from "@/app/(dashboard)/markets/chart";
 import { ApiErrorView } from "@/components/api-error";
+import { ChartShell, type ChartBar } from "@/components/chart-shell";
+import { EmptyState } from "@/components/empty-state";
 import { IngestButton } from "@/components/ingest-button";
 import { PageHeader } from "@/components/page-header";
+import { Section } from "@/components/section";
 import { getFuturesOhlcv, type TypeOhlcvBar } from "@/data/api-client";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +19,16 @@ export const metadata = { title: "期货数据" };
 const DEFAULT_EXCHANGE = "shfe";
 const DEFAULT_CONTRACT = "cu2412";
 const DEFAULT_TIMEFRAME = "1d";
+
+function toChartBars(bars: TypeOhlcvBar[]): ChartBar[] {
+  return bars.map((b) => ({
+    time: b.time,
+    open: b.open,
+    high: b.high,
+    low: b.low,
+    close: b.close,
+  }));
+}
 
 export default async function FuturesPage() {
   const end = new Date();
@@ -44,7 +59,16 @@ export default async function FuturesPage() {
         }
       />
       <ApiErrorView error={error} />
-      <OhlcvChart bars={bars} />
+      <Section title="K 线图">
+        {bars.length > 0 ? (
+          <ChartShell type="candle" data={toChartBars(bars)} />
+        ) : (
+          <EmptyState
+            title="暂无 K 线数据"
+            description="该时间窗口内未找到数据。点击右上角“立即抓取数据”触发一次入库。"
+          />
+        )}
+      </Section>
     </div>
   );
 }

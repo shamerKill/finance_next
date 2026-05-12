@@ -72,11 +72,12 @@ export const SIDEBAR_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "管理",
+    label: "设置",
     items: [
+      { href: "/settings/account", label: "个人" },
       {
-        href: "/admin",
-        label: "管理",
+        href: "/settings/system",
+        label: "系统",
         trailing: ({ tradingHalted }) =>
           tradingHalted ? (
             <span
@@ -86,7 +87,11 @@ export const SIDEBAR_GROUPS: NavGroup[] = [
             />
           ) : null,
       },
-      { href: "/admin/ai", label: "AI 配置" },
+      { href: "/settings/ai", label: "AI" },
+      { href: "/settings/data-sources", label: "数据源" },
+      { href: "/settings/trading", label: "交易" },
+      { href: "/settings/observability", label: "监控" },
+      { href: "/settings/deployment", label: "部署" },
       { href: "/admin/audit", label: "审计" },
     ],
   },

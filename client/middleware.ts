@@ -22,6 +22,19 @@ const PUBLIC_PREFIXES = [
 
 const COOKIE_NAME = "auth_token";
 
+// Node 3.E.1 — legacy /admin/* → /settings/* redirects.
+//
+// /admin and /admin/ai were retired when the IA collapsed into a single
+// /settings tree (spec §G3). /admin/audit is intentionally preserved
+// (linked from /settings/observability) and is NOT remapped. The map is
+// matched as exact-prefix on `pathname` AFTER the auth gate, so an
+// unauth'd user still goes through /login first and lands on the new
+// location after sign-in.
+const LEGACY_REDIRECTS: Record<string, string> = {
+  "/admin": "/settings/system",
+  "/admin/ai": "/settings/ai",
+};
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -37,7 +50,18 @@ export function middleware(req: NextRequest) {
   // the intended destination as `?next=` so we can hop back after login
   // (the login page can choose to honour or ignore this).
   const hasCookie = req.cookies.has(COOKIE_NAME);
-  if (hasCookie) return NextResponse.next();
+  if (hasCookie) {
+    // Legacy path mapping — runs only for authenticated requests so
+    // unauthenticated visitors still see the /login flow first.
+    const target = LEGACY_REDIRECTS[pathname];
+    if (target) {
+      const url = new URL(target, req.url);
+      // 308 = Permanent Redirect, preserves method (matters for any old
+      // POST form bookmarks pointing at /admin/*).
+      return NextResponse.redirect(url, 308);
+    }
+    return NextResponse.next();
+  }
 
   const loginUrl = new URL("/login", req.url);
   if (pathname !== "/") loginUrl.searchParams.set("next", pathname);

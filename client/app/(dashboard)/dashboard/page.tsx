@@ -73,8 +73,8 @@ export default async function DashboardPage() {
               <div className="text-xs">由 {summary.system.haltedBy} 操作</div>
             )}
             <div className="pt-1">
-              <Link href="/admin" className="underline font-medium">
-                前往管理 →
+              <Link href="/settings/system" className="underline font-medium">
+                前往系统设置 →
               </Link>
             </div>
           </div>
@@ -150,7 +150,7 @@ function SystemCard({ summary }: { summary: TypeDashboardSummary }) {
       title="系统状态"
       action={
         <Link
-          href="/admin"
+          href="/settings/system"
           className="text-xs text-brand-primary hover:underline"
         >
           管理 →
@@ -254,10 +254,10 @@ function AIBudgetCard({ summary }: { summary: TypeDashboardSummary }) {
       title="AI 预算 (今日)"
       action={
         <Link
-          href="/admin"
+          href="/settings/ai"
           className="text-xs text-brand-primary hover:underline"
         >
-          管理设置 →
+          AI 设置 →
         </Link>
       }
     >

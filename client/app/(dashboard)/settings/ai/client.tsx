@@ -1,6 +1,6 @@
 "use client";
 
-// Phase D wave 3 — /admin/ai
+// Node 3.E.1 — migrated from /admin/ai/page.tsx.
 //
 // Admin sub-page for the AI optimization stack: model family + names,
 // base URLs, per-study / per-day budgets, and the OHLCV lookback
@@ -16,9 +16,7 @@
 //
 // API keys (ANTHROPIC_API_KEY / OPENAI_API_KEY) are intentionally
 // excluded from this UI for the same reason as the KEK master key:
-// rotating them via a web form is more risk than benefit. The
-// configured/unconfigured state shows up as binary badges so operators
-// can spot a missing key.
+// rotating them via a web form is more risk than benefit.
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -79,7 +77,7 @@ function Row({
   );
 }
 
-export default function AdminAIPage() {
+export function AIConfigClient() {
   const adminKey = useAdminKey();
   const [config, setConfig] = useState<TypeAIConfig | null>(null);
   const [prompts, setPrompts] = useState<TypeAIPrompts | null>(null);
@@ -98,7 +96,6 @@ export default function AdminAIPage() {
     setLoading(true);
     setConfigError(null);
     setPromptsError(null);
-    // Independent fetches — prompts can 503 while config is fine.
     const [cfgRes, prRes] = await Promise.allSettled([
       getAdminAIConfig(adminKey),
       getAdminAIPrompts(adminKey),
@@ -124,7 +121,6 @@ export default function AdminAIPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminKey]);
 
-  // Admin key empty OR config returned 401/403 → unified empty state.
   const configAuthFailed =
     configError instanceof ApiError &&
     (configError.status === 401 || configError.status === 403);
@@ -136,8 +132,8 @@ export default function AdminAIPage() {
         <PageHeader
           title="AI 配置"
           breadcrumb={
-            <Link href="/admin" className="hover:underline">
-              ← 管理
+            <Link href="/settings/system" className="hover:underline">
+              ← 系统设置
             </Link>
           }
           subtitle="模型、预算、查找窗口、prompts 等 AI 相关配置。API 密钥不在 UI 中暴露，仍通过环境变量配置。"
@@ -146,12 +142,12 @@ export default function AdminAIPage() {
           title={keyMissing ? "请先设置管理员密钥" : "无权访问"}
           description={
             keyMissing
-              ? "本页面需要管理员密钥；在 /admin 设置一次后，本浏览器即可访问所有 /admin/* 端点。"
+              ? "本页面需要管理员密钥；在 /settings/system 设置一次后，本浏览器即可访问所有 admin 端点。"
               : "管理员密钥缺失或不正确。"
           }
           action={
             <Link
-              href="/admin"
+              href="/settings/system"
               className="rounded bg-primary px-4 py-1.5 text-white hover:opacity-90"
             >
               前往设置 →
@@ -162,9 +158,6 @@ export default function AdminAIPage() {
     );
   }
 
-  // Prompts-only 503 (quant unreachable) is non-fatal; we still render
-  // the config section. Other config errors render via ApiErrorView in
-  // place of the section.
   const promptsUnavailable =
     promptsError instanceof ApiError && promptsError.status === 503;
 
@@ -173,14 +166,13 @@ export default function AdminAIPage() {
       <PageHeader
         title="AI 配置"
         breadcrumb={
-          <Link href="/admin" className="hover:underline">
-            ← 管理
+          <Link href="/settings/system" className="hover:underline">
+            ← 系统设置
           </Link>
         }
         subtitle="模型、预算、查找窗口、prompts 等 AI 相关配置。API 密钥不在 UI 中暴露，仍通过环境变量配置。"
       />
 
-      {/* ---- current config ---- */}
       {configError != null && !configAuthFailed ? (
         <ApiErrorView error={configError} />
       ) : null}
@@ -250,7 +242,6 @@ export default function AdminAIPage() {
         <div className="text-sm text-default-500">加载中…</div>
       )}
 
-      {/* ---- system prompts ---- */}
       <Section title="System Prompts (只读)">
         {promptsUnavailable && (
           <Callout variant="warning" title="无法连接 quant worker">

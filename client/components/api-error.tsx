@@ -31,7 +31,10 @@ export function ApiErrorView({ error }: { error: unknown }) {
       {(status === 401 || status === 403) && (
         <>
           {" "}
-          <Link href="/admin" className="underline font-medium hover:opacity-80">
+          <Link
+            href="/settings/system"
+            className="underline font-medium hover:opacity-80"
+          >
             前往设置 →
           </Link>
         </>
@@ -45,7 +48,7 @@ function friendlyMessage(status: number, raw: string): string {
     case 401:
     case 403:
       // Covers three real cases: key never set, key set but wrong, gateway
-      // restarted with a different ADMIN_KEY. The /admin link points the
+      // restarted with a different ADMIN_KEY. The /settings/system link points the
       // user to where they can update / verify the key.
       return "无权访问 — 管理员密钥缺失或不正确。";
     case 404:

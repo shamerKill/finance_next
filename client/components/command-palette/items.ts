@@ -49,10 +49,16 @@ export const PAGE_ITEMS: StaticPaletteItem[] = [
   { id: "nav:data-explorer:news", label: "数据 · 新闻", searchExtra: "news 新闻 资讯", group: "导航", target: "/data-explorer/news" },
   { id: "nav:prediction:markets", label: "预测市场", searchExtra: "prediction markets polymarket 预测", group: "导航", target: "/prediction/markets" },
   { id: "nav:prediction:strategies", label: "预测策略", searchExtra: "prediction strategies polymarket 预测策略", group: "导航", target: "/prediction/strategies" },
-  // Wave 3 会迁到 /settings；目前实际路径是 /admin。
-  { id: "nav:admin", label: "设置", searchExtra: "settings admin 管理 配置", group: "导航", target: "/admin" },
-  { id: "nav:admin:ai", label: "设置 · AI", searchExtra: "ai settings claude 优化 预算", group: "导航", target: "/admin/ai" },
-  { id: "nav:admin:audit", label: "设置 · 审计", searchExtra: "audit 审计 日志 log", group: "导航", target: "/admin/audit" },
+  // Node 3.E.1 — IA collapsed to /settings/*; /admin/audit stays put.
+  { id: "nav:settings", label: "设置", searchExtra: "settings admin 管理 配置", group: "导航", target: "/settings/account" },
+  { id: "nav:settings:account", label: "设置 · 个人", searchExtra: "account profile 个人 资料", group: "导航", target: "/settings/account" },
+  { id: "nav:settings:system", label: "设置 · 系统", searchExtra: "system kill switch halt 系统 停机 限额", group: "导航", target: "/settings/system" },
+  { id: "nav:settings:ai", label: "设置 · AI", searchExtra: "ai settings claude 优化 预算", group: "导航", target: "/settings/ai" },
+  { id: "nav:settings:data-sources", label: "设置 · 数据源", searchExtra: "data sources 数据源 ingest", group: "导航", target: "/settings/data-sources" },
+  { id: "nav:settings:trading", label: "设置 · 交易", searchExtra: "trading mainnet token gate 交易 主网", group: "导航", target: "/settings/trading" },
+  { id: "nav:settings:observability", label: "设置 · 监控", searchExtra: "observability metrics audit 监控 追踪", group: "导航", target: "/settings/observability" },
+  { id: "nav:settings:deployment", label: "设置 · 部署", searchExtra: "deployment version backup 部署 版本", group: "导航", target: "/settings/deployment" },
+  { id: "nav:admin:audit", label: "审计日志", searchExtra: "audit 审计 日志 log", group: "导航", target: "/admin/audit" },
 ];
 
 // 1.2 Actions — 高频操作 deeplink。query param 暂时占位，Wave 3 才会接通。
@@ -62,7 +68,7 @@ export const ACTION_ITEMS: StaticPaletteItem[] = [
     label: "紧急停机交易",
     searchExtra: "halt kill switch 停机 急停 emergency",
     group: "操作",
-    target: "/admin?action=halt",
+    target: "/settings/system?action=halt",
     danger: true,
     hint: "需确认",
   },
@@ -71,7 +77,7 @@ export const ACTION_ITEMS: StaticPaletteItem[] = [
     label: "恢复交易",
     searchExtra: "resume 恢复 重启 unhalt",
     group: "操作",
-    target: "/admin?action=resume",
+    target: "/settings/system?action=resume",
     hint: "需确认",
   },
   {

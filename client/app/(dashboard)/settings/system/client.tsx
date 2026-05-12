@@ -1,6 +1,16 @@
 "use client";
 
-import Link from "next/link";
+// Node 3.E.1 — migrated from /admin/page.tsx with identical behavior.
+//
+// Three operator-facing knobs, all client-side because the admin key
+// lives in localStorage (server components can't read it):
+//   * admin key + multi-tenant userId localStorage editors
+//   * kill switch (halt / resume — writes system_state.tradingHalted)
+//   * portfolio limits form (PUT /api/v1/admin/portfolio-limits)
+//
+// audit log is linked from /settings/observability instead of here
+// (per spec §G3 IA — audit lives under "监控").
+
 import { useEffect, useState } from "react";
 
 import { ApiErrorView } from "@/components/api-error";
@@ -22,15 +32,8 @@ const ADMIN_KEY_STORAGE = "finance_next_admin_key";
 // Absent → the gateway falls back to "default" for this browser.
 const USER_ID_STORAGE = "finance_next_user_id";
 
-// Phase 7 admin page. Rendered client-side because the operator's admin
-// key lives in localStorage; server components have no access. The page
-// has three sections: kill switch toggle, portfolio limits editor, and
-// a link to the audit viewer.
-export default function AdminPage() {
-  // Persisted key from the shared hook (also listens to cross-tab updates).
+export function SystemSettingsClient() {
   const persistedKey = useAdminKey();
-  // Local draft tied to the password input; initialised from the persisted
-  // value once hydration completes.
   const [adminKey, setAdminKey] = useState("");
   const [userId, setUserId] = useState("");
   const [state, setState] = useState<TypeSystemState | null>(null);
@@ -42,17 +45,11 @@ export default function AdminPage() {
     "unknown" | "verifying" | "ok" | "bad"
   >("unknown");
 
-  // Sync the draft input from the persisted hook value once on mount /
-  // whenever another tab updates the key. We deliberately do not
-  // overwrite mid-edit when the user is typing — the dependency is the
-  // hook's value, which only changes on real localStorage events.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setAdminKey(persistedKey);
   }, [persistedKey]);
 
-  // userId comes from a separate storage slot and isn't covered by the
-  // admin-key hook; keep the original effect-based load.
   useEffect(() => {
     const u = window.localStorage.getItem(USER_ID_STORAGE) ?? "";
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -92,7 +89,6 @@ export default function AdminPage() {
 
   const onSaveKey = () => {
     window.localStorage.setItem(ADMIN_KEY_STORAGE, adminKey);
-    // Immediately re-verify so the halt / limits sections unlock.
     refresh();
   };
 
@@ -102,7 +98,6 @@ export default function AdminPage() {
     } else {
       window.localStorage.removeItem(USER_ID_STORAGE);
     }
-    // Reload so every page in the dashboard picks up the new header.
     window.location.reload();
   };
 
@@ -153,7 +148,7 @@ export default function AdminPage() {
 
   return (
     <div className="max-w-3xl space-y-8">
-      <h1 className="text-2xl font-semibold">管理</h1>
+      <h1 className="text-2xl font-semibold">系统</h1>
 
       <section className="space-y-2">
         <h2 className="text-lg font-medium">管理密钥</h2>
@@ -258,14 +253,6 @@ export default function AdminPage() {
         </p>
         {limits && (
           <div className="grid grid-cols-2 gap-3">
-            {/*
-              Explicit min/step + no max. A previous iteration of this
-              page accidentally clamped the inputs to a 0 ceiling
-              (aria-valuemax="0"), which silently rejected every edit. We
-              now declare bounds explicitly so the ARIA hints match the
-              actual server constraint ("0 = no cap, any positive number
-              is valid").
-            */}
             <label className="text-sm">
               最大未平仓名义金额（USD）
               <input
@@ -323,13 +310,6 @@ export default function AdminPage() {
         >
           保存限额
         </button>
-      </section>
-
-      <section>
-        <h2 className="text-lg font-medium">审计日志</h2>
-        <Link className="text-primary underline" href="/admin/audit">
-          查看最近的管理 / 变更操作
-        </Link>
       </section>
     </div>
   );

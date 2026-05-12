@@ -118,7 +118,7 @@ function RegisterForm() {
               value={inviteToken}
               onValueChange={setInviteToken}
               isDisabled={loading}
-              description="由管理员通过 /admin → 邀请用户 生成"
+              description="由管理员通过 /settings → 邀请用户 生成"
             />
           ) : null}
           {err ? (

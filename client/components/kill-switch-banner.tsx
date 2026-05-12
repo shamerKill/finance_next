@@ -57,8 +57,8 @@ export function KillSwitchBanner() {
           交易已暂停 — {state.haltedReason ?? "未提供原因"}
           {state.haltedBy ? ` (由 ${state.haltedBy} 操作)` : ""}
         </span>
-        <Link href="/admin" className="underline">
-          管理
+        <Link href="/settings/system" className="underline">
+          系统设置
         </Link>
       </div>
     );
@@ -69,7 +69,7 @@ export function KillSwitchBanner() {
       <div className="bg-warning-50 text-warning-700 border-b border-warning-200 px-4 py-1.5 text-xs flex items-center justify-between gap-3">
         <span>
           管理员密钥未验证 ·{" "}
-          <Link href="/admin" className="underline font-medium">
+          <Link href="/settings/system" className="underline font-medium">
             前往设置 →
           </Link>
         </span>

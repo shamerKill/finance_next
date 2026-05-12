@@ -17,13 +17,41 @@ monorepo，每个子工程独立 build：
 
 后端架构与各 phase（0-9）的实现细节见 [CLAUDE.md](./CLAUDE.md)。
 
-## 快速开始
+## 5 分钟启动（开发）
 
 ```bash
-# 1. 准备项目根 .env（参考 gateway/.env.example）
-cp gateway/.env.example .env
-# 至少填写 MONGODB_URI 和 ENCRYPTION_KEY。生成 ENCRYPTION_KEY：
-# node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+git clone <repo> && cd finance_next
+
+# 1. 拷贝 env 模板并填入两个 32 字节 hex 密钥
+cp .env.example .env
+node -e "console.log('ENCRYPTION_KEY=' + require('crypto').randomBytes(32).toString('hex'))" >> .env
+node -e "console.log('AUTH_JWT_SECRET=' + require('crypto').randomBytes(32).toString('hex'))" >> .env
+$EDITOR .env    # 按需调其它项（MONGODB_URI / ADMIN_KEY ...）
+
+# 2. 预飞行校验（必填 / hex 长度 / 常见误配警告）
+bash infra/scripts/check-env.sh
+
+# 3. 启整套栈（Mongo + Redis + Timescale + gateway + quant）
+docker compose -f infra/docker-compose.yml up -d --build
+# 等约 30 秒所有服务 healthy（compose 内置 healthcheck）
+
+# 4. 验证
+curl http://localhost:3001/healthz | jq    # 含 deps 状态
+curl http://localhost:8000/readyz | jq     # quant 就绪状态
+
+# 5. 启前端
+cd client && yarn install && yarn dev
+# 浏览器访问 http://localhost:3000 → 第一次注册自动成为 admin
+```
+
+详细部署文档见 `docs/deployment/`（Wave 4 后续节点持续补充）。
+
+## 快速开始（旧路径，兼容保留）
+
+```bash
+# 1. 准备项目根 .env（参考 .env.example）
+cp .env.example .env
+# 至少填写 MONGODB_URI、ENCRYPTION_KEY、AUTH_JWT_SECRET。
 
 # 2. 启动整套依赖栈（Mongo / Redis / Timescale / Go gateway / Python quant）
 docker compose -f infra/docker-compose.yml up --build

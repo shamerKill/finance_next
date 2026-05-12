@@ -472,8 +472,24 @@ func NewRouter(d Deps) *echo.Echo {
 	wsHandler := ws.NewHandlerWithAuth(hub, nil, d.AllowedOrigins, verifier)
 	e.GET("/ws", wsHandler.Handle)
 
+	// /healthz — liveness probe.
+	//
+	// Always returns HTTP 200 (alive ≠ ready): an aliveness probe failing
+	// the container means kill+restart, which is the wrong move when a
+	// downstream is briefly flaky. The `deps` map surfaces per-dep status
+	// for ops dashboards / debugging; consumers that need a hard ready
+	// signal should hit /api/v1/settings/system-info (admin-only, with
+	// proper 503 semantics).
+	//
+	// Each dep probe runs with a 2s timeout (Node 4.F.1). The body shape
+	// preserves the historical `{"status":"ok"}` field so existing
+	// healthchecks keep parsing.
 	e.GET("/healthz", func(c echo.Context) error {
-		return c.JSON(200, map[string]string{"status": "ok"})
+		deps := healthzDeps(c.Request().Context(), d)
+		return c.JSON(200, map[string]any{
+			"status": "ok",
+			"deps":   deps,
+		})
 	})
 
 	// Phase 7 /metrics endpoint. Bound to localhost in production via
@@ -489,4 +505,101 @@ func NewRouter(d Deps) *echo.Echo {
 	}
 
 	return e
+}
+
+// healthzDepStatus is one entry in the /healthz `deps` block. Mirrors
+// handlers.DepStatus but kept package-local so router.go doesn't import
+// the handlers internals.
+type healthzDepStatus struct {
+	Status    string `json:"status"`              // "ok" | "error" | "disabled"
+	LatencyMs int64  `json:"latencyMs,omitempty"`
+	Err       string `json:"err,omitempty"`
+}
+
+// healthzDeps runs lightweight ping probes against mongo / redis /
+// timescale / quant with a 2s per-dep timeout. Failures never fail the
+// /healthz call itself — they surface in the body. nil deps report
+// `status="disabled"` so consumers can tell "not wired" from "broken".
+func healthzDeps(parent context.Context, d Deps) map[string]healthzDepStatus {
+	const timeout = 2 * time.Second
+	out := map[string]healthzDepStatus{
+		"mongo":     healthzPingMongo(parent, d.MongoDB, timeout),
+		"redis":     healthzPingRedis(parent, d.Redis, timeout),
+		"timescale": healthzPingTimescale(parent, d.Timescale, timeout),
+		"quant":     healthzPingQuant(parent, d.Quant, timeout),
+	}
+	return out
+}
+
+func healthzPingMongo(parent context.Context, db *mongo.Database, timeout time.Duration) healthzDepStatus {
+	if db == nil {
+		return healthzDepStatus{Status: "disabled"}
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	start := time.Now()
+	if err := db.Client().Ping(ctx, nil); err != nil {
+		return healthzDepStatus{
+			Status:    "error",
+			LatencyMs: time.Since(start).Milliseconds(),
+			Err:       err.Error(),
+		}
+	}
+	return healthzDepStatus{Status: "ok", LatencyMs: time.Since(start).Milliseconds()}
+}
+
+func healthzPingRedis(parent context.Context, rdb *redis.Client, timeout time.Duration) healthzDepStatus {
+	if rdb == nil {
+		return healthzDepStatus{Status: "disabled"}
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	start := time.Now()
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		return healthzDepStatus{
+			Status:    "error",
+			LatencyMs: time.Since(start).Milliseconds(),
+			Err:       err.Error(),
+		}
+	}
+	return healthzDepStatus{Status: "ok", LatencyMs: time.Since(start).Milliseconds()}
+}
+
+func healthzPingTimescale(parent context.Context, ts *timescale.Store, timeout time.Duration) healthzDepStatus {
+	if ts == nil {
+		return healthzDepStatus{Status: "disabled"}
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	start := time.Now()
+	if err := ts.Ping(ctx); err != nil {
+		return healthzDepStatus{
+			Status:    "error",
+			LatencyMs: time.Since(start).Milliseconds(),
+			Err:       err.Error(),
+		}
+	}
+	return healthzDepStatus{Status: "ok", LatencyMs: time.Since(start).Milliseconds()}
+}
+
+// healthzPingQuant uses GetAIConfig as the cheapest existing RPC. A
+// gRPC Unimplemented response (older quant) is still surfaced as
+// "error" because we can't reliably distinguish it without importing
+// the gRPC status codes here; handlers/settings.go's deeper probe is
+// the right tool for that distinction.
+func healthzPingQuant(parent context.Context, q quantclient.Client, timeout time.Duration) healthzDepStatus {
+	if q == nil {
+		return healthzDepStatus{Status: "disabled"}
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	start := time.Now()
+	if _, err := q.GetAIConfig(ctx); err != nil {
+		return healthzDepStatus{
+			Status:    "error",
+			LatencyMs: time.Since(start).Milliseconds(),
+			Err:       err.Error(),
+		}
+	}
+	return healthzDepStatus{Status: "ok", LatencyMs: time.Since(start).Milliseconds()}
 }

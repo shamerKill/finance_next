@@ -21,7 +21,7 @@ if _PROTO_GEN.exists():
     sys.path.insert(0, str(_PROTO_GEN))
 
 import redis.asyncio as aioredis  # noqa: E402
-from fastapi import FastAPI  # noqa: E402
+from fastapi import FastAPI, Response  # noqa: E402
 
 from quant.config import get_settings  # noqa: E402
 from quant.data import mongo as mongo_data  # noqa: E402
@@ -146,6 +146,74 @@ def create_app() -> FastAPI:
         from quant import __version__
 
         return {"version": __version__}
+
+    @app.get("/readyz")
+    async def readyz(response: Response) -> dict:
+        """Readiness probe — checks downstream deps.
+
+        Unlike /healthz (liveness, always 200), /readyz returns 503 when
+        any dep fails so docker-compose / k8s can keep the gateway out
+        of rotation while quant is still warming up. Each probe is
+        2 s-bounded; an entire unresponsive stack returns within ~6 s.
+
+        Mongo is optional in dev — when MONGODB_URI is unset the dep
+        reports `disabled` and does not block readiness.
+        """
+        import asyncio  # noqa: PLC0415
+
+        deps: dict[str, dict] = {}
+        any_failed = False
+
+        # Timescale: SELECT 1 via the pool.
+        ts_state: dict
+        try:
+            async with asyncio.timeout(2.0):
+                pool = timescale.get_pool()
+                async with pool.acquire() as conn:
+                    await conn.execute("SELECT 1")
+            ts_state = {"status": "ok"}
+        except Exception as exc:  # noqa: BLE001
+            ts_state = {"status": "error", "err": str(exc)[:200]}
+            any_failed = True
+        deps["timescale"] = ts_state
+
+        # Redis: PING via the lifespan-attached client.
+        redis_state: dict
+        try:
+            client = getattr(app.state, "redis", None)
+            if client is None:
+                redis_state = {"status": "disabled"}
+            else:
+                async with asyncio.timeout(2.0):
+                    await client.ping()
+                redis_state = {"status": "ok"}
+        except Exception as exc:  # noqa: BLE001
+            redis_state = {"status": "error", "err": str(exc)[:200]}
+            any_failed = True
+        deps["redis"] = redis_state
+
+        # Mongo: optional. Probe only if MONGODB_URI was set at boot
+        # (the lifespan binds the client lazily under that env var).
+        mongo_state: dict
+        if not os.getenv("MONGODB_URI"):
+            mongo_state = {"status": "disabled"}
+        else:
+            try:
+                async with asyncio.timeout(2.0):
+                    db = mongo_data.get_db()
+                    if db is None:
+                        raise RuntimeError("mongo client not initialised")
+                    await db.command("ping")
+                mongo_state = {"status": "ok"}
+            except Exception as exc:  # noqa: BLE001
+                mongo_state = {"status": "error", "err": str(exc)[:200]}
+                any_failed = True
+        deps["mongo"] = mongo_state
+
+        if any_failed:
+            response.status_code = 503
+            return {"status": "not_ready", "deps": deps}
+        return {"status": "ready", "deps": deps}
 
     return app
 

@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"io"
 	"net/http/httptest"
 	"strings"
@@ -128,5 +129,41 @@ func TestMetricsEndpoint_ExposesGrafanaDashboardMetrics(t *testing.T) {
 	// Content-type per Prometheus exposition format 0.0.4.
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/plain") {
 		t.Errorf("expected text/plain content type, got %q", ct)
+	}
+}
+
+// TestHealthz_DepsReportDisabledWhenNotWired pins Node 4.F.1 — /healthz
+// always returns 200 (liveness), and the deps block surfaces the four
+// downstreams (mongo / redis / timescale / quant) as "disabled" when
+// Deps doesn't wire them. Status field stays "ok" to preserve the
+// existing healthcheck contract.
+func TestHealthz_DepsReportDisabledWhenNotWired(t *testing.T) {
+	e := NewRouter(Deps{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var body struct {
+		Status string                       `json:"status"`
+		Deps   map[string]map[string]any    `json:"deps"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode /healthz body: %v", err)
+	}
+	if body.Status != "ok" {
+		t.Errorf("expected status=ok (liveness), got %q", body.Status)
+	}
+	for _, dep := range []string{"mongo", "redis", "timescale", "quant"} {
+		entry, ok := body.Deps[dep]
+		if !ok {
+			t.Errorf("deps missing %q", dep)
+			continue
+		}
+		if entry["status"] != "disabled" {
+			t.Errorf("dep %q expected status=disabled, got %v", dep, entry["status"])
+		}
 	}
 }

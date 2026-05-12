@@ -95,6 +95,15 @@ services:
       PORT: "3001"
     ports:
       - "3001:3001"
+    # Node 4.F.1: liveness probe via /healthz (always 200 when process is up).
+    # start_period gives the gateway 20 s to bind :3001 + connect downstreams
+    # before failures count toward `retries`.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:3001/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   quant:
     build:
@@ -117,6 +126,16 @@ services:
     # Only the FastAPI debug port is published; gRPC stays internal.
     ports:
       - "8000:8000"
+    # Node 4.F.1: readiness probe — /readyz returns 503 until timescale +
+    # redis (+ mongo if MONGODB_URI is set) all round-trip a ping. The
+    # 30 s start_period is slightly longer than gateway's because uv +
+    # FastAPI boot + grpc.aio server bind is heavier than the Go binary.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8000/readyz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   mongo_data:

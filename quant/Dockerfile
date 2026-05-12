@@ -13,7 +13,9 @@ RUN apt-get update \
         build-essential \
         libpq-dev \
         ca-certificates \
+        wget \
     && rm -rf /var/lib/apt/lists/*
+# `wget` is used by the docker-compose healthcheck against /readyz.
 
 WORKDIR /workspace
 

@@ -33,6 +33,8 @@ FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates tzdata && \
     addgroup -S app && adduser -S app -G app
+# Note: BusyBox in alpine ships `wget` by default — used by the
+# docker-compose healthcheck against /healthz. No extra package needed.
 
 USER app
 WORKDIR /app

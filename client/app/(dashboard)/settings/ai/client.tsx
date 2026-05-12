@@ -33,7 +33,6 @@ import {
   getAdminAIConfig,
   getAdminAIPrompts,
 } from "@/data/api-client";
-import { useAdminKey } from "@/data/use-admin-key";
 
 import { AIConfigEditButton } from "./edit-modal";
 
@@ -78,7 +77,6 @@ function Row({
 }
 
 export function AIConfigClient() {
-  const adminKey = useAdminKey();
   const [config, setConfig] = useState<TypeAIConfig | null>(null);
   const [prompts, setPrompts] = useState<TypeAIPrompts | null>(null);
   const [configError, setConfigError] = useState<unknown>(null);
@@ -86,19 +84,12 @@ export function AIConfigClient() {
   const [loading, setLoading] = useState(false);
 
   const refresh = async () => {
-    if (!adminKey) {
-      setConfig(null);
-      setPrompts(null);
-      setConfigError(null);
-      setPromptsError(null);
-      return;
-    }
     setLoading(true);
     setConfigError(null);
     setPromptsError(null);
     const [cfgRes, prRes] = await Promise.allSettled([
-      getAdminAIConfig(adminKey),
-      getAdminAIPrompts(adminKey),
+      getAdminAIConfig(),
+      getAdminAIPrompts(),
     ]);
     if (cfgRes.status === "fulfilled") {
       setConfig(cfgRes.value);
@@ -118,15 +109,13 @@ export function AIConfigClient() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminKey]);
+  }, []);
 
   const configAuthFailed =
     configError instanceof ApiError &&
     (configError.status === 401 || configError.status === 403);
-  const keyMissing = !adminKey;
 
-  if (keyMissing || configAuthFailed) {
+  if (configAuthFailed) {
     return (
       <div className="max-w-3xl">
         <PageHeader
@@ -139,18 +128,14 @@ export function AIConfigClient() {
           subtitle="模型、预算、查找窗口、prompts 等 AI 相关配置。API 密钥不在 UI 中暴露，仍通过环境变量配置。"
         />
         <EmptyState
-          title={keyMissing ? "请先设置管理员密钥" : "无权访问"}
-          description={
-            keyMissing
-              ? "本页面需要管理员密钥；在 /settings/system 设置一次后，本浏览器即可访问所有 admin 端点。"
-              : "管理员密钥缺失或不正确。"
-          }
+          title="无权访问"
+          description="需要管理员权限。请用 admin 账号重新登录。"
           action={
             <Link
-              href="/settings/system"
+              href="/login"
               className="rounded bg-primary px-4 py-1.5 text-white hover:opacity-90"
             >
-              前往设置 →
+              重新登录 →
             </Link>
           }
         />
@@ -189,7 +174,6 @@ export function AIConfigClient() {
           }
           action={
             <AIConfigEditButton
-              adminKey={adminKey}
               config={config}
               onSaved={(next) => setConfig(next)}
             />

@@ -37,7 +37,6 @@ import {
   requestMainnetToken,
 } from "@/data/api-client";
 import type { TypeMainnetStatus } from "@/data/type";
-import { useAdminKey } from "@/data/use-admin-key";
 import { useSystemInfo } from "@/data/use-system-info";
 
 function EnvFlagBadge({ value }: { value: unknown }) {
@@ -63,7 +62,6 @@ function EnvFlagBadge({ value }: { value: unknown }) {
 }
 
 export function TradingSettingsClient() {
-  const adminKey = useAdminKey();
   const { data: info, err: infoErr } = useSystemInfo();
 
   const [status, setStatus] = useState<TypeMainnetStatus | null>(null);
@@ -79,15 +77,10 @@ export function TradingSettingsClient() {
   const toast = useToast();
 
   const refreshStatus = async () => {
-    if (!adminKey) {
-      setStatus(null);
-      setStatusErr(null);
-      return;
-    }
     setStatusLoading(true);
     setStatusErr(null);
     try {
-      const s = await getMainnetStatus(adminKey);
+      const s = await getMainnetStatus();
       setStatus(s);
     } catch (e) {
       setStatusErr(e);
@@ -99,18 +92,16 @@ export function TradingSettingsClient() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminKey]);
+  }, []);
 
   const statusAuthFailed =
     statusErr instanceof ApiError &&
     (statusErr.status === 401 || statusErr.status === 403);
 
   const handleRequestToken = async () => {
-    if (!adminKey) return;
     setBusyRequest(true);
     try {
-      const res = await requestMainnetToken(adminKey);
+      const res = await requestMainnetToken();
       setRequestedHint(res.tokenHint);
       toast.success("已发起 token 申请", {
         description: "完整 token 仅打印到 stderr (关键字 EMAIL CONFIRMATION REQUIRED)；从日志拷贝后填入下方表单确认。",
@@ -127,10 +118,10 @@ export function TradingSettingsClient() {
   };
 
   const handleConfirmToken = async () => {
-    if (!adminKey || !tokenInput.trim()) return;
+    if (!tokenInput.trim()) return;
     setBusyConfirm(true);
     try {
-      const next = await confirmMainnetToken(adminKey, tokenInput.trim());
+      const next = await confirmMainnetToken(tokenInput.trim());
       setStatus(next);
       setTokenInput("");
       setRequestedHint(null);
@@ -211,32 +202,22 @@ export function TradingSettingsClient() {
       </Section>
 
       <Section title="Mainnet Token 流程">
-        {!adminKey && (
+        {statusAuthFailed && (
           <EmptyState
-            title="请先设置管理员密钥"
-            description="本面板需要 admin key 调用 /admin/mainnet/*。在 /settings/system 设置一次后即可。"
+            title="无权访问 /admin/mainnet/*"
+            description="此面板需要 admin 角色登录。请用 admin 账号重新登录。"
             action={
               <Link
-                href="/settings/system"
+                href="/login"
                 className="rounded bg-primary px-4 py-1.5 text-sm text-white hover:opacity-90"
               >
-                前往设置 →
+                重新登录 →
               </Link>
             }
           />
         )}
 
-        {adminKey && statusAuthFailed && (
-          <Callout variant="danger" title="无权访问 /admin/mainnet/*">
-            管理员密钥缺失或不正确，无法读取 mainnet 状态。请在
-            <Link href="/settings/system" className="underline mx-1">
-              /settings/system
-            </Link>
-            重新设置。
-          </Callout>
-        )}
-
-        {adminKey && !statusAuthFailed && (
+        {!statusAuthFailed && (
           <div className="space-y-4">
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               <dt className="text-text-secondary">env 已启用</dt>

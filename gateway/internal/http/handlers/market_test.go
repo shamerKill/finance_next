@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/finance_next/gateway/internal/domain"
+	gwmw "github.com/finance_next/gateway/internal/http/middleware"
 	"github.com/finance_next/gateway/internal/quantclient"
 	quantv1 "github.com/finance_next/shared-proto/gen/go/quantpb/v1"
 	"github.com/labstack/echo/v4"
@@ -83,7 +85,9 @@ func newTestEcho(quant quantclient.Client, adminKey string) *echo.Echo {
 	return e
 }
 
-func TestPostIngest_HiddenWithoutAdminKey(t *testing.T) {
+// TestPostIngest_NoAdminKeyAndNoCookie — adminKey 未设置且没有 admin
+// cookie：路由始终挂载，请求被 403 拒绝。
+func TestPostIngest_NoAdminKeyAndNoCookie(t *testing.T) {
 	e := newTestEcho(&fakeQuant{}, "" /* adminKey */)
 	body := `{"exchange":"binance","symbol":"BTCUSDT","timeframe":"1h","start":"2024-01-01T00:00:00Z","end":"2024-01-02T00:00:00Z"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/market/ingest", strings.NewReader(body))
@@ -91,12 +95,12 @@ func TestPostIngest_HiddenWithoutAdminKey(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 when admin key unset, got %d (body=%s)", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without admin auth, got %d (body=%s)", rec.Code, rec.Body.String())
 	}
 }
 
-func TestPostIngest_RequiresHeader(t *testing.T) {
+func TestPostIngest_RequiresAuth(t *testing.T) {
 	e := newTestEcho(&fakeQuant{}, "secret")
 	body := `{"exchange":"binance","symbol":"BTCUSDT","timeframe":"1h","start":"2024-01-01T00:00:00Z","end":"2024-01-02T00:00:00Z"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/market/ingest", strings.NewReader(body))
@@ -104,8 +108,42 @@ func TestPostIngest_RequiresHeader(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401 without X-Admin-Key, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without X-Admin-Key or cookie, got %d", rec.Code)
+	}
+}
+
+// TestPostIngest_AcceptsCookieAdmin — cookie role=admin 通过 auth gate，
+// 即使 adminKey 留空。
+func TestPostIngest_AcceptsCookieAdmin(t *testing.T) {
+	fq := &fakeQuant{
+		response: &quantv1.IngestAck{
+			RunId:        "abc",
+			BarsIngested: 1,
+			FromTs:       timestamppb.New(time.Now().Add(-time.Hour)),
+			ToTs:         timestamppb.New(time.Now()),
+		},
+	}
+	e := echo.New()
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Set(gwmw.ContextRoleKey, domain.UserRoleAdmin)
+			return next(c)
+		}
+	})
+	g := e.Group("/api/v1")
+	NewMarketHandler(nil, fq, "" /* no adminKey */).Register(g)
+
+	body := `{"exchange":"binance","symbol":"BTCUSDT","timeframe":"1h","start":"2024-01-01T00:00:00Z","end":"2024-01-02T00:00:00Z"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/market/ingest", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cookie admin should be accepted; expected 200, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	if fq.calls != 1 {
+		t.Fatalf("expected 1 quant call, got %d", fq.calls)
 	}
 }
 

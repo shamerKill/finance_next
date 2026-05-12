@@ -167,13 +167,10 @@ type ingestResponseBody struct {
 }
 
 func (h *MarketHandler) postIngest(c echo.Context) error {
-	// Endpoint is gated by a static admin header. When unset, we 404 to
-	// avoid leaking that the endpoint exists at all.
-	if h.adminKey == "" {
-		return echo.NewHTTPError(http.StatusNotFound)
-	}
-	if c.Request().Header.Get("X-Admin-Key") != h.adminKey {
-		return echo.NewHTTPError(http.StatusUnauthorized, "missing or invalid X-Admin-Key")
+	// Cookie role=admin（JWT cookie 解出来）或 X-Admin-Key（兼容 s2s/CI）
+	// 任一通过都放行。两者都没有 → 403。
+	if !IsAdminRequest(c, h.adminKey) {
+		return echo.NewHTTPError(http.StatusForbidden, "forbidden")
 	}
 	if h.quant == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "quant grpc client not configured")

@@ -41,6 +41,9 @@ func NewDataExplorerHandler(
 }
 
 // Register binds Phase 8 routes onto the v1 group.
+//
+// admin/ingest/* 路由始终挂载；cookie role=admin 或 X-Admin-Key 任一通
+// 过即可访问。
 func (h *DataExplorerHandler) Register(g *echo.Group) {
 	// Read endpoints (no auth)
 	g.GET("/equities/ohlcv", h.getOhlcv)
@@ -49,10 +52,6 @@ func (h *DataExplorerHandler) Register(g *echo.Group) {
 	g.GET("/onchain/metrics", h.getOnchain)
 	g.GET("/news", h.getNews)
 
-	// Admin ingest endpoints — hidden when ADMIN_KEY unset (404).
-	if h.adminKey == "" {
-		return
-	}
 	g.POST("/admin/ingest/equities", h.adminIngest("equities"))
 	g.POST("/admin/ingest/futures", h.adminIngest("futures"))
 	g.POST("/admin/ingest/macro", h.adminIngest("macro"))
@@ -70,8 +69,8 @@ func (h *DataExplorerHandler) requireStore() error {
 }
 
 func (h *DataExplorerHandler) authAdmin(c echo.Context) error {
-	if c.Request().Header.Get("X-Admin-Key") != h.adminKey {
-		return echo.NewHTTPError(http.StatusUnauthorized, "missing or invalid X-Admin-Key")
+	if !IsAdminRequest(c, h.adminKey) {
+		return echo.NewHTTPError(http.StatusForbidden, "forbidden")
 	}
 	return nil
 }

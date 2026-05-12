@@ -46,11 +46,11 @@ func NewAdminHandler(
 }
 
 // Register binds the admin routes onto the v1 group.
+//
+// 路由始终挂载 —— 之前的 "ADMIN_KEY 未设置则整组 404 隐藏" gate 已经
+// 移除。访问控制现在统一由 IsAdminRequest 在每个 handler 内做：cookie
+// role=admin 优先；ADMIN_KEY env 仍可设来支持 s2s / CI 兼容路径。
 func (h *AdminHandler) Register(g *echo.Group) {
-	if h.adminKey == "" {
-		// Hidden when no admin key configured.
-		return
-	}
 	g.POST("/admin/halt", h.halt)
 	g.POST("/admin/resume", h.resume)
 	g.GET("/admin/system-state", h.systemState)
@@ -63,8 +63,8 @@ func (h *AdminHandler) Register(g *echo.Group) {
 }
 
 func (h *AdminHandler) auth(c echo.Context) error {
-	if c.Request().Header.Get("X-Admin-Key") != h.adminKey {
-		return echo.NewHTTPError(http.StatusUnauthorized, "invalid admin key")
+	if !IsAdminRequest(c, h.adminKey) {
+		return echo.NewHTTPError(http.StatusForbidden, "forbidden")
 	}
 	return nil
 }

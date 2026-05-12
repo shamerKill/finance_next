@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/finance_next/gateway/internal/domain"
+	gwmw "github.com/finance_next/gateway/internal/http/middleware"
 	"github.com/finance_next/gateway/internal/quantclient"
 	"github.com/labstack/echo/v4"
 )
@@ -18,7 +19,9 @@ import (
 // validation + routing surface here. Round-trip persistence is covered
 // by a manual smoke against the docker-compose stack.
 
-func TestAdminAI_HiddenWithoutAdminKey(t *testing.T) {
+// TestAdminAI_NoAdminKeyAndNoCookie — ADMIN_KEY 未设置且无 admin cookie：
+// 路由始终挂载（不再 404 隐藏），但请求被 403 拒绝（双 key 模式）。
+func TestAdminAI_NoAdminKeyAndNoCookie(t *testing.T) {
 	e := echo.New()
 	g := e.Group("/api/v1")
 	NewAdminHandler(nil, nil, nil, "" /* adminKey */).Register(g)
@@ -32,8 +35,8 @@ func TestAdminAI_HiddenWithoutAdminKey(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("%s %s: expected 404 when admin key unset, got %d", p.method, p.path, rec.Code)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%s %s: expected 403 without admin auth, got %d", p.method, p.path, rec.Code)
 		}
 	}
 }
@@ -46,8 +49,33 @@ func TestAdminAI_RequiresAdminHeader(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/ai/config", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401 without header, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without header or cookie, got %d", rec.Code)
+	}
+}
+
+// TestAdminAI_AcceptsCookieAdmin — 在 Echo context 中预置 role=admin
+// （模拟 WithAuth 解析 cookie 写入），即使没有 X-Admin-Key 也应通过。
+// 这是双 key 模式的核心契约。
+func TestAdminAI_AcceptsCookieAdmin(t *testing.T) {
+	e := echo.New()
+	// 模拟 WithAuth 中间件：写入 role=admin 到 context。
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Set(gwmw.ContextRoleKey, domain.UserRoleAdmin)
+			return next(c)
+		}
+	})
+	g := e.Group("/api/v1")
+	// 注意：adminKey 故意留空 —— cookie path 不应依赖它。
+	NewAdminHandler(nil, nil, nil, "").Register(g)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/ai/config", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	// 后续 503（system repo nil）说明已经通过 auth gate。
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("cookie admin should bypass auth → 503 from nil repo; got %d (body=%s)", rec.Code, rec.Body.String())
 	}
 }
 

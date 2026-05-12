@@ -12,7 +12,6 @@ import {
 } from "react";
 
 import { listRecommendations } from "@/data/api-client";
-import { useAdminKey } from "@/data/use-admin-key";
 import { useSystemState } from "@/data/use-system-state";
 
 export interface NavItem {
@@ -289,8 +288,7 @@ export function MobileHeader({ trailing }: { trailing?: ReactNode } = {}) {
 
 export function Sidebar({ collapsed = false }: { collapsed?: boolean } = {}) {
   const pathname = usePathname() ?? "";
-  const adminKey = useAdminKey();
-  const systemState = useSystemState(adminKey);
+  const systemState = useSystemState();
   const [pending, setPending] = useState(0);
   const [drawerOpen, setDrawerOpen] = useDrawerOpen();
 

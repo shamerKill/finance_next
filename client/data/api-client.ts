@@ -388,11 +388,12 @@ export const updateOption = async (
   return jsonOrThrow<TypeOption>(res);
 };
 
-// Admin-only manual order submission. Requires the `X-Admin-Key`
-// header — same auth pattern as /market/ingest.
+// Admin-only manual order submission. Auth: JWT cookie role=admin
+// (apiFetch forwards the cookie automatically). The legacy X-Admin-Key
+// header is kept on the gateway for s2s callers but the UI no longer
+// sends it.
 export const submitOrder = async (
   strategyId: string,
-  adminKey: string,
   body: TypeSubmitOrder,
 ): Promise<{ streamId: string }> => {
   const res = await apiFetch(
@@ -401,7 +402,6 @@ export const submitOrder = async (
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Admin-Key": adminKey,
       },
       body: JSON.stringify(body),
     },
@@ -411,12 +411,13 @@ export const submitOrder = async (
 
 // ---- Mainnet enable flow (admin) -----------------------------------
 
-export const requestMainnetToken = async (
-  adminKey: string,
-): Promise<{ message: string; tokenHint: string; ttlSec: number }> => {
+export const requestMainnetToken = async (): Promise<{
+  message: string;
+  tokenHint: string;
+  ttlSec: number;
+}> => {
   const res = await apiFetch(parseUrl("v1/admin/mainnet/request-token"), {
     method: "POST",
-    headers: { "X-Admin-Key": adminKey },
   });
   return jsonOrThrow<{ message: string; tokenHint: string; ttlSec: number }>(
     res,
@@ -424,22 +425,18 @@ export const requestMainnetToken = async (
 };
 
 export const confirmMainnetToken = async (
-  adminKey: string,
   token: string,
 ): Promise<TypeMainnetStatus> => {
   const res = await apiFetch(parseUrl("v1/admin/mainnet/confirm"), {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Admin-Key": adminKey },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token }),
   });
   return jsonOrThrow<TypeMainnetStatus>(res);
 };
 
-export const getMainnetStatus = async (
-  adminKey: string,
-): Promise<TypeMainnetStatus> => {
+export const getMainnetStatus = async (): Promise<TypeMainnetStatus> => {
   const res = await apiFetch(parseUrl("v1/admin/mainnet/status"), {
-    headers: { "X-Admin-Key": adminKey },
     cache: "no-store",
   });
   return jsonOrThrow<TypeMainnetStatus>(res);
@@ -587,60 +584,53 @@ export interface TypeAuditEntry {
   requestId?: string;
 }
 
-const adminHeaders = (key: string) => ({
+// Admin endpoints auth: JWT cookie role=admin via apiFetch (cookie
+// forwarded automatically by `credentials: include`). The gateway also
+// accepts the legacy `X-Admin-Key` header for s2s callers, but the UI
+// no longer sends it — there's no localStorage admin key any more.
+const adminHeaders = () => ({
   "Content-Type": "application/json",
-  "X-Admin-Key": key,
 });
 
-export const getSystemState = async (
-  adminKey: string,
-): Promise<TypeSystemState> => {
+export const getSystemState = async (): Promise<TypeSystemState> => {
   const res = await apiFetch(parseUrl("v1/admin/system-state"), {
     cache: "no-store",
-    headers: { "X-Admin-Key": adminKey },
   });
   return jsonOrThrow<TypeSystemState>(res);
 };
 
 export const haltTrading = async (
-  adminKey: string,
   reason: string,
 ): Promise<TypeSystemState> => {
   const res = await apiFetch(parseUrl("v1/admin/halt"), {
     method: "POST",
-    headers: adminHeaders(adminKey),
+    headers: adminHeaders(),
     body: JSON.stringify({ reason }),
   });
   return jsonOrThrow<TypeSystemState>(res);
 };
 
-export const resumeTrading = async (
-  adminKey: string,
-): Promise<TypeSystemState> => {
+export const resumeTrading = async (): Promise<TypeSystemState> => {
   const res = await apiFetch(parseUrl("v1/admin/resume"), {
     method: "POST",
-    headers: adminHeaders(adminKey),
+    headers: adminHeaders(),
   });
   return jsonOrThrow<TypeSystemState>(res);
 };
 
-export const getPortfolioLimits = async (
-  adminKey: string,
-): Promise<TypePortfolioLimits> => {
+export const getPortfolioLimits = async (): Promise<TypePortfolioLimits> => {
   const res = await apiFetch(parseUrl("v1/admin/portfolio-limits"), {
     cache: "no-store",
-    headers: { "X-Admin-Key": adminKey },
   });
   return jsonOrThrow<TypePortfolioLimits>(res);
 };
 
 export const setPortfolioLimits = async (
-  adminKey: string,
   limits: Omit<TypePortfolioLimits, "userId">,
 ): Promise<TypePortfolioLimits> => {
   const res = await apiFetch(parseUrl("v1/admin/portfolio-limits"), {
     method: "PUT",
-    headers: adminHeaders(adminKey),
+    headers: adminHeaders(),
     body: JSON.stringify(limits),
   });
   return jsonOrThrow<TypePortfolioLimits>(res);
@@ -685,40 +675,32 @@ export type TypeAIPrompts = {
   refineModelActive: string;
 };
 
-export const getAdminAIConfig = async (
-  adminKey: string,
-): Promise<TypeAIConfig> => {
+export const getAdminAIConfig = async (): Promise<TypeAIConfig> => {
   const res = await apiFetch(parseUrl("v1/admin/ai/config"), {
     cache: "no-store",
-    headers: { "X-Admin-Key": adminKey },
   });
   return jsonOrThrow<TypeAIConfig>(res);
 };
 
 export const updateAdminAIConfig = async (
-  adminKey: string,
   patch: Partial<TypeAIConfig>,
 ): Promise<TypeAIConfig> => {
   const res = await apiFetch(parseUrl("v1/admin/ai/config"), {
     method: "PUT",
-    headers: adminHeaders(adminKey),
+    headers: adminHeaders(),
     body: JSON.stringify(patch),
   });
   return jsonOrThrow<TypeAIConfig>(res);
 };
 
-export const getAdminAIPrompts = async (
-  adminKey: string,
-): Promise<TypeAIPrompts> => {
+export const getAdminAIPrompts = async (): Promise<TypeAIPrompts> => {
   const res = await apiFetch(parseUrl("v1/admin/ai/prompts"), {
     cache: "no-store",
-    headers: { "X-Admin-Key": adminKey },
   });
   return jsonOrThrow<TypeAIPrompts>(res);
 };
 
 export const listAudit = async (
-  adminKey: string,
   params: {
     actor?: string;
     resourceType?: string;
@@ -734,7 +716,6 @@ export const listAudit = async (
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   const res = await apiFetch(parseUrl(`v1/admin/audit${suffix}`), {
     cache: "no-store",
-    headers: { "X-Admin-Key": adminKey },
   });
   return jsonOrThrow<TypeAuditEntry[]>(res);
 };
@@ -888,12 +869,11 @@ export const getWalletPositions = async (
 
 export const approveWallet = async (
   id: string,
-  adminKey: string,
   amountUsdc: number,
 ): Promise<{ txHash: string; amountApproved: number; capUsd: number }> => {
   const res = await apiFetch(parseUrl(`v1/wallets/${id}/approve`), {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Admin-Key": adminKey },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ amountUsdc }),
   });
   return jsonOrThrow(res);

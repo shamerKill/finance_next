@@ -1,21 +1,23 @@
 "use client";
 
-// Node 3.E.1 — migrated from /admin/page.tsx with identical behavior.
+// Node 3.E.1 — operator-facing system settings.
 //
-// Three operator-facing knobs, all client-side because the admin key
-// lives in localStorage (server components can't read it):
-//   * admin key + multi-tenant userId localStorage editors
-//   * kill switch (halt / resume — writes system_state.tradingHalted)
-//   * portfolio limits form (PUT /api/v1/admin/portfolio-limits)
+// 双 key 模式收口后：admin 鉴权完全走 JWT cookie role=admin（apiFetch
+// 自动转发），不再有 admin key 输入框或 localStorage adminKey。
+// 这里还保留多租户 X-User-Id 的 localStorage 入口（dev 用），但不再
+// 与 admin 鉴权有关。
 //
-// audit log is linked from /settings/observability instead of here
-// (per spec §G3 IA — audit lives under "监控").
+// Sections:
+//   * 多租户 userId localStorage 编辑器（dev helper）
+//   * Kill switch (halt / resume — writes system_state.tradingHalted)
+//   * Portfolio limits form (PUT /api/v1/admin/portfolio-limits)
+//
+// Audit log lives under /settings/observability (per spec §G3 IA).
 
 import { useEffect, useState } from "react";
 
 import { ApiErrorView } from "@/components/api-error";
 import {
-  ApiError,
   TypePortfolioLimits,
   TypeSystemState,
   getPortfolioLimits,
@@ -24,31 +26,18 @@ import {
   resumeTrading,
   setPortfolioLimits,
 } from "@/data/api-client";
-import { useAdminKey } from "@/data/use-admin-key";
-
-const ADMIN_KEY_STORAGE = "finance_next_admin_key";
 
 // R2 multi-tenant userId storage key — matches api-client.ts.
 // Absent → the gateway falls back to "default" for this browser.
 const USER_ID_STORAGE = "finance_next_user_id";
 
 export function SystemSettingsClient() {
-  const persistedKey = useAdminKey();
-  const [adminKey, setAdminKey] = useState("");
   const [userId, setUserId] = useState("");
   const [state, setState] = useState<TypeSystemState | null>(null);
   const [limits, setLimits] = useState<TypePortfolioLimits | null>(null);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-  const [keyStatus, setKeyStatus] = useState<
-    "unknown" | "verifying" | "ok" | "bad"
-  >("unknown");
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAdminKey(persistedKey);
-  }, [persistedKey]);
 
   useEffect(() => {
     const u = window.localStorage.getItem(USER_ID_STORAGE) ?? "";
@@ -57,40 +46,23 @@ export function SystemSettingsClient() {
   }, []);
 
   const refresh = async () => {
-    if (!adminKey) {
-      setKeyStatus("unknown");
-      return;
-    }
-    setKeyStatus("verifying");
     try {
       setError(null);
       const [s, l] = await Promise.all([
-        getSystemState(adminKey),
-        getPortfolioLimits(adminKey),
+        getSystemState(),
+        getPortfolioLimits(),
       ]);
       setState(s);
       setLimits(l);
-      setKeyStatus("ok");
     } catch (e) {
       setError(e);
-      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-        setKeyStatus("bad");
-      } else {
-        setKeyStatus("bad");
-      }
     }
   };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminKey]);
-
-  const onSaveKey = () => {
-    window.localStorage.setItem(ADMIN_KEY_STORAGE, adminKey);
-    refresh();
-  };
+  }, []);
 
   const onSaveUserId = () => {
     if (userId) {
@@ -108,7 +80,7 @@ export function SystemSettingsClient() {
     }
     setBusy(true);
     try {
-      const s = await haltTrading(adminKey, reason);
+      const s = await haltTrading(reason);
       setState(s);
     } catch (e) {
       setError(e);
@@ -120,7 +92,7 @@ export function SystemSettingsClient() {
   const onResume = async () => {
     setBusy(true);
     try {
-      const s = await resumeTrading(adminKey);
+      const s = await resumeTrading();
       setState(s);
     } catch (e) {
       setError(e);
@@ -133,7 +105,7 @@ export function SystemSettingsClient() {
     if (!limits) return;
     setBusy(true);
     try {
-      const next = await setPortfolioLimits(adminKey, {
+      const next = await setPortfolioLimits({
         maxOpenNotionalUsd: limits.maxOpenNotionalUsd,
         maxOpenPositionsCount: limits.maxOpenPositionsCount,
         maxDailyLossUsd: limits.maxDailyLossUsd,
@@ -151,34 +123,12 @@ export function SystemSettingsClient() {
       <h1 className="text-2xl font-semibold">系统</h1>
 
       <section className="space-y-2">
-        <h2 className="text-lg font-medium">管理密钥</h2>
+        <h2 className="text-lg font-medium">管理员鉴权</h2>
         <p className="text-sm text-default-500">
-          仅保存在本浏览器的 localStorage 中；除了通过 X-Admin-Key
-          请求头发送到 /api/v1/admin/* 外，不会传输到任何其他地方。
+          所有 admin 操作通过登录 cookie（role=admin）授权。如果本页加载
+          失败 / 403，请用 admin 账号重新登录。原 `X-Admin-Key` 输入框已
+          移除，env `ADMIN_KEY` 仍保留作为 s2s / CI / curl 后向兼容路径。
         </p>
-        <input
-          className="border rounded px-2 py-1 w-full font-mono"
-          type="password"
-          value={adminKey}
-          onChange={(e) => setAdminKey(e.target.value)}
-        />
-        <div className="flex items-center gap-3">
-          <button
-            className="bg-primary text-white rounded px-3 py-1"
-            onClick={onSaveKey}
-          >
-            保存密钥
-          </button>
-          {keyStatus === "verifying" && (
-            <span className="text-default-500 text-sm">验证中…</span>
-          )}
-          {keyStatus === "ok" && (
-            <span className="text-success text-sm">✓ 已验证</span>
-          )}
-          {keyStatus === "bad" && (
-            <span className="text-danger text-sm">✗ 密钥错误</span>
-          )}
-        </div>
         <ApiErrorView error={error} />
       </section>
 

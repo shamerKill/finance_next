@@ -36,14 +36,15 @@ func NewPredictionHandler(store *timescale.Store, redisClient *redis.Client, adm
 }
 
 // Register binds /prediction/* + admin/ingest/prediction.
+//
+// admin/ingest/prediction 始终挂载；cookie role=admin 或 X-Admin-Key 任
+// 一通过即可访问。
 func (h *PredictionHandler) Register(g *echo.Group) {
 	g.GET("/prediction/markets", h.listMarkets)
 	g.GET("/prediction/markets/:id", h.getMarket)
 	g.GET("/prediction/quotes", h.getQuotes)
 	g.GET("/prediction/trades", h.getTrades)
-	if h.adminKey != "" {
-		g.POST("/admin/ingest/prediction", h.adminIngest)
-	}
+	g.POST("/admin/ingest/prediction", h.adminIngest)
 }
 
 func (h *PredictionHandler) requireStore() error {
@@ -148,8 +149,8 @@ func (h *PredictionHandler) getTrades(c echo.Context) error {
 }
 
 func (h *PredictionHandler) adminIngest(c echo.Context) error {
-	if c.Request().Header.Get("X-Admin-Key") != h.adminKey {
-		return echo.NewHTTPError(http.StatusUnauthorized, "missing or invalid X-Admin-Key")
+	if !IsAdminRequest(c, h.adminKey) {
+		return echo.NewHTTPError(http.StatusForbidden, "forbidden")
 	}
 	if h.redis == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "redis not configured")

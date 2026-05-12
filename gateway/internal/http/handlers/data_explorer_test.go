@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/finance_next/gateway/internal/domain"
+	gwmw "github.com/finance_next/gateway/internal/http/middleware"
 	"github.com/labstack/echo/v4"
 )
 
@@ -14,10 +16,11 @@ import (
 // integration is covered by the offline asyncpg pool tests in the quant
 // suite + a manual smoke against docker-compose.
 
-func TestDataExplorer_HiddenAdminWithoutKey(t *testing.T) {
+// TestDataExplorer_NoAdminKeyAndNoCookie — ADMIN_KEY 未设置且无 admin
+// cookie：路由始终挂载，请求被 403 拒绝（双 key 模式契约）。
+func TestDataExplorer_NoAdminKeyAndNoCookie(t *testing.T) {
 	e := echo.New()
 	g := e.Group("/api/v1")
-	// Empty adminKey + nil redis → admin routes shouldn't even be registered.
 	NewDataExplorerHandler(nil, nil, "" /* adminKey */).Register(g)
 
 	for _, kind := range []string{"equities", "futures", "macro", "onchain", "news"} {
@@ -25,8 +28,8 @@ func TestDataExplorer_HiddenAdminWithoutKey(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("expected 404 admin/ingest/%s when admin key unset, got %d (body=%s)", kind, rec.Code, rec.Body.String())
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 admin/ingest/%s without auth, got %d (body=%s)", kind, rec.Code, rec.Body.String())
 		}
 	}
 }
@@ -55,9 +58,9 @@ func TestDataExplorer_ReadEndpoints503WhenStoreNil(t *testing.T) {
 	}
 }
 
-func TestDataExplorer_AdminIngestRequiresHeader(t *testing.T) {
+func TestDataExplorer_AdminIngestRequiresAuth(t *testing.T) {
 	// Admin key is set but no redis client; the handler short-circuits at
-	// auth before checking redis, so unauthorised must still return 401.
+	// auth before checking redis, so unauthenticated must still return 403.
 	e := echo.New()
 	g := e.Group("/api/v1")
 	NewDataExplorerHandler(nil, nil, "secret").Register(g)
@@ -66,8 +69,31 @@ func TestDataExplorer_AdminIngestRequiresHeader(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401 without admin header, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without admin header or cookie, got %d", rec.Code)
+	}
+}
+
+// TestDataExplorer_AdminIngestAcceptsCookieAdmin — cookie role=admin
+// 即使 adminKey 留空也应通过 auth gate；redis 缺失会导致 503。
+func TestDataExplorer_AdminIngestAcceptsCookieAdmin(t *testing.T) {
+	e := echo.New()
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Set(gwmw.ContextRoleKey, domain.UserRoleAdmin)
+			return next(c)
+		}
+	})
+	g := e.Group("/api/v1")
+	NewDataExplorerHandler(nil, nil, "" /* no adminKey on purpose */).Register(g)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/ingest/news", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	// Auth 通过；后续 redis nil → 503。
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("cookie admin should pass auth; expected 503 from nil redis, got %d (body=%s)", rec.Code, rec.Body.String())
 	}
 }
 

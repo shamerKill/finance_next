@@ -25,7 +25,6 @@ import {
   TypeWalletBalance,
   TypeWalletPosition,
 } from "@/data/type";
-import { useAdminKey } from "@/data/use-admin-key";
 import { pushRecent } from "@/data/use-recent-resources";
 
 // Node 2.C.5.e — adopt design system primitives (Stat / ConfirmDialog /
@@ -36,7 +35,6 @@ import { pushRecent } from "@/data/use-recent-resources";
 export default function WalletDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
-  const adminKey = useAdminKey();
   const toast = useToast();
   const [wallet, setWallet] = useState<TypeWallet | null>(null);
   const [balance, setBalance] = useState<TypeWalletBalance | null>(null);
@@ -74,7 +72,6 @@ export default function WalletDetailPage() {
   }, [id]);
 
   const validateApprove = (): string | null => {
-    if (!adminKey) return "localStorage 中未设置 admin key";
     const amt = parseFloat(approveAmt);
     if (!Number.isFinite(amt) || amt <= 0) return "金额必须 > 0";
     return null;
@@ -93,7 +90,7 @@ export default function WalletDetailPage() {
   const submitApprove = async () => {
     const amt = parseFloat(approveAmt);
     try {
-      const res = await approveWallet(id, adminKey!, amt);
+      const res = await approveWallet(id, amt);
       toast.success("已授权", {
         description: `授权 $${res.amountApproved.toFixed(2)} — tx ${res.txHash}`,
       });
@@ -166,7 +163,7 @@ export default function WalletDetailPage() {
       <Section title="USDC 限额授权（管理员）">
         <Callout variant="warning">
           授权额度受 <code>portfolio_limits.maxOpenNotionalUsd</code> 硬性限制。
-          <strong> 无限额度授权在设计上不可能</strong>。需要 admin key。
+          <strong> 无限额度授权在设计上不可能</strong>。需要 admin 角色登录。
         </Callout>
         <div className="mt-3 flex flex-wrap items-end gap-3">
           <FormField

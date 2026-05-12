@@ -39,18 +39,17 @@ func NewStrategyHandler(
 }
 
 // Register binds /strategies/* + /admin/mainnet/* onto the v1 group.
+//
+// admin/mainnet/* 路由始终挂载；cookie role=admin 或 X-Admin-Key 任一
+// 通过即可访问。
 func (h *StrategyHandler) Register(g *echo.Group) {
 	g.GET("/strategies/:id/orders", h.listOrders)
 	g.POST("/strategies/:id/live", h.setLive)
 	g.POST("/strategies/:id/live/submit-order", h.submitOrder)
 
-	// Admin mainnet enable flow. These are 404-hidden when ADMIN_KEY is
-	// unset (mirrors the /market/ingest pattern).
-	if h.adminKey != "" {
-		g.POST("/admin/mainnet/request-token", h.requestMainnetToken)
-		g.POST("/admin/mainnet/confirm", h.confirmMainnetToken)
-		g.GET("/admin/mainnet/status", h.mainnetStatus)
-	}
+	g.POST("/admin/mainnet/request-token", h.requestMainnetToken)
+	g.POST("/admin/mainnet/confirm", h.confirmMainnetToken)
+	g.GET("/admin/mainnet/status", h.mainnetStatus)
 }
 
 // ---- GET /api/v1/strategies/:id/orders -----------------------------------
@@ -165,11 +164,8 @@ func (h *StrategyHandler) submitOrder(c echo.Context) error {
 	if h.engine == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "order engine not configured")
 	}
-	if h.adminKey == "" {
-		return echo.NewHTTPError(http.StatusNotFound, "admin endpoint disabled")
-	}
-	if c.Request().Header.Get("X-Admin-Key") != h.adminKey {
-		return echo.NewHTTPError(http.StatusUnauthorized, "invalid admin key")
+	if !IsAdminRequest(c, h.adminKey) {
+		return echo.NewHTTPError(http.StatusForbidden, "forbidden")
 	}
 	var body struct {
 		AccountID      string  `json:"accountId"`
@@ -205,8 +201,8 @@ func (h *StrategyHandler) submitOrder(c echo.Context) error {
 // ---- Admin mainnet flow --------------------------------------------------
 
 func (h *StrategyHandler) requestMainnetToken(c echo.Context) error {
-	if c.Request().Header.Get("X-Admin-Key") != h.adminKey {
-		return echo.NewHTTPError(http.StatusUnauthorized, "invalid admin key")
+	if !IsAdminRequest(c, h.adminKey) {
+		return echo.NewHTTPError(http.StatusForbidden, "forbidden")
 	}
 	if h.engine == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "order engine not configured")
@@ -233,8 +229,8 @@ func (h *StrategyHandler) requestMainnetToken(c echo.Context) error {
 }
 
 func (h *StrategyHandler) confirmMainnetToken(c echo.Context) error {
-	if c.Request().Header.Get("X-Admin-Key") != h.adminKey {
-		return echo.NewHTTPError(http.StatusUnauthorized, "invalid admin key")
+	if !IsAdminRequest(c, h.adminKey) {
+		return echo.NewHTTPError(http.StatusForbidden, "forbidden")
 	}
 	if h.engine == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "order engine not configured")
@@ -262,8 +258,8 @@ func (h *StrategyHandler) confirmMainnetToken(c echo.Context) error {
 }
 
 func (h *StrategyHandler) mainnetStatus(c echo.Context) error {
-	if c.Request().Header.Get("X-Admin-Key") != h.adminKey {
-		return echo.NewHTTPError(http.StatusUnauthorized, "invalid admin key")
+	if !IsAdminRequest(c, h.adminKey) {
+		return echo.NewHTTPError(http.StatusForbidden, "forbidden")
 	}
 	if h.engine == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "order engine not configured")

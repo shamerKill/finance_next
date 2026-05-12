@@ -64,7 +64,9 @@ func (h *PredictionStrategyHandler) Register(g *echo.Group) {
 	g.DELETE("/prediction/strategies/:id", h.remove)
 	g.POST("/prediction/strategies/:id/live", h.toggleLive)
 	g.GET("/prediction/strategies/:id/orders", h.listOrders)
-	if h.adminKey != "" && h.engine != nil {
+	// submit-order 路由始终挂载（engine 仍是硬依赖：nil 时 handler 内
+	// 部 503）；cookie role=admin 或 X-Admin-Key 任一通过即可访问。
+	if h.engine != nil {
 		g.POST("/prediction/strategies/:id/live/submit-order", h.submitOrder)
 	}
 }
@@ -194,8 +196,8 @@ func (h *PredictionStrategyHandler) toggleLive(c echo.Context) error {
 }
 
 func (h *PredictionStrategyHandler) submitOrder(c echo.Context) error {
-	if c.Request().Header.Get("X-Admin-Key") != h.adminKey {
-		return echo.NewHTTPError(http.StatusUnauthorized, "missing or invalid X-Admin-Key")
+	if !IsAdminRequest(c, h.adminKey) {
+		return echo.NewHTTPError(http.StatusForbidden, "forbidden")
 	}
 	var cmd domain.SubmitPredictionOrderCommand
 	if err := c.Bind(&cmd); err != nil {

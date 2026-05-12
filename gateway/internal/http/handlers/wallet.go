@@ -80,10 +80,8 @@ func (h *WalletHandler) Register(g *echo.Group) {
 	g.DELETE("/wallets/:id", h.remove)
 	g.GET("/wallets/:id/balance", h.balance)
 	g.GET("/wallets/:id/positions", h.positions)
-	// Admin-gated approve. Hidden when ADMIN_KEY unset.
-	if h.adminKey != "" {
-		g.POST("/wallets/:id/approve", h.approve)
-	}
+	// Admin-gated approve；cookie role=admin 或 X-Admin-Key 任一通过即可。
+	g.POST("/wallets/:id/approve", h.approve)
 }
 
 func (h *WalletHandler) list(c echo.Context) error {
@@ -187,8 +185,8 @@ func (h *WalletHandler) positions(c echo.Context) error {
 // `portfolio_limits.maxOpenNotionalUsd`, which an admin must set to a
 // non-zero value. Zero cap → refuse. Infinite approve is impossible.
 func (h *WalletHandler) approve(c echo.Context) error {
-	if c.Request().Header.Get("X-Admin-Key") != h.adminKey {
-		return echo.NewHTTPError(http.StatusUnauthorized, "missing or invalid X-Admin-Key")
+	if !IsAdminRequest(c, h.adminKey) {
+		return echo.NewHTTPError(http.StatusForbidden, "forbidden")
 	}
 	var dto domain.ApproveInput
 	if err := c.Bind(&dto); err != nil {

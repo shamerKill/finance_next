@@ -4,31 +4,23 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { ApiError, TypeSystemState, getSystemState } from "@/data/api-client";
-import { useAdminKey } from "@/data/use-admin-key";
 
 // Phase 7 kill-switch banner. Mounted by the server-rendered dashboard
-// layout. Polls /api/v1/admin/system-state every 15s when the user has
-// stored an admin key. On a 401/403 we render a small muted "key not
-// verified" banner instead of disappearing silently — most users still
-// won't be admins (banner stays hidden if no key has ever been set), but
-// a key that USED to work and now fails deserves visible feedback.
+// layout. Polls /api/v1/admin/system-state every 15s. Auth is by JWT
+// cookie role=admin — non-admin sessions get a 403 and the banner stays
+// silent (this isn't a status indicator for everyone, just the admin
+// red-bar). A previously-working session that now 403s renders a small
+// muted "权限丢失" hint so the user knows to re-login.
 export function KillSwitchBanner() {
-  const adminKey = useAdminKey();
   const [state, setState] = useState<TypeSystemState | null>(null);
   const [unauthorized, setUnauthorized] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    if (!adminKey) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setState(null);
-      setUnauthorized(false);
-      return;
-    }
     let cancel = false;
     const tick = async () => {
       try {
-        const s = await getSystemState(adminKey);
+        const s = await getSystemState();
         if (cancel) return;
         setState(s);
         setUnauthorized(false);
@@ -48,7 +40,7 @@ export function KillSwitchBanner() {
       cancel = true;
       clearInterval(id);
     };
-  }, [adminKey]);
+  }, []);
 
   if (state?.tradingHalted) {
     return (
@@ -68,9 +60,9 @@ export function KillSwitchBanner() {
     return (
       <div className="bg-warning-50 text-warning-700 border-b border-warning-200 px-4 py-1.5 text-xs flex items-center justify-between gap-3">
         <span>
-          管理员密钥未验证 ·{" "}
-          <Link href="/settings/system" className="underline font-medium">
-            前往设置 →
+          管理员状态不可用 ·{" "}
+          <Link href="/login" className="underline font-medium">
+            重新登录 →
           </Link>
         </span>
         <button

@@ -3,24 +3,20 @@
 import { useEffect, useState } from "react";
 
 import { TypeAuditEntry, listAudit } from "@/data/api-client";
-import { useAdminKey } from "@/data/use-admin-key";
 
-// Phase 7 audit viewer. Renders the most recent rows from /admin/audit
-// with simple filter controls. The admin key is read from localStorage
-// (set on the /admin page); without it, every request 401s and we show
-// an empty list.
+// Phase 7 audit viewer. Renders the most recent rows from /admin/audit.
+// Auth is by JWT cookie role=admin (apiFetch forwards the cookie);
+// non-admin sessions get a 403 and the table stays empty.
 export default function AuditPage() {
-  const adminKey = useAdminKey();
   const [entries, setEntries] = useState<TypeAuditEntry[]>([]);
   const [actor, setActor] = useState("");
   const [resourceType, setResourceType] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
-    if (!adminKey) return;
     try {
       setError(null);
-      const rows = await listAudit(adminKey, {
+      const rows = await listAudit({
         actor: actor || undefined,
         resourceType: resourceType || undefined,
         limit: 200,
@@ -35,7 +31,7 @@ export default function AuditPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminKey]);
+  }, []);
 
   return (
     <div className="max-w-5xl space-y-4">

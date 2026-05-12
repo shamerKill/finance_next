@@ -1,11 +1,10 @@
 "use client";
 
-import { Button, Tooltip } from "@heroui/react";
+import { Button } from "@heroui/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { ApiError } from "@/data/api-client";
-import { useAdminKey } from "@/data/use-admin-key";
+import { ApiError, apiFetch } from "@/data/api-client";
 
 const baseUrl =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
@@ -39,9 +38,9 @@ type Status =
   | { kind: "ok"; message: string }
   | { kind: "err"; message: string };
 
-// Shared button for the various admin-key-gated ingest endpoints. Reads
-// the admin key from localStorage; if absent, the button is rendered
-// disabled with an explanatory tooltip pointing to the admin page.
+// Shared button for the admin-gated ingest endpoints. Auth is by the
+// JWT cookie (role=admin); apiFetch forwards the cookie automatically.
+// Non-admin sessions get a 403 and the button surfaces that inline.
 export function IngestButton({
   path,
   body,
@@ -49,11 +48,9 @@ export function IngestButton({
   verify,
 }: IngestButtonProps) {
   const router = useRouter();
-  const adminKey = useAdminKey();
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
   const onClick = async () => {
-    if (!adminKey) return;
     setStatus({ kind: "busy" });
 
     // Snapshot the initial count BEFORE the trigger so the verify
@@ -71,11 +68,10 @@ export function IngestButton({
 
     try {
       const url = baseUrl + `/${path}`.replace("//", "/");
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Admin-Key": adminKey,
         },
         body: JSON.stringify(body ?? {}),
       });
@@ -87,7 +83,7 @@ export function IngestButton({
       const msg =
         e instanceof ApiError
           ? e.status === 401 || e.status === 403
-            ? "管理员密钥无效"
+            ? "需要管理员权限（请用 admin 账号登录）"
             : `触发失败：${e.message}`
           : e instanceof Error
             ? e.message
@@ -143,18 +139,6 @@ export function IngestButton({
     );
     setStatus({ kind: "ok", message: "已触发数据采集（异步）" });
   };
-
-  if (!adminKey) {
-    return (
-      <Tooltip content="请先在管理页面设置管理员密钥">
-        <span>
-          <Button size="sm" color="primary" isDisabled>
-            {label}
-          </Button>
-        </span>
-      </Tooltip>
-    );
-  }
 
   return (
     <div className="flex items-center gap-3">

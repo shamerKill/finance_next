@@ -27,12 +27,11 @@ import { ApiErrorView } from "@/components/api-error";
 import { TypeAIConfig, updateAdminAIConfig } from "@/data/api-client";
 
 interface Props {
-  adminKey: string;
   config: TypeAIConfig;
   onSaved: (next: TypeAIConfig) => void;
 }
 
-export function AIConfigEditButton({ adminKey, config, onSaved }: Props) {
+export function AIConfigEditButton({ config, onSaved }: Props) {
   const { isOpen, onOpen, onClose } = useDisclosure();
 
   return (
@@ -46,7 +45,6 @@ export function AIConfigEditButton({ adminKey, config, onSaved }: Props) {
       </button>
       {isOpen && (
         <EditModal
-          adminKey={adminKey}
           config={config}
           isOpen={isOpen}
           onClose={onClose}
@@ -58,7 +56,6 @@ export function AIConfigEditButton({ adminKey, config, onSaved }: Props) {
 }
 
 function EditModal({
-  adminKey,
   config,
   isOpen,
   onClose,
@@ -117,7 +114,7 @@ function EditModal({
     setBusy(true);
     setError(null);
     try {
-      const next = await updateAdminAIConfig(adminKey, {
+      const next = await updateAdminAIConfig({
         modelFamily,
         anthropicPrimaryModel: anthropicPrimary,
         anthropicRefineModel: anthropicRefine,

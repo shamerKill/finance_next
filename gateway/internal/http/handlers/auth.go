@@ -57,8 +57,22 @@ const LoginRateLimitPerMinute = 5
 // the jti blacklist is skipped (the JWT remains technically valid until
 // exp). That's acceptable for dev — production deployments always set
 // REDIS_URL.
+// userStore narrows UserRepo to the methods used by the Node 3.E.4
+// /settings/account endpoints (change-password + delete-self). Existing
+// handlers (register / login / me / …) still call h.users directly on
+// the concrete repo; the interface is just a test seam so we can drive
+// changePassword / deleteSelf with an in-memory fake without spinning
+// up Mongo. *mongostore.UserRepo satisfies it via method set.
+type userStore interface {
+	FindByID(ctx context.Context, id string) (*domain.User, error)
+	UpdatePasswordHash(ctx context.Context, id, newHash string) error
+	Delete(ctx context.Context, id string) error
+	CountByRole(ctx context.Context, role string) (int64, error)
+}
+
 type AuthHandler struct {
 	users       *mongostore.UserRepo
+	userStore   userStore // shares the same backing repo by default; overridable in tests
 	invitations *mongostore.InvitationRepo
 	cfg         *config.Config
 	redis       *redis.Client
@@ -96,7 +110,7 @@ func NewAuthHandler(
 	if dummyErr != nil {
 		dummy = ""
 	}
-	return &AuthHandler{
+	h := &AuthHandler{
 		users:        users,
 		invitations:  invitations,
 		cfg:          cfg,
@@ -104,6 +118,14 @@ func NewAuthHandler(
 		loginLimiter: newIPLimiter(LoginRateLimitPerMinute, time.Minute),
 		dummyHash:    dummy,
 	}
+	// The Node 3.E.4 endpoints route through the interface; we wire
+	// it to the concrete repo here. Tests overwrite this field before
+	// invoking changePassword / deleteSelf to drive the path without
+	// Mongo. Guarded for nil so the no-deps 503 branch keeps working.
+	if users != nil {
+		h.userStore = users
+	}
+	return h
 }
 
 // VerifyCount returns the number of times /auth/login has invoked
@@ -127,6 +149,13 @@ func (h *AuthHandler) Register(g *echo.Group) {
 	g.GET("/auth/me", h.me)
 	g.POST("/auth/invite", h.invite)
 	g.POST("/auth/accept-invite", h.acceptInvite)
+	// Node 3.E.4 — personal /settings/account endpoints.
+	// Both require an authenticated user (WithAuth middleware is mounted
+	// on the v1 group and neither path is whitelisted), and both perform
+	// an additional password re-verify so a stolen cookie alone cannot
+	// rotate the password or delete the account.
+	g.POST("/auth/change-password", h.changePassword)
+	g.DELETE("/auth/me", h.deleteSelf)
 }
 
 // ---------- request / response shapes ----------
@@ -156,6 +185,15 @@ type inviteResp struct {
 	InviteURL string    `json:"inviteUrl"`
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+type changePasswordReq struct {
+	OldPassword string `json:"oldPassword"`
+	NewPassword string `json:"newPassword"`
+}
+
+type deleteSelfReq struct {
+	Password string `json:"password"`
 }
 
 // ---------- handlers ----------
@@ -386,6 +424,137 @@ func (h *AuthHandler) acceptInvite(c echo.Context) error {
 		return err
 	}
 	return h.issueCookieAndReturnUser(c, user, http.StatusCreated)
+}
+
+// changePassword swaps the caller's password hash. Requires the old
+// password as a second factor — a stolen cookie alone is not enough.
+// Validation order:
+//
+//  1. authenticated (userId in context, not "default")
+//  2. body parses + new password meets length policy
+//  3. user record exists in Mongo
+//  4. old password verifies against stored hash
+//  5. argon2id hash the new password + UpdatePasswordHash
+//
+// Does NOT revoke the caller's current jti — the spec calls that out
+// as polish, not a hard requirement, so this implementation deliberately
+// leaves the active session alive. If we want to force re-login on
+// password change later, set the revoked-jti key and clear the cookie
+// here.
+func (h *AuthHandler) changePassword(c echo.Context) error {
+	if h.userStore == nil || h.cfg == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "auth not configured")
+	}
+	userID, ok := c.Get("userId").(string)
+	if !ok || userID == "" || userID == domain.DefaultUserID {
+		return echo.NewHTTPError(http.StatusUnauthorized, "not authenticated")
+	}
+	var req changePasswordReq
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if req.OldPassword == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "oldPassword required")
+	}
+	if err := validatePassword(req.NewPassword); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if req.OldPassword == req.NewPassword {
+		return echo.NewHTTPError(http.StatusBadRequest, "new password must differ from old password")
+	}
+
+	ctx := c.Request().Context()
+	user, err := h.userStore.FindByID(ctx, userID)
+	if errors.Is(err, mongostore.ErrUserNotFound) {
+		return echo.NewHTTPError(http.StatusUnauthorized, "not authenticated")
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	matched, vErr := VerifyPassword(req.OldPassword, user.PasswordHash)
+	if vErr != nil || !matched {
+		return echo.NewHTTPError(http.StatusUnauthorized, "old password incorrect")
+	}
+	newHash, err := HashPassword(req.NewPassword)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "hash password: "+err.Error())
+	}
+	if err := h.userStore.UpdatePasswordHash(ctx, userID, newHash); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "update password: "+err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// deleteSelf removes the caller's user record after a password
+// re-verify. Refuses when the caller is the sole admin (otherwise the
+// system would be locked out of admin-only routes). Cleans up the
+// caller's current session: blacklists the active jti and clears the
+// auth cookie. Owned resources (options / accounts / strategies / …)
+// are intentionally NOT cascaded — see UserRepo.Delete doc comment.
+func (h *AuthHandler) deleteSelf(c echo.Context) error {
+	if h.userStore == nil || h.cfg == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "auth not configured")
+	}
+	userID, ok := c.Get("userId").(string)
+	if !ok || userID == "" || userID == domain.DefaultUserID {
+		return echo.NewHTTPError(http.StatusUnauthorized, "not authenticated")
+	}
+	var req deleteSelfReq
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if req.Password == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "password required")
+	}
+
+	ctx := c.Request().Context()
+	user, err := h.userStore.FindByID(ctx, userID)
+	if errors.Is(err, mongostore.ErrUserNotFound) {
+		return echo.NewHTTPError(http.StatusUnauthorized, "not authenticated")
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	matched, vErr := VerifyPassword(req.Password, user.PasswordHash)
+	if vErr != nil || !matched {
+		return echo.NewHTTPError(http.StatusUnauthorized, "password incorrect")
+	}
+
+	// Last-admin guard: never let the sole admin delete themselves;
+	// otherwise the system would be left with no one to manage roles,
+	// halt trading, etc.
+	if user.Role == domain.UserRoleAdmin {
+		adminCount, err := h.userStore.CountByRole(ctx, domain.UserRoleAdmin)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "admin count: "+err.Error())
+		}
+		if adminCount <= 1 {
+			return echo.NewHTTPError(http.StatusForbidden, "cannot delete only admin")
+		}
+	}
+
+	if err := h.userStore.Delete(ctx, userID); err != nil {
+		if errors.Is(err, mongostore.ErrUserNotFound) {
+			return echo.NewHTTPError(http.StatusUnauthorized, "not authenticated")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "delete user: "+err.Error())
+	}
+
+	// Best-effort jti revocation + cookie clear so the caller's browser
+	// stops sending a now-orphan token. Redis is optional; when nil we
+	// still clear the cookie.
+	if h.redis != nil && h.cfg.AuthJWTSecret != "" {
+		if cookie, err := c.Cookie(AuthCookieName); err == nil && cookie != nil && cookie.Value != "" {
+			if claims, err := parseJWT(cookie.Value, h.cfg.AuthJWTSecret); err == nil && claims.ID != "" {
+				ttl := time.Until(claims.ExpiresAt.Time)
+				if ttl > 0 {
+					_ = h.redis.Set(ctx, "auth:revoked:"+claims.ID, "1", ttl).Err()
+				}
+			}
+		}
+	}
+	h.clearCookie(c)
+	return c.NoContent(http.StatusNoContent)
 }
 
 // ---------- helpers ----------

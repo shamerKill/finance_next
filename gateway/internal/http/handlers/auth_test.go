@@ -6,16 +6,132 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/finance_next/gateway/internal/config"
+	"github.com/finance_next/gateway/internal/domain"
+	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	"github.com/labstack/echo/v4"
 )
+
+// fakeUserStore is an in-memory userStore for Node 3.E.4 handler tests.
+// Drives FindByID / UpdatePasswordHash / Delete / CountByRole without
+// Mongo. Only the methods on the handlers.userStore interface are
+// implemented; FindByEmail / Insert etc. would never be hit by the two
+// new endpoints.
+type fakeUserStore struct {
+	mu      sync.Mutex
+	users   map[string]*domain.User
+	deleted map[string]bool
+	// updates tracks UpdatePasswordHash so a test can assert the new
+	// hash was actually written rather than swallowed.
+	updates map[string]string
+}
+
+func newFakeUserStore() *fakeUserStore {
+	return &fakeUserStore{
+		users:   make(map[string]*domain.User),
+		deleted: make(map[string]bool),
+		updates: make(map[string]string),
+	}
+}
+
+func (f *fakeUserStore) FindByID(_ context.Context, id string) (*domain.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.deleted[id] {
+		return nil, mongostore.ErrUserNotFound
+	}
+	u, ok := f.users[id]
+	if !ok {
+		return nil, mongostore.ErrUserNotFound
+	}
+	// Return a copy so handler mutation of the password hash field (if
+	// any future change does so) doesn't leak back into the fake's
+	// canonical record. Apply the latest update so post-rotation
+	// verification reflects the new hash.
+	cp := *u
+	if h, ok := f.updates[id]; ok {
+		cp.PasswordHash = h
+	}
+	return &cp, nil
+}
+
+func (f *fakeUserStore) UpdatePasswordHash(_ context.Context, id, newHash string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.deleted[id] {
+		return mongostore.ErrUserNotFound
+	}
+	if _, ok := f.users[id]; !ok {
+		return mongostore.ErrUserNotFound
+	}
+	f.updates[id] = newHash
+	return nil
+}
+
+func (f *fakeUserStore) Delete(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.deleted[id] {
+		return mongostore.ErrUserNotFound
+	}
+	if _, ok := f.users[id]; !ok {
+		return mongostore.ErrUserNotFound
+	}
+	f.deleted[id] = true
+	return nil
+}
+
+func (f *fakeUserStore) CountByRole(_ context.Context, role string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var n int64
+	for id, u := range f.users {
+		if f.deleted[id] {
+			continue
+		}
+		if u.Role == role {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// withUserCtx returns a middleware that stamps userId / userRole keys
+// on the Echo context — the new endpoints normally rely on WithAuth
+// for this, but we mount the handler directly in tests to keep the
+// matrix focused on the handler logic itself.
+func withUserCtx(userID, role string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Set("userId", userID)
+			c.Set("userRole", role)
+			return next(c)
+		}
+	}
+}
+
+// newTestAuthHandler wires an AuthHandler with the in-memory fake
+// store. Concrete users repo stays nil — the new endpoints route
+// through userStore exclusively.
+func newTestAuthHandler(t *testing.T, store *fakeUserStore) *AuthHandler {
+	t.Helper()
+	cfg := &config.Config{
+		AuthJWTSecret:     strings.Repeat("a", 32),
+		AuthJWTTTLSeconds: 3600,
+	}
+	h := NewAuthHandler(nil, nil, cfg, nil)
+	h.userStore = store
+	return h
+}
 
 func TestHashPassword_RoundTrip(t *testing.T) {
 	hash, err := HashPassword("hunter2hunter2")
@@ -259,5 +375,226 @@ func TestValidatePassword(t *testing.T) {
 	}
 	if err := validatePassword(strings.Repeat("x", 300)); err == nil {
 		t.Error("too long: expected error")
+	}
+}
+
+// ---------- Node 3.E.4 — change-password + delete-self tests ----------
+
+// servePOST routes a JSON body through Echo to the supplied path, with
+// the userId / role middleware applied beforehand. Returns the recorder
+// for status / cookie / body assertions.
+func servePOST(
+	t *testing.T,
+	h *AuthHandler,
+	method, path, userID, role, body string,
+) *httptest.ResponseRecorder {
+	t.Helper()
+	e := echo.New()
+	g := e.Group("/api/v1", withUserCtx(userID, role))
+	h.Register(g)
+
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestChangePassword_WrongOld_401(t *testing.T) {
+	store := newFakeUserStore()
+	hash, err := HashPassword("correct-old-password")
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	store.users["u1"] = &domain.User{
+		ID:           "u1",
+		Email:        "u1@example.com",
+		PasswordHash: hash,
+		Role:         domain.UserRoleMember,
+	}
+	h := newTestAuthHandler(t, store)
+
+	rec := servePOST(t, h, http.MethodPost, "/api/v1/auth/change-password",
+		"u1", domain.UserRoleMember,
+		`{"oldPassword":"WRONG-old-password","newPassword":"brand-new-pass"}`)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "old password") {
+		t.Errorf("expected 'old password' in error body, got %q", rec.Body.String())
+	}
+	if _, ok := store.updates["u1"]; ok {
+		t.Error("expected no UpdatePasswordHash call on wrong-old failure")
+	}
+}
+
+func TestChangePassword_Success(t *testing.T) {
+	store := newFakeUserStore()
+	hash, err := HashPassword("correct-old-password")
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	store.users["u1"] = &domain.User{
+		ID:           "u1",
+		Email:        "u1@example.com",
+		PasswordHash: hash,
+		Role:         domain.UserRoleMember,
+	}
+	h := newTestAuthHandler(t, store)
+
+	rec := servePOST(t, h, http.MethodPost, "/api/v1/auth/change-password",
+		"u1", domain.UserRoleMember,
+		`{"oldPassword":"correct-old-password","newPassword":"brand-new-pass"}`)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	stored, ok := store.updates["u1"]
+	if !ok {
+		t.Fatal("expected UpdatePasswordHash to be called")
+	}
+	// Confirm the persisted hash actually verifies against the new
+	// password — guards against accidentally writing the plaintext.
+	matched, err := VerifyPassword("brand-new-pass", stored)
+	if err != nil {
+		t.Fatalf("verify new hash: %v", err)
+	}
+	if !matched {
+		t.Error("new password does not verify against the stored hash")
+	}
+}
+
+func TestDeleteSelf_WrongPassword_401(t *testing.T) {
+	store := newFakeUserStore()
+	hash, err := HashPassword("real-password")
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	store.users["u1"] = &domain.User{
+		ID:           "u1",
+		Email:        "u1@example.com",
+		PasswordHash: hash,
+		Role:         domain.UserRoleMember,
+	}
+	h := newTestAuthHandler(t, store)
+
+	rec := servePOST(t, h, http.MethodDelete, "/api/v1/auth/me",
+		"u1", domain.UserRoleMember,
+		`{"password":"WRONG"}`)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if store.deleted["u1"] {
+		t.Error("expected user not deleted on wrong-password failure")
+	}
+}
+
+func TestDeleteSelf_OnlyAdmin_403(t *testing.T) {
+	store := newFakeUserStore()
+	hash, err := HashPassword("admin-pass")
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	store.users["admin1"] = &domain.User{
+		ID:           "admin1",
+		Email:        "admin@example.com",
+		PasswordHash: hash,
+		Role:         domain.UserRoleAdmin,
+	}
+	// One member alongside — does NOT count toward admin total, so the
+	// admin is still the sole admin and must be refused.
+	memberHash, _ := HashPassword("member-pass")
+	store.users["m1"] = &domain.User{
+		ID:           "m1",
+		Email:        "m1@example.com",
+		PasswordHash: memberHash,
+		Role:         domain.UserRoleMember,
+	}
+	h := newTestAuthHandler(t, store)
+
+	rec := servePOST(t, h, http.MethodDelete, "/api/v1/auth/me",
+		"admin1", domain.UserRoleAdmin,
+		`{"password":"admin-pass"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "only admin") {
+		t.Errorf("expected 'only admin' in error body, got %q", rec.Body.String())
+	}
+	if store.deleted["admin1"] {
+		t.Error("sole admin must not be deleted")
+	}
+}
+
+func TestDeleteSelf_Success_204(t *testing.T) {
+	store := newFakeUserStore()
+	hash, err := HashPassword("member-pass")
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	store.users["m1"] = &domain.User{
+		ID:           "m1",
+		Email:        "m1@example.com",
+		PasswordHash: hash,
+		Role:         domain.UserRoleMember,
+	}
+	// Keep an admin around so the last-admin guard isn't even consulted
+	// (the caller is a member anyway).
+	adminHash, _ := HashPassword("admin-pass")
+	store.users["a1"] = &domain.User{
+		ID:           "a1",
+		Email:        "a1@example.com",
+		PasswordHash: adminHash,
+		Role:         domain.UserRoleAdmin,
+	}
+	h := newTestAuthHandler(t, store)
+
+	rec := servePOST(t, h, http.MethodDelete, "/api/v1/auth/me",
+		"m1", domain.UserRoleMember,
+		`{"password":"member-pass"}`)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !store.deleted["m1"] {
+		t.Error("expected user to be marked deleted")
+	}
+	// The handler must clear the auth cookie on success (MaxAge<0 or
+	// empty Value with a past expiry). Lock that down so the browser
+	// stops sending the now-orphan token.
+	var cleared bool
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == AuthCookieName && (c.MaxAge < 0 || c.Value == "") {
+			cleared = true
+			break
+		}
+	}
+	if !cleared {
+		t.Errorf("expected auth cookie to be cleared, got cookies: %v",
+			rec.Result().Cookies())
+	}
+}
+
+// TestChangePassword_RejectsSameAsOld locks the small extra guard that
+// a no-op rotation is rejected as 400 rather than silently re-hashing.
+// Mostly a UX/cost guard, but worth pinning so a future refactor doesn't
+// drop it.
+func TestChangePassword_RejectsSameAsOld(t *testing.T) {
+	store := newFakeUserStore()
+	hash, err := HashPassword("same-password")
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	store.users["u1"] = &domain.User{
+		ID:           "u1",
+		Email:        "u1@example.com",
+		PasswordHash: hash,
+		Role:         domain.UserRoleMember,
+	}
+	h := newTestAuthHandler(t, store)
+
+	rec := servePOST(t, h, http.MethodPost, "/api/v1/auth/change-password",
+		"u1", domain.UserRoleMember,
+		`{"oldPassword":"same-password","newPassword":"same-password"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }

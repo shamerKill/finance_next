@@ -171,3 +171,49 @@ func (r *UserRepo) SetLastLogin(ctx context.Context, id string, at time.Time) er
 	}
 	return nil
 }
+
+// UpdatePasswordHash overwrites the stored argon2id hash for the given
+// user. Used by POST /auth/change-password after the handler has
+// verified the old password. Empty inputs are rejected as a defence in
+// depth — the handler validates lengths separately, but we don't want
+// to ever write an empty hash even if a future caller forgets.
+func (r *UserRepo) UpdatePasswordHash(ctx context.Context, id, newHash string) error {
+	if id == "" {
+		return errors.New("user id required")
+	}
+	if newHash == "" {
+		return errors.New("password hash required")
+	}
+	now := time.Now().UTC()
+	res, err := r.col.UpdateOne(ctx,
+		bson.D{{Key: "id", Value: id}},
+		bson.M{"$set": bson.M{"passwordHash": newHash, "updatedAt": now}},
+	)
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+// Delete removes the user row matched by id. Returns ErrUserNotFound
+// when no row matched. Note: this only removes the auth record; user-
+// owned resources (options, accounts, strategies, …) are deliberately
+// retained — Node 3.E.4 self-delete is a "personal exit" flow, not a
+// data-cascade. Operators wanting full cleanup should run a separate
+// admin script.
+func (r *UserRepo) Delete(ctx context.Context, id string) error {
+	if id == "" {
+		return errors.New("user id required")
+	}
+	res, err := r.col.DeleteOne(ctx, bson.D{{Key: "id", Value: id}})
+	if err != nil {
+		return err
+	}
+	if res.DeletedCount == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}

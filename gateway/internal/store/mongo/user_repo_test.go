@@ -35,6 +35,32 @@ func TestUserRepo_InsertRejectsEmptyID(t *testing.T) {
 	}
 }
 
+// TestUserRepo_UpdatePasswordHash_RejectsEmpty locks in the
+// defence-in-depth guard on UpdatePasswordHash. Empty id / hash must
+// be rejected before we ever issue an UpdateOne; we don't want to
+// silently wipe a passwordHash field if a future caller forgets to
+// validate.
+func TestUserRepo_UpdatePasswordHash_RejectsEmpty(t *testing.T) {
+	r := &UserRepo{}
+	if err := r.UpdatePasswordHash(context.Background(), "", "$argon2id$..."); err == nil {
+		t.Fatal("expected error for empty id")
+	}
+	if err := r.UpdatePasswordHash(context.Background(), "abc", ""); err == nil {
+		t.Fatal("expected error for empty hash")
+	}
+}
+
+// TestUserRepo_Delete_RejectsEmpty locks the empty-id guard on Delete.
+// Without this check a buggy caller could pass "" and DeleteOne with
+// {id: ""} would match exactly the zero-id rows (none by design, but
+// the safer contract is to fail fast rather than silently no-op).
+func TestUserRepo_Delete_RejectsEmpty(t *testing.T) {
+	r := &UserRepo{}
+	if err := r.Delete(context.Background(), ""); err == nil {
+		t.Fatal("expected error for empty id")
+	}
+}
+
 // TestUserIndexModels_PartialAdminUnique locks in Fix 5: the third
 // index model must be a unique partial filter on role=="admin". This
 // is the structural guard against the first-admin race — both

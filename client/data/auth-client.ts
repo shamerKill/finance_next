@@ -127,4 +127,37 @@ export async function acceptInvite(input: {
   return (await res.json()) as TypeUser;
 }
 
+// POST /auth/change-password — Node 3.E.4. Requires the caller's old
+// password as a second factor. Returns 204 on success. 401 with
+// message "old password incorrect" surfaces as AuthError.
+export async function changePassword(input: {
+  oldPassword: string;
+  newPassword: string;
+}): Promise<void> {
+  const res = await apiFetch(parseUrl("v1/auth/change-password"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new AuthError(res.status, await readErr(res));
+  }
+}
+
+// DELETE /auth/me — Node 3.E.4. Password re-verify required. The
+// gateway refuses 403 when the caller is the sole admin, clears the
+// auth cookie on success, and blacklists the active jti. Owned
+// resources (options/accounts/strategies/…) are intentionally NOT
+// cascaded.
+export async function deleteSelf(input: { password: string }): Promise<void> {
+  const res = await apiFetch(parseUrl("v1/auth/me"), {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new AuthError(res.status, await readErr(res));
+  }
+}
+
 export { AuthError };

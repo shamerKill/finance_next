@@ -47,6 +47,13 @@ const ContextKey = "userId"
 func WithUserID(requireHeader bool) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			// Phase 1.A.1: when WithAuth has already populated the
+			// context from a valid JWT cookie, that wins — we don't
+			// let a caller-supplied X-User-Id header overwrite the
+			// authenticated subject.
+			if existing, ok := c.Get(ContextKey).(string); ok && existing != "" {
+				return next(c)
+			}
 			uid := c.Request().Header.Get(HeaderUserID)
 			if uid == "" {
 				if requireHeader {

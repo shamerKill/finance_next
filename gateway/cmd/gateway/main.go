@@ -123,6 +123,28 @@ func main() {
 		logger.Warn("ensure audit indexes failed", "err", err)
 	}
 
+	// Phase 1.A.1: auth users + invitations. Both repos run their index
+	// ensure unconditionally — duplicate-key errors on re-runs are
+	// non-fatal.
+	userRepo := mongostore.NewUserRepo(db)
+	if err := userRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure users indexes failed", "err", err)
+	}
+	invitationRepo := mongostore.NewInvitationRepo(db)
+	if err := invitationRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure invitations indexes failed", "err", err)
+	}
+	// First-boot bootstrap log: the very next /auth/register call wins
+	// admin role when the collection is empty. Operators look for this
+	// log line to know whether they need an invite link.
+	if n, err := userRepo.Count(connectCtx); err != nil {
+		logger.Warn("user count probe failed", "err", err)
+	} else if n == 0 {
+		logger.Info("no users yet; first /api/v1/auth/register call becomes admin")
+	} else {
+		logger.Info("users collection populated", "count", n)
+	}
+
 	// Phase 9: Polymarket wallet + prediction strategy/order repos.
 	walletRepo := mongostore.NewWalletRepo(db)
 	if err := walletRepo.EnsureIndexes(connectCtx); err != nil {
@@ -325,6 +347,9 @@ func main() {
 		PredictionOrderRepo:    predOrderRepo,
 		WalletRPC:              walletRPC,
 		PredictionEngine:       predEngine,
+
+		UserRepo:       userRepo,
+		InvitationRepo: invitationRepo,
 
 		RequireUserID:  cfg.RequireUserID,
 		AllowedOrigins: cfg.AllowedOrigins,

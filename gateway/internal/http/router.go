@@ -34,6 +34,8 @@ type Deps struct {
 	OptimizationRunRepo *mongostore.OptimizationRunRepo
 	SystemRepo          *mongostore.SystemRepo
 	AuditRepo           *mongostore.AuditRepo
+	UserRepo            *mongostore.UserRepo
+	InvitationRepo      *mongostore.InvitationRepo
 	Crypto              *crypto.Service
 	Envelope            *crypto.EnvelopeService
 
@@ -190,9 +192,39 @@ func NewRouter(d Deps) *echo.Echo {
 	api := e.Group("/api")
 	v1 := api.Group("/v1")
 
+	// Phase 1.A.1 cookie / JWT auth. Mounted FIRST so a valid cookie can
+	// populate the userId / userRole context values before WithUserID
+	// runs. The Parser closure binds the JWT secret from cfg so this
+	// middleware doesn't import the handlers package (which would
+	// create an import cycle).
+	if d.Config != nil && d.Config.AuthJWTSecret != "" {
+		secret := d.Config.AuthJWTSecret
+		v1.Use(auditmw.WithAuth(auditmw.AuthConfig{
+			Secret: secret,
+			Redis:  d.Redis,
+			Parser: func(token string) (*auditmw.AuthClaims, error) {
+				cl, err := handlers.ParseJWT(token, secret)
+				if err != nil {
+					return nil, err
+				}
+				out := &auditmw.AuthClaims{
+					UserID:   cl.UserID,
+					Role:     cl.Role,
+					JTI:      cl.ID,
+					IssuedAt: cl.IssuedAt.Unix(),
+					ExpireAt: cl.ExpiresAt.Unix(),
+				}
+				return out, nil
+			},
+		}))
+	}
+
 	// R2 multi-tenant userId middleware. MUST be mounted BEFORE the audit
 	// middleware so audit entries can pick up the resolved userId from
-	// the Echo context.
+	// the Echo context. WithAuth above already sets the userId from the
+	// JWT when the cookie is valid; WithUserID's header fallback then
+	// only kicks in for s2s callers and is otherwise a no-op (the
+	// existing context value is left untouched when present).
 	v1.Use(auditmw.WithUserID(d.RequireUserID))
 
 	// Phase 7 audit middleware. Mounted on the v1 group so every API
@@ -201,6 +233,12 @@ func NewRouter(d Deps) *echo.Echo {
 	if d.AuditMiddleware != nil {
 		v1.Use(d.AuditMiddleware.Middleware())
 	}
+
+	// Phase 1.A.1 auth handlers. Mounted on the v1 group; the white-list
+	// inside WithAuth keeps /auth/register|login|accept-invite|logout
+	// reachable without a cookie. Other /auth/* routes (me, invite) are
+	// behind WithAuth as usual.
+	handlers.NewAuthHandler(d.UserRepo, d.InvitationRepo, d.Config, d.Redis).Register(v1)
 
 	handlers.NewOptionHandler(d.OptionRepo, d.Crypto).Register(v1)
 	accountHandler := handlers.NewAccountHandler(d.AccountRepo, d.Envelope, nil)

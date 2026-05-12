@@ -12,7 +12,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -41,6 +43,16 @@ type Config struct {
 	// the verified subject as `X-User-Id`. Until that proxy is in place
 	// the header is trust-the-frontend.
 	RequireUserID bool
+
+	// Phase 1.A.1 auth. AuthJWTSecret is required (gateway fails to start
+	// when unset — see Load()). AuthJWTTTLSeconds defaults to 86400 (24h).
+	// AuthCookieDomain may be left empty (browser defaults to the host the
+	// response came from). AuthCookieSecure defaults to true; set
+	// `AUTH_COOKIE_SECURE=false` to disable for local http development.
+	AuthJWTSecret     string
+	AuthJWTTTLSeconds int
+	AuthCookieDomain  string
+	AuthCookieSecure  bool
 
 	// AllowedOrigins is the comma-split, trimmed list parsed from the
 	// `ALLOWED_ORIGINS` env var. Empty (default) → CORS allows "*" and
@@ -74,6 +86,21 @@ func Load() (*Config, error) {
 		RedisURL:       os.Getenv("REDIS_URL"),
 		RequireUserID:  os.Getenv("REQUIRE_USER_ID") == "true",
 		AllowedOrigins: parseAllowedOrigins(os.Getenv("ALLOWED_ORIGINS")),
+
+		AuthJWTSecret:    os.Getenv("AUTH_JWT_SECRET"),
+		AuthCookieDomain: os.Getenv("AUTH_COOKIE_DOMAIN"),
+		// Default true; explicit "false" opt-out for http://localhost dev.
+		AuthCookieSecure: os.Getenv("AUTH_COOKIE_SECURE") != "false",
+	}
+	// Auth TTL parsing — sentinel 0 → use the 24h default.
+	if raw := os.Getenv("AUTH_JWT_TTL_SECONDS"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("AUTH_JWT_TTL_SECONDS must be a positive integer (got %q)", raw)
+		}
+		cfg.AuthJWTTTLSeconds = n
+	} else {
+		cfg.AuthJWTTTLSeconds = 86400
 	}
 	if cfg.Port == "" {
 		cfg.Port = "3001"
@@ -86,13 +113,30 @@ func Load() (*Config, error) {
 	if cfg.EncryptionKey == "" {
 		missing = append(missing, "ENCRYPTION_KEY")
 	}
+	// AUTH_JWT_SECRET is REQUIRED — running without it would mean any
+	// caller can mint a valid JWT against a default empty secret. Fail
+	// fast so the misconfiguration can't ship.
+	if cfg.AuthJWTSecret == "" {
+		missing = append(missing, "AUTH_JWT_SECRET")
+	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("missing required env vars: %v", missing)
 	}
 	if len(cfg.EncryptionKey) != 64 {
 		return nil, errors.New("ENCRYPTION_KEY must be a 64-char hex string (32 bytes)")
 	}
+	if len(cfg.AuthJWTSecret) < 32 {
+		return nil, errors.New("AUTH_JWT_SECRET must be at least 32 chars (use `openssl rand -hex 32`)")
+	}
 	return cfg, nil
+}
+
+// AuthJWTTTL returns the JWT lifetime as a time.Duration.
+func (c *Config) AuthJWTTTL() time.Duration {
+	if c.AuthJWTTTLSeconds <= 0 {
+		return 24 * time.Hour
+	}
+	return time.Duration(c.AuthJWTTTLSeconds) * time.Second
 }
 
 // parseAllowedOrigins splits the comma-separated ALLOWED_ORIGINS value

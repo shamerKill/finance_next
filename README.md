@@ -45,6 +45,7 @@ cd client && yarn install && yarn dev
 ```
 
 详细部署文档见 `docs/deployment/`（Wave 4 后续节点持续补充）。
+完整 quickstart 步骤、常见快速失败诊断见 [docs/deployment/01-quickstart.md](./docs/deployment/01-quickstart.md)。
 
 ## 快速开始（旧路径，兼容保留）
 
@@ -131,7 +132,8 @@ curl -k https://$DOMAIN/api/v1/auth/me  # 401 未登录是预期
 
 注意：前端 (`client/`) 不在 compose 内。Caddyfile 默认把 `/` 反代到
 `host.docker.internal:3000`；生产请改为独立 `frontend` 服务或静态导出。
-详细见 `docs/deployment/02-production.md`（即将提供）。
+完整 prod checklist（env / TLS / backup / kill switch / 升级 / KMS / 监控 /
+安全 hardening）见 [docs/deployment/02-production.md](./docs/deployment/02-production.md)。
 
 ## 开发 (dev override，hot reload 友好)
 
@@ -146,6 +148,8 @@ docker compose \
   -f infra/docker-compose.dev.yml \
   up
 ```
+
+部署遇 bug 时按错误信息查 [docs/deployment/03-troubleshooting.md](./docs/deployment/03-troubleshooting.md)。
 
 ## 详细文档
 

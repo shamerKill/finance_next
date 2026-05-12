@@ -1,7 +1,10 @@
 import Link from "next/link";
 
+import { ApiErrorView } from "@/components/api-error";
+import { DataTable, DataTableColumn } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { StatusBadge } from "@/components/status-badge";
 import { listAccounts } from "@/data/api-client";
 import { TypeAccount } from "@/data/type";
 
@@ -13,6 +16,10 @@ export const metadata = { title: "账户" };
 // the first paint is filled in. Supports `?exchange=<venue>` for
 // cross-page navigation from the portfolio page — when present, the list
 // is client-filtered and a chip surface explains the active filter.
+//
+// Node 2.C.5.a — list rows now render through <DataTable> (auto card
+// layout on mobile per spec §G5); palette migrated to semantic tokens;
+// errors flow through <ApiErrorView>. Business logic / fetch unchanged.
 export default async function AccountsPage({
   searchParams,
 }: {
@@ -22,11 +29,11 @@ export default async function AccountsPage({
   const exchangeFilter = sp.exchange?.trim() || null;
 
   let accounts: TypeAccount[] = [];
-  let error: string | null = null;
+  let error: unknown = null;
   try {
     accounts = await listAccounts();
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    error = e;
   }
 
   const filtered = exchangeFilter
@@ -35,14 +42,68 @@ export default async function AccountsPage({
       )
     : accounts;
 
+  const columns: DataTableColumn<TypeAccount>[] = [
+    {
+      key: "label",
+      label: "标签",
+      render: (a) => (
+        <Link
+          href={`/accounts/${a.id}`}
+          className="font-medium text-text-primary hover:text-brand-primary hover:underline"
+        >
+          {a.label}
+        </Link>
+      ),
+    },
+    {
+      key: "exchange",
+      label: "交易所",
+      render: (a) => (
+        <span className="capitalize text-text-secondary">{a.exchange}</span>
+      ),
+    },
+    {
+      key: "email",
+      label: "邮箱",
+      render: (a) => (
+        <span className="text-text-secondary truncate">{a.email}</span>
+      ),
+    },
+    {
+      key: "permissions",
+      label: "权限",
+      align: "end",
+      render: (a) => (
+        <div className="flex gap-1 justify-end flex-wrap">
+          {a.permissions.canTrade && (
+            <StatusBadge tone="success" variant="flat" size="sm">
+              交易
+            </StatusBadge>
+          )}
+          {a.permissions.canWithdraw && (
+            <StatusBadge tone="danger" variant="flat" size="sm">
+              提现
+            </StatusBadge>
+          )}
+          {!a.permissions.canTrade && !a.permissions.canWithdraw && (
+            <StatusBadge tone="default" variant="flat" size="sm">
+              只读
+            </StatusBadge>
+          )}
+        </div>
+      ),
+    },
+  ];
+
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
         title="账户"
+        subtitle="跨交易所只读 / 交易凭证。带提现权限的密钥将被拒绝。"
         action={
           <Link
             href="/accounts/new"
-            className="px-3 py-2 rounded bg-primary text-white text-sm"
+            className="px-3 py-2 rounded bg-brand-primary text-text-primary text-sm font-medium hover:opacity-90"
           >
             + 添加账户
           </Link>
@@ -50,75 +111,47 @@ export default async function AccountsPage({
       />
 
       {exchangeFilter && (
-        <div className="mb-4 flex items-center gap-3 text-sm">
-          <span className="text-default-500">已筛选交易所：</span>
-          <span className="rounded-full bg-primary-50 px-3 py-1 text-primary-700">
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-text-tertiary">已筛选交易所：</span>
+          <span className="rounded-full bg-bg-surface-2 px-3 py-1 text-text-primary font-mono tnum text-xs">
             {exchangeFilter}
           </span>
           <Link
             href="/accounts"
-            className="text-xs text-default-500 hover:underline"
+            className="text-xs text-text-tertiary hover:underline"
           >
             清除筛选 ×
           </Link>
         </div>
       )}
 
-      {error && (
-        <div className="rounded border border-danger p-3 text-sm text-danger mb-4">
-          加载账户失败：{error}
-        </div>
-      )}
+      {error != null && <ApiErrorView error={error} />}
 
-      {filtered.length === 0 && !error && (
+      {error == null && filtered.length === 0 ? (
         <EmptyState
           title={exchangeFilter ? "未匹配任何账户" : "暂无账户"}
           description={
             exchangeFilter
               ? `没有 ${exchangeFilter} 的账户。清除筛选查看全部账户。`
-              : "请先添加一个 Binance 只读密钥开始使用。"
+              : "请先添加一个只读 / 交易密钥开始使用。"
           }
           action={
             <Link
               href="/accounts/new"
-              className="px-3 py-2 rounded bg-primary text-white text-sm"
+              className="px-3 py-2 rounded bg-brand-primary text-text-primary text-sm font-medium hover:opacity-90"
             >
               + 添加账户
             </Link>
           }
         />
-      )}
-
-      <div className="grid gap-3">
-        {filtered.map((a) => (
-          <Link
-            key={a.id}
-            href={`/accounts/${a.id}`}
-            className="border border-default-200 rounded p-4 hover:border-primary"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="font-medium truncate">{a.label}</div>
-                <div className="text-xs text-default-500 mt-1 truncate">
-                  {a.exchange} · {a.email}
-                </div>
-              </div>
-              <div className="text-xs flex gap-2 shrink-0">
-                {a.permissions.canTrade && (
-                  <span className="px-2 py-1 rounded bg-success/20 text-success">
-                    交易
-                  </span>
-                )}
-                {a.permissions.canWithdraw && (
-                  <span className="px-2 py-1 rounded bg-danger/20 text-danger">
-                    提现
-                  </span>
-                )}
-              </div>
-            </div>
-          </Link>
-        ))}
-      </div>
+      ) : error == null ? (
+        <DataTable<TypeAccount>
+          ariaLabel="账户列表"
+          columns={columns}
+          rows={filtered}
+          getRowKey={(a) => a.id}
+        />
+      ) : null}
     </div>
   );
 }

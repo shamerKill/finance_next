@@ -1,19 +1,31 @@
 // Phase 5: cross-exchange portfolio summary.
 //
 // Server component. Calls /api/v1/portfolio/summary at request time and
-// renders three tables: total / per-exchange / top-10 assets. The USD
+// renders three blocks: total / per-exchange / top-10 assets. The USD
 // price provider on the gateway is best-effort (Timescale latest close
 // of `<asset>USDT` on binance) — anything missing surfaces in `notes`.
+//
+// Node 2.C.5.a — moved per-exchange / per-asset tables to <DataTable>
+// (auto card layout on mobile), promoted total to <Stat size="lg">,
+// palette migrated to semantic tokens. Fetch / aggregation logic
+// unchanged.
 
 import Link from "next/link";
 
+import { ApiErrorView } from "@/components/api-error";
+import { DataTable, DataTableColumn } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { Stat } from "@/components/stat";
 import { getPortfolioSummary } from "@/data/api-client";
 import type { TypePortfolioSummary } from "@/data/type";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = { title: "投资组合" };
+
+type ExchangeRow = TypePortfolioSummary["perExchange"][number];
+type AssetRow = TypePortfolioSummary["perAsset"][number];
 
 function formatUsd(v: number): string {
   return v.toLocaleString("en-US", {
@@ -25,12 +37,69 @@ function formatUsd(v: number): string {
 
 export default async function PortfolioPage() {
   let summary: TypePortfolioSummary | null = null;
-  let error: string | null = null;
+  let error: unknown = null;
   try {
     summary = await getPortfolioSummary();
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    error = e;
   }
+
+  const exchangeColumns: DataTableColumn<ExchangeRow>[] = [
+    {
+      key: "exchange",
+      label: "交易所",
+      render: (row) => (
+        <Link
+          href={`/accounts?exchange=${encodeURIComponent(row.exchange)}`}
+          className="capitalize text-brand-primary hover:underline"
+        >
+          {row.exchange}
+        </Link>
+      ),
+    },
+    {
+      key: "accounts",
+      label: "账户数",
+      align: "end",
+      render: (row) => (
+        <span className="font-mono tnum">{row.accountIds.length}</span>
+      ),
+    },
+    {
+      key: "totalUsd",
+      label: "总计 USD",
+      align: "end",
+      render: (row) => (
+        <span className="font-mono tnum">{formatUsd(row.totalUsd)}</span>
+      ),
+    },
+  ];
+
+  const assetColumns: DataTableColumn<AssetRow>[] = [
+    {
+      key: "asset",
+      label: "资产",
+      render: (a) => <span className="font-mono tnum">{a.asset}</span>,
+    },
+    {
+      key: "qty",
+      label: "数量",
+      align: "end",
+      render: (a) => (
+        <span className="font-mono tnum">
+          {a.qty.toLocaleString(undefined, { maximumFractionDigits: 8 })}
+        </span>
+      ),
+    },
+    {
+      key: "usdValue",
+      label: "USD 价值",
+      align: "end",
+      render: (a) => (
+        <span className="font-mono tnum">{formatUsd(a.usdValue)}</span>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-8">
@@ -39,114 +108,68 @@ export default async function PortfolioPage() {
         subtitle={
           <>
             跨交易所资产快照。USD 估值取自 Timescale 中{" "}
-            <code>&lt;asset&gt;USDT</code> 的最新收盘价；缺失行情按 0 计入总值。
+            <code className="font-mono tnum">&lt;asset&gt;USDT</code>{" "}
+            的最新收盘价；缺失行情按 0 计入总值。
           </>
         }
       />
 
-      {error && (
-        <div className="rounded border border-danger p-3 text-sm text-danger">
-          {error}
-        </div>
-      )}
+      {error != null && <ApiErrorView error={error} />}
 
       {summary && (
         <>
-          <section>
-            <h2 className="text-xl font-medium mb-2">总计</h2>
-            <div className="text-3xl font-semibold">
-              {formatUsd(summary.totalUsd)}
-            </div>
-            <div className="text-xs text-default-500 mt-1">
-              生成时间 {summary.generatedAt}
-            </div>
+          <Stat
+            label="总计"
+            value={formatUsd(summary.totalUsd)}
+            size="lg"
+            hint={`生成时间 ${summary.generatedAt}`}
+          />
+
+          <section className="space-y-3">
+            <h2 className="text-xl font-medium text-text-primary">按交易所</h2>
+            {summary.perExchange.length === 0 ? (
+              <EmptyState
+                title="尚未配置任何账户"
+                description="添加一个交易所账户后将出现在这里。"
+                action={
+                  <Link
+                    href="/accounts/new"
+                    className="px-3 py-2 rounded bg-brand-primary text-text-primary text-sm font-medium hover:opacity-90"
+                  >
+                    + 添加账户
+                  </Link>
+                }
+              />
+            ) : (
+              <DataTable<ExchangeRow>
+                ariaLabel="按交易所汇总"
+                columns={exchangeColumns}
+                rows={summary.perExchange}
+                getRowKey={(row) => row.exchange}
+              />
+            )}
           </section>
 
-          <section>
-            <h2 className="text-xl font-medium mb-3">按交易所</h2>
-            <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-default-500">
-                <tr>
-                  <th className="text-left p-2">交易所</th>
-                  <th className="text-right p-2">账户数</th>
-                  <th className="text-right p-2">总计 USD</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.perExchange.length === 0 ? (
-                  <tr>
-                    <td className="p-2 text-default-500" colSpan={3}>
-                      尚未配置任何账户。
-                    </td>
-                  </tr>
-                ) : (
-                  summary.perExchange.map((row) => (
-                    <tr
-                      key={row.exchange}
-                      className="border-t border-default-200 hover:bg-default-50"
-                    >
-                      <td className="p-2 capitalize">
-                        <Link
-                          href={`/accounts?exchange=${encodeURIComponent(row.exchange)}`}
-                          className="text-primary hover:underline"
-                        >
-                          {row.exchange}
-                        </Link>
-                      </td>
-                      <td className="p-2 text-right">{row.accountIds.length}</td>
-                      <td className="p-2 text-right">
-                        {formatUsd(row.totalUsd)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-            </div>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-medium mb-3">主要资产</h2>
-            <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-default-500">
-                <tr>
-                  <th className="text-left p-2">资产</th>
-                  <th className="text-right p-2">数量</th>
-                  <th className="text-right p-2">USD 价值</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.perAsset.length === 0 ? (
-                  <tr>
-                    <td className="p-2 text-default-500" colSpan={3}>
-                      暂无余额。
-                    </td>
-                  </tr>
-                ) : (
-                  summary.perAsset.map((a) => (
-                    <tr key={a.asset} className="border-t border-default-200">
-                      <td className="p-2 font-mono">{a.asset}</td>
-                      <td className="p-2 text-right font-mono">
-                        {a.qty.toLocaleString(undefined, {
-                          maximumFractionDigits: 8,
-                        })}
-                      </td>
-                      <td className="p-2 text-right">
-                        {formatUsd(a.usdValue)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-            </div>
+          <section className="space-y-3">
+            <h2 className="text-xl font-medium text-text-primary">主要资产</h2>
+            {summary.perAsset.length === 0 ? (
+              <EmptyState
+                title="暂无余额"
+                description="账户已绑定，但所有资产为零。等待充值或下单后将出现明细。"
+              />
+            ) : (
+              <DataTable<AssetRow>
+                ariaLabel="资产明细"
+                columns={assetColumns}
+                rows={summary.perAsset}
+                getRowKey={(a) => a.asset}
+              />
+            )}
           </section>
 
           {summary.notes && summary.notes.length > 0 && (
-            <section className="text-xs text-default-500">
-              <h3 className="font-medium text-default-600 mb-1">备注</h3>
+            <section className="text-xs text-text-tertiary">
+              <h3 className="font-medium text-text-secondary mb-1">备注</h3>
               <ul className="list-disc ml-5 space-y-1">
                 {summary.notes.map((n, i) => (
                   <li key={i}>{n}</li>

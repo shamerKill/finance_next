@@ -6,6 +6,10 @@
 // every 30 seconds so the cards repaint with fresh data without a full
 // navigation. Errors thrown from getDashboardSummary() bubble up to the
 // route group's error.tsx boundary.
+//
+// Node 2.C.5.a — adopted design system tokens (bg-bg-surface /
+// text-text-primary / accent-up / accent-down etc), KPI rows use <Stat>,
+// section cards use <Section>. Logic / API surface unchanged.
 
 import Link from "next/link";
 
@@ -13,6 +17,7 @@ import { Callout } from "@/components/callout";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
+import { Stat } from "@/components/stat";
 import { StatusBadge } from "@/components/status-badge";
 import { getDashboardSummary } from "@/data/api-client";
 import type { TypeDashboardSummary } from "@/data/type";
@@ -35,10 +40,16 @@ function formatUsd(v: number, opts: { showSign?: boolean } = {}): string {
   return v < 0 ? `-${abs}` : abs;
 }
 
+function pnlDirection(v: number): "up" | "down" | "flat" {
+  if (v > 0) return "up";
+  if (v < 0) return "down";
+  return "flat";
+}
+
 function pnlTextClass(v: number): string {
-  if (v > 0) return "text-success-600";
-  if (v < 0) return "text-danger-600";
-  return "text-default-700";
+  if (v > 0) return "text-accent-up";
+  if (v < 0) return "text-accent-down";
+  return "text-text-secondary";
 }
 
 export default async function DashboardPage() {
@@ -70,18 +81,55 @@ export default async function DashboardPage() {
         </Callout>
       )}
 
+      {/* Top KPI row — five quick-read metrics. Stat values are tnum-mono so
+          they line up vertically across responsive grids. */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <Stat
+          label="总市值"
+          value={formatUsd(summary.portfolio.totalUsd)}
+          hint={`${summary.portfolio.accountCount} 账户`}
+        />
+        <Stat
+          label="24h PnL"
+          value={
+            <span className={pnlTextClass(summary.pnl.realised24hUsd)}>
+              {formatUsd(summary.pnl.realised24hUsd, { showSign: true })}
+            </span>
+          }
+          delta={{
+            value: `${summary.pnl.tradesLast24h} 笔`,
+            direction: pnlDirection(summary.pnl.realised24hUsd),
+          }}
+        />
+        <Stat
+          label="30d PnL"
+          value={
+            <span className={pnlTextClass(summary.pnl.realised30dUsd)}>
+              {formatUsd(summary.pnl.realised30dUsd, { showSign: true })}
+            </span>
+          }
+        />
+        <Stat
+          label="挂单中"
+          value={`${summary.openOrders.count}`}
+          hint={formatUsd(summary.openOrders.openNotionalUsd)}
+        />
+        <Stat
+          label="策略 / 钱包"
+          value={`${summary.portfolio.strategyCount} · ${summary.portfolio.walletCount}`}
+          hint="活跃数量"
+        />
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <SystemCard summary={summary} />
-        <PnLCard summary={summary} />
-        <PortfolioCard summary={summary} />
         <RecommendationsCard summary={summary} />
-        <ActivityCard summary={summary} />
         <AIBudgetCard summary={summary} />
       </div>
 
       {summary.notes && summary.notes.length > 0 && (
-        <section className="text-xs text-default-500">
-          <h3 className="font-medium text-default-600 mb-1">备注</h3>
+        <section className="text-xs text-text-tertiary">
+          <h3 className="font-medium text-text-secondary mb-1">备注</h3>
           <ul className="list-disc ml-5 space-y-1">
             {summary.notes.map((n, i) => (
               <li key={i}>{n}</li>
@@ -101,7 +149,10 @@ function SystemCard({ summary }: { summary: TypeDashboardSummary }) {
     <Section
       title="系统状态"
       action={
-        <Link href="/admin" className="text-xs text-primary-600 hover:underline">
+        <Link
+          href="/admin"
+          className="text-xs text-brand-primary hover:underline"
+        >
           管理 →
         </Link>
       }
@@ -111,7 +162,7 @@ function SystemCard({ summary }: { summary: TypeDashboardSummary }) {
           {halted ? "● 已暂停" : "● 运行中"}
         </StatusBadge>
         {halted ? (
-          <div className="text-xs text-default-600 space-y-0.5">
+          <div className="text-xs text-text-secondary space-y-0.5">
             {summary.system.haltedReason && (
               <div>原因：{summary.system.haltedReason}</div>
             )}
@@ -120,68 +171,10 @@ function SystemCard({ summary }: { summary: TypeDashboardSummary }) {
             )}
           </div>
         ) : (
-          <div className="text-xs text-default-500">
+          <div className="text-xs text-text-tertiary">
             订单引擎正常处理命令流。
           </div>
         )}
-      </div>
-    </Section>
-  );
-}
-
-// ---------- Card 2: 24h realised PnL ----------
-
-function PnLCard({ summary }: { summary: TypeDashboardSummary }) {
-  const v24 = summary.pnl.realised24hUsd;
-  const v30 = summary.pnl.realised30dUsd;
-  return (
-    <Section title="24h 已实现 PnL">
-      <div className="space-y-1">
-        <div className={`text-3xl font-semibold ${pnlTextClass(v24)}`}>
-          {formatUsd(v24, { showSign: true })}
-        </div>
-        <div className="text-xs text-default-500 space-x-2">
-          <span>
-            30d:{" "}
-            <span className={pnlTextClass(v30)}>
-              {formatUsd(v30, { showSign: true })}
-            </span>
-          </span>
-          <span>·</span>
-          <span>今日成交: {summary.pnl.tradesLast24h} 笔</span>
-        </div>
-        {summary.pnl.tradesLast24h === 0 && (
-          <div className="text-xs text-default-400 pt-1">暂无成交记录</div>
-        )}
-      </div>
-    </Section>
-  );
-}
-
-// ---------- Card 3: Portfolio total ----------
-
-function PortfolioCard({ summary }: { summary: TypeDashboardSummary }) {
-  return (
-    <Section
-      title="总市值"
-      action={
-        <Link
-          href="/portfolio"
-          className="text-xs text-primary-600 hover:underline"
-        >
-          投资组合 →
-        </Link>
-      }
-    >
-      <div className="space-y-1">
-        <div className="text-3xl font-semibold">
-          {formatUsd(summary.portfolio.totalUsd)}
-        </div>
-        <div className="text-xs text-default-500">
-          {summary.portfolio.accountCount} 账户 ·{" "}
-          {summary.portfolio.strategyCount} 策略 ·{" "}
-          {summary.portfolio.walletCount} 钱包
-        </div>
       </div>
     </Section>
   );
@@ -198,7 +191,7 @@ function RecommendationsCard({ summary }: { summary: TypeDashboardSummary }) {
       action={
         <Link
           href="/recommendations"
-          className="text-xs text-primary-600 hover:underline"
+          className="text-xs text-brand-primary hover:underline"
         >
           全部 →
         </Link>
@@ -211,7 +204,7 @@ function RecommendationsCard({ summary }: { summary: TypeDashboardSummary }) {
           action={
             <Link
               href="/strategies"
-              className="text-sm text-primary-600 hover:underline"
+              className="text-sm text-brand-primary hover:underline"
             >
               前往策略 →
             </Link>
@@ -220,65 +213,26 @@ function RecommendationsCard({ summary }: { summary: TypeDashboardSummary }) {
       ) : (
         <div className="space-y-2">
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-semibold text-primary-600">
+            <span className="font-mono tnum text-mono-lg text-brand-primary">
               {count}
             </span>
-            <span className="text-xs text-default-500">条待审</span>
+            <span className="text-xs text-text-tertiary">条待审</span>
           </div>
           <ul className="space-y-1 text-sm">
             {top.map((id) => (
               <li key={id}>
                 <Link
                   href={`/recommendations/${id}`}
-                  className="flex items-center justify-between rounded px-2 py-1 hover:bg-default-100"
+                  className="flex items-center justify-between rounded px-2 py-1 hover:bg-bg-surface-2"
                 >
-                  <span className="font-mono text-xs text-default-700">
+                  <span className="font-mono tnum text-xs text-text-secondary">
                     {id.slice(0, 8)}
                   </span>
-                  <span className="text-default-400">›</span>
+                  <span className="text-text-tertiary">›</span>
                 </Link>
               </li>
             ))}
           </ul>
-        </div>
-      )}
-    </Section>
-  );
-}
-
-// ---------- Card 5: Recent activity ----------
-
-function ActivityCard({ summary }: { summary: TypeDashboardSummary }) {
-  const tradeN = summary.pnl.tradesLast24h;
-  const openN = summary.openOrders.count;
-  return (
-    <Section title="最近活动">
-      {tradeN === 0 && openN === 0 ? (
-        <div className="text-sm text-default-500 py-2">24 小时内无成交</div>
-      ) : (
-        <div className="space-y-2 text-sm">
-          {tradeN > 0 && (
-            <div className="flex items-center justify-between">
-              <span className="text-default-700">24h 内成交</span>
-              <span className="font-mono text-default-700">{tradeN} 笔</span>
-            </div>
-          )}
-          {openN > 0 && (
-            <div className="flex items-center justify-between">
-              <span className="text-default-700">挂单中</span>
-              <span className="font-mono text-default-700">
-                {openN} 笔 · {formatUsd(summary.openOrders.openNotionalUsd)}
-              </span>
-            </div>
-          )}
-          <div className="pt-1">
-            <Link
-              href="/strategies"
-              className="text-xs text-primary-600 hover:underline"
-            >
-              查看策略 →
-            </Link>
-          </div>
         </div>
       )}
     </Section>
@@ -291,24 +245,27 @@ function AIBudgetCard({ summary }: { summary: TypeDashboardSummary }) {
   const spent = summary.aiBudget.usdSpentToday;
   const cap = summary.aiBudget.usdCapPerDay || 0;
   const pct = cap > 0 ? Math.min(100, (spent / cap) * 100) : 0;
-  let barColor = "bg-success-500";
-  if (pct >= 90) barColor = "bg-danger-500";
-  else if (pct >= 50) barColor = "bg-warning-500";
+  let barColor = "bg-accent-up";
+  if (pct >= 90) barColor = "bg-accent-down";
+  else if (pct >= 50) barColor = "bg-accent-warning";
 
   return (
     <Section
       title="AI 预算 (今日)"
       action={
-        <Link href="/admin" className="text-xs text-primary-600 hover:underline">
+        <Link
+          href="/admin"
+          className="text-xs text-brand-primary hover:underline"
+        >
           管理设置 →
         </Link>
       }
     >
       <div className="space-y-3">
         <div>
-          <div className="text-2xl font-semibold">
+          <div className="font-mono tnum text-mono-lg text-text-primary">
             {formatUsd(spent)}{" "}
-            <span className="text-sm text-default-400">
+            <span className="text-sm text-text-tertiary">
               / {formatUsd(cap)}
             </span>
           </div>
@@ -318,7 +275,7 @@ function AIBudgetCard({ summary }: { summary: TypeDashboardSummary }) {
             aria-valuenow={Math.round(pct)}
             aria-valuemin={0}
             aria-valuemax={100}
-            className="mt-2 h-2 w-full rounded-full bg-default-100 overflow-hidden"
+            className="mt-2 h-2 w-full rounded-full bg-bg-surface-2 overflow-hidden"
           >
             <div
               className={`h-full ${barColor} transition-all`}
@@ -339,9 +296,9 @@ function AIBudgetCard({ summary }: { summary: TypeDashboardSummary }) {
             OpenAI {summary.aiBudget.openaiConfigured ? "已配置" : "未配置"}
           </StatusBadge>
         </div>
-        <div className="text-xs text-default-500 flex items-center gap-2">
+        <div className="text-xs text-text-tertiary flex items-center gap-2">
           <span>当前:</span>
-          <span className="inline-flex items-center rounded bg-default-100 px-2 py-0.5 font-mono text-default-700">
+          <span className="inline-flex items-center rounded bg-bg-surface-2 px-2 py-0.5 font-mono tnum text-text-secondary">
             {summary.aiBudget.currentFamily}
           </span>
         </div>

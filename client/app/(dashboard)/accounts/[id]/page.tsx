@@ -1,16 +1,26 @@
 import Link from "next/link";
 
+import { ApiErrorView } from "@/components/api-error";
+import { DataTable, DataTableColumn } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { RecentTracker } from "@/components/recent-tracker";
 import { Section } from "@/components/section";
-import { getAccount, getBalances, getPositions, getOptions } from "@/data/api-client";
+import { StatusBadge } from "@/components/status-badge";
+import { Tabs } from "@/components/tabs";
+import {
+  getAccount,
+  getBalances,
+  getOptions,
+  getPositions,
+} from "@/data/api-client";
 import {
   TypeAccount,
   TypeBalance,
   TypeOption,
   TypePosition,
 } from "@/data/type";
+
 import AccountStreamPanel from "./stream-panel";
 import RefreshButton from "./refresh-button";
 
@@ -45,11 +55,16 @@ function formatQueryTime(d: Date): string {
 
 // Account detail page. Server-side renders the snapshot tables; client
 // components below subscribe to /ws for live updates and trigger refreshes.
+//
+// Node 2.C.5.a — body wrapped in <Tabs> (基础信息 / 余额 / 仓位 / 实时事件),
+// data tables migrated to <DataTable> so they auto-collapse to cards on
+// mobile, palette switched to design-system tokens. Fetch behavior /
+// strategy-linkage logic unchanged.
 export default async function AccountDetailPage({ params }: PageProps) {
   const { id } = await params;
 
   let account: TypeAccount | null = null;
-  let accountErr: string | null = null;
+  let accountErr: unknown = null;
   let balancesResult: FetchResult<TypeBalance> = { ok: true, data: [] };
   let positionsResult: FetchResult<TypePosition> = { ok: true, data: [] };
   let strategies: TypeOption[] = [];
@@ -61,7 +76,7 @@ export default async function AccountDetailPage({ params }: PageProps) {
       tryFetch(getPositions(id)),
     ]);
   } catch (e) {
-    accountErr = e instanceof Error ? e.message : String(e);
+    accountErr = e;
   }
 
   // Best-effort: pull the full strategy list and filter by accountId
@@ -76,7 +91,7 @@ export default async function AccountDetailPage({ params }: PageProps) {
 
   if (accountErr || !account) {
     return (
-      <div>
+      <div className="space-y-4">
         <PageHeader
           breadcrumb={
             <Link href="/accounts" className="hover:underline">
@@ -85,9 +100,7 @@ export default async function AccountDetailPage({ params }: PageProps) {
           }
           title="账户"
         />
-        <div className="rounded border border-danger p-3 text-sm text-danger">
-          {accountErr ?? "未找到账户"}
-        </div>
+        <ApiErrorView error={accountErr ?? "未找到账户"} />
       </div>
     );
   }
@@ -103,8 +116,220 @@ export default async function AccountDetailPage({ params }: PageProps) {
     (s) => s.id && s.live?.accountId && s.live.accountId === account.id,
   );
 
+  const balanceColumns: DataTableColumn<TypeBalance>[] = [
+    { key: "asset", label: "资产", render: (b) => <span>{b.asset}</span> },
+    {
+      key: "free",
+      label: "可用",
+      align: "end",
+      render: (b) => <span className="font-mono tnum">{b.free}</span>,
+    },
+    {
+      key: "locked",
+      label: "冻结",
+      align: "end",
+      render: (b) => <span className="font-mono tnum">{b.locked}</span>,
+    },
+    {
+      key: "wallet",
+      label: "钱包",
+      render: (b) => <span className="text-text-tertiary">{b.wallet}</span>,
+    },
+  ];
+
+  const positionColumns: DataTableColumn<TypePosition>[] = [
+    { key: "symbol", label: "交易对" },
+    { key: "positionSide", label: "方向" },
+    {
+      key: "positionAmt",
+      label: "数量",
+      align: "end",
+      render: (p) => <span className="font-mono tnum">{p.positionAmt}</span>,
+    },
+    {
+      key: "entryPrice",
+      label: "开仓价",
+      align: "end",
+      render: (p) => <span className="font-mono tnum">{p.entryPrice}</span>,
+    },
+    {
+      key: "markPrice",
+      label: "标记价",
+      align: "end",
+      render: (p) => <span className="font-mono tnum">{p.markPrice}</span>,
+    },
+    {
+      key: "unrealizedProfit",
+      label: "盈亏",
+      align: "end",
+      render: (p) => {
+        const v = Number(p.unrealizedProfit);
+        const cls =
+          Number.isFinite(v) && v > 0
+            ? "text-accent-up"
+            : Number.isFinite(v) && v < 0
+              ? "text-accent-down"
+              : "text-text-secondary";
+        return (
+          <span className={`font-mono tnum ${cls}`}>{p.unrealizedProfit}</span>
+        );
+      },
+    },
+    {
+      key: "leverage",
+      label: "杠杆",
+      align: "end",
+      render: (p) => (
+        <span className="font-mono tnum">{p.leverage}x</span>
+      ),
+    },
+  ];
+
+  const overviewPanel = (
+    <div className="space-y-4">
+      <Section title="基础信息">
+        <dl className="grid grid-cols-[120px_1fr] gap-y-2 text-sm">
+          <dt className="text-text-tertiary">标签</dt>
+          <dd className="text-text-primary">{account.label}</dd>
+          <dt className="text-text-tertiary">交易所</dt>
+          <dd className="text-text-primary capitalize">{account.exchange}</dd>
+          <dt className="text-text-tertiary">邮箱</dt>
+          <dd className="text-text-primary">{account.email}</dd>
+          <dt className="text-text-tertiary">权限</dt>
+          <dd className="flex gap-2 flex-wrap">
+            {account.permissions.canTrade && (
+              <StatusBadge tone="success" variant="flat" size="sm">
+                交易
+              </StatusBadge>
+            )}
+            {account.permissions.canWithdraw && (
+              <StatusBadge tone="danger" variant="flat" size="sm">
+                提现
+              </StatusBadge>
+            )}
+            {!account.permissions.canTrade &&
+              !account.permissions.canWithdraw && (
+                <StatusBadge tone="default" variant="flat" size="sm">
+                  只读
+                </StatusBadge>
+              )}
+          </dd>
+          {account.lastSnapshotAt && (
+            <>
+              <dt className="text-text-tertiary">最近快照</dt>
+              <dd className="font-mono tnum text-text-secondary text-xs">
+                {account.lastSnapshotAt}
+              </dd>
+            </>
+          )}
+        </dl>
+      </Section>
+
+      <Section title="使用此账户的策略">
+        {linkedStrategies.length === 0 ? (
+          <EmptyState
+            title="无关联策略"
+            description="尚无策略将此账户作为实盘下单账户。在策略详情页选择此账户后会出现在这里。"
+          />
+        ) : (
+          <ul className="divide-y divide-border-default">
+            {linkedStrategies.map((s) => (
+              <li
+                key={s.id ?? s.name}
+                className="flex items-center justify-between py-2 text-sm"
+              >
+                <div className="min-w-0">
+                  <Link
+                    href={`/strategies/${s.id}`}
+                    className="text-brand-primary hover:underline"
+                  >
+                    {s.name}
+                  </Link>
+                  <span className="ml-2 font-mono tnum text-xs text-text-tertiary">
+                    {s.execSymbol}
+                  </span>
+                </div>
+                <div className="text-xs shrink-0">
+                  {s.live?.enabled ? (
+                    <StatusBadge tone="success" variant="flat" size="sm">
+                      实盘 · {s.live.mode}
+                    </StatusBadge>
+                  ) : (
+                    <StatusBadge tone="default" variant="flat" size="sm">
+                      关闭
+                    </StatusBadge>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+    </div>
+  );
+
+  const balancesPanel = (
+    <Section
+      title="余额"
+      action={
+        <span className="text-xs text-text-tertiary">
+          {balancesResult.ok ? `${balanceCount} 个非零资产` : "查询失败"}
+        </span>
+      }
+    >
+      {!balancesResult.ok ? (
+        <ApiErrorView error={balancesResult.error} />
+      ) : balancesResult.data.length === 0 ? (
+        <EmptyState
+          title="无非零余额"
+          description="账户连接成功，当前现货 + 期货均无可用资金。零余额资产已被过滤。"
+        />
+      ) : (
+        <DataTable<TypeBalance>
+          ariaLabel="账户余额"
+          columns={balanceColumns}
+          rows={balancesResult.data}
+          getRowKey={(b) => `${b.wallet}-${b.asset}`}
+        />
+      )}
+    </Section>
+  );
+
+  const positionsPanel = (
+    <Section
+      title="持仓"
+      action={
+        <span className="text-xs text-text-tertiary">
+          {positionsResult.ok ? `${positionCount} 个开放持仓` : "查询失败"}
+        </span>
+      }
+    >
+      {!positionsResult.ok ? (
+        <ApiErrorView error={positionsResult.error} />
+      ) : positionsResult.data.length === 0 ? (
+        <EmptyState
+          title="无开放持仓"
+          description="USDM 期货当前无开放持仓。仅显示 positionAmt ≠ 0 的合约。"
+        />
+      ) : (
+        <DataTable<TypePosition>
+          ariaLabel="账户持仓"
+          columns={positionColumns}
+          rows={positionsResult.data}
+          getRowKey={(p) => `${p.symbol}-${p.positionSide}`}
+        />
+      )}
+    </Section>
+  );
+
+  const streamPanel = (
+    <Section title="实时事件">
+      <AccountStreamPanel accountId={account.id} />
+    </Section>
+  );
+
   return (
-    <div>
+    <div className="space-y-4">
       <RecentTracker
         id={account.id}
         kind="account"
@@ -122,156 +347,31 @@ export default async function AccountDetailPage({ params }: PageProps) {
         action={
           <div className="flex flex-col items-end gap-1">
             <RefreshButton />
-            <span className="text-xs text-default-400">查询时间 {queryTime}</span>
+            <span className="text-xs text-text-tertiary font-mono tnum">
+              查询时间 {queryTime}
+            </span>
           </div>
         }
       />
 
-      <section className="mb-8">
-        <div className="flex items-baseline justify-between mb-3">
-          <h2 className="text-lg font-medium">余额</h2>
-          <span className="text-xs text-default-500">
-            {balancesResult.ok
-              ? `${balanceCount} 个非零资产`
-              : "查询失败"}
-          </span>
-        </div>
-        {!balancesResult.ok ? (
-          <div className="rounded border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700">
-            余额查询失败：{balancesResult.error}
-          </div>
-        ) : balancesResult.data.length === 0 ? (
-          <p className="text-sm text-default-500">
-            账户连接成功，当前无非零余额。
-            <span className="text-default-400">
-              （注：零余额资产已被过滤；现货 + 期货均无可用资金时显示为空。）
-            </span>
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border border-default-200 rounded">
-              <thead className="bg-default-100">
-                <tr>
-                  <th className="text-left p-2">资产</th>
-                  <th className="text-right p-2">可用</th>
-                  <th className="text-right p-2">冻结</th>
-                  <th className="text-left p-2">钱包</th>
-                </tr>
-              </thead>
-              <tbody>
-                {balancesResult.data.map((b) => (
-                  <tr key={`${b.wallet}-${b.asset}`} className="border-t border-default-200">
-                    <td className="p-2">{b.asset}</td>
-                    <td className="p-2 text-right font-mono">{b.free}</td>
-                    <td className="p-2 text-right font-mono">{b.locked}</td>
-                    <td className="p-2 text-default-500">{b.wallet}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="mb-8">
-        <div className="flex items-baseline justify-between mb-3">
-          <h2 className="text-lg font-medium">持仓</h2>
-          <span className="text-xs text-default-500">
-            {positionsResult.ok
-              ? `${positionCount} 个开放持仓`
-              : "查询失败"}
-          </span>
-        </div>
-        {!positionsResult.ok ? (
-          <div className="rounded border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700">
-            持仓查询失败：{positionsResult.error}
-          </div>
-        ) : positionsResult.data.length === 0 ? (
-          <p className="text-sm text-default-500">
-            USDM 期货当前无开放持仓。
-            <span className="text-default-400">
-              （仅显示 positionAmt ≠ 0 的合约。）
-            </span>
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border border-default-200 rounded">
-              <thead className="bg-default-100">
-                <tr>
-                  <th className="text-left p-2">交易对</th>
-                  <th className="text-left p-2">方向</th>
-                  <th className="text-right p-2">数量</th>
-                  <th className="text-right p-2">开仓价</th>
-                  <th className="text-right p-2">标记价</th>
-                  <th className="text-right p-2">盈亏</th>
-                  <th className="text-right p-2">杠杆</th>
-                </tr>
-              </thead>
-              <tbody>
-                {positionsResult.data.map((p) => (
-                  <tr key={`${p.symbol}-${p.positionSide}`} className="border-t border-default-200">
-                    <td className="p-2">{p.symbol}</td>
-                    <td className="p-2">{p.positionSide}</td>
-                    <td className="p-2 text-right font-mono">{p.positionAmt}</td>
-                    <td className="p-2 text-right font-mono">{p.entryPrice}</td>
-                    <td className="p-2 text-right font-mono">{p.markPrice}</td>
-                    <td className="p-2 text-right font-mono">{p.unrealizedProfit}</td>
-                    <td className="p-2 text-right">{p.leverage}x</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="mb-8">
-        <Section title="使用此账户的策略">
-          {linkedStrategies.length === 0 ? (
-            <EmptyState
-              title="无关联策略"
-              description="尚无策略将此账户作为实盘下单账户。在策略详情页选择此账户后会出现在这里。"
-            />
-          ) : (
-            <ul className="divide-y divide-default-200">
-              {linkedStrategies.map((s) => (
-                <li
-                  key={s.id ?? s.name}
-                  className="flex items-center justify-between py-2 text-sm"
-                >
-                  <div className="min-w-0">
-                    <Link
-                      href={`/strategies/${s.id}`}
-                      className="text-primary hover:underline"
-                    >
-                      {s.name}
-                    </Link>
-                    <span className="ml-2 font-mono text-xs text-default-500">
-                      {s.execSymbol}
-                    </span>
-                  </div>
-                  <div className="text-xs shrink-0">
-                    {s.live?.enabled ? (
-                      <span className="rounded bg-success-100 px-2 py-0.5 text-success-700">
-                        实盘 · {s.live.mode}
-                      </span>
-                    ) : (
-                      <span className="rounded bg-default-100 px-2 py-0.5 text-default-600">
-                        关闭
-                      </span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-      </section>
-
-      <section>
-        <h2 className="text-lg font-medium mb-3">实时事件</h2>
-        <AccountStreamPanel accountId={account.id} />
-      </section>
+      <Tabs
+        ariaLabel="账户详情"
+        defaultSelectedKey="overview"
+        items={[
+          { key: "overview", label: "基础信息", content: overviewPanel },
+          {
+            key: "balances",
+            label: `余额${balancesResult.ok ? ` (${balanceCount})` : ""}`,
+            content: balancesPanel,
+          },
+          {
+            key: "positions",
+            label: `仓位${positionsResult.ok ? ` (${positionCount})` : ""}`,
+            content: positionsPanel,
+          },
+          { key: "stream", label: "实时事件", content: streamPanel },
+        ]}
+      />
     </div>
   );
 }

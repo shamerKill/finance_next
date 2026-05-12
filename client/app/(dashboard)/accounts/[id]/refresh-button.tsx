@@ -22,7 +22,7 @@ export default function RefreshButton() {
           router.refresh();
         });
       }}
-      className="text-xs px-2 py-1 rounded border border-default-300 hover:bg-default-100 disabled:opacity-50"
+      className="text-xs px-2 py-1 rounded border border-border-default text-text-primary hover:bg-bg-surface-2 disabled:opacity-50"
       title={
         lastClicked
           ? `上次刷新：${new Date(lastClicked).toLocaleTimeString("zh-CN")}`

@@ -591,6 +591,29 @@ export type TypeStrategyPerformance = {
   notes?: string[];
 };
 
+// --- Node 3.E.2 — /settings/system-info ------------------------------
+//
+// Snapshot the gateway returns at GET /api/v1/settings/system-info.
+// `envFlags` carries boolean "configured?" flags for sensitive env vars
+// (the gateway never returns raw secret values) plus non-sensitive
+// scalars like KEK_PROVIDER value and AI budget caps. `deps` reports
+// each dependency's health from gateway probes; `cronStatus` is a
+// placeholder (currently empty {}) for quant's last-success timestamps.
+export type TypeDepStatus = {
+  status: "ok" | "error" | "disabled";
+  latencyMs?: number;
+  lastCheckAt: string;
+  err?: string;
+};
+
+export type TypeSettingsSystemInfo = {
+  version: string;
+  buildAt: string;
+  envFlags: Record<string, unknown>;
+  deps: Record<string, TypeDepStatus>;
+  cronStatus: Record<string, unknown>;
+};
+
 // --- Phase 1.A.3 — auth user (cookie / JWT) ---------------------------
 //
 // Mirrors gateway/internal/domain/user.go::User minus the password hash

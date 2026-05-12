@@ -1,23 +1,16 @@
-import { Callout } from "@/components/callout";
-import { PageHeader } from "@/components/page-header";
-import { Section } from "@/components/section";
-
 import { requireAdmin } from "../require-admin";
 
+import { TradingSettingsClient } from "./client";
+
+// Node 3.E.3 — /settings/trading admin sub-page.
+//
+// Surfaces the three "mainnet gate" pieces in one view:
+//   1. env-level enable flags (MAINNET_TRADING_ENABLED, POLYMARKET_TRADING_ENABLED)
+//   2. POLYGON_RPC_URL presence
+//   3. interactive admin token request/confirm flow that opens the
+//      1-hour mainnet trading window (shared TokenStore across Binance
+//      mainnet and Polymarket per the CLAUDE.md security contract).
 export default async function SettingsTradingPage() {
   await requireAdmin();
-  return (
-    <div className="max-w-3xl space-y-6">
-      <PageHeader
-        title="交易"
-        subtitle="主网开关、mainnet token、风控全局参数"
-      />
-      <Section title="即将开放">
-        <Callout variant="info" title="需后端 system-info endpoint（3.E.2）">
-          mainnet gate / token TTL / per-venue 开关等聚合视图依赖 3.E.2
-          落地。临时仍可通过 /api/v1/admin/mainnet/* 端点 + admin 密钥操作。
-        </Callout>
-      </Section>
-    </div>
-  );
+  return <TradingSettingsClient />;
 }

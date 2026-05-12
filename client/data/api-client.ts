@@ -22,6 +22,7 @@ import {
   TypeRecommendation,
   TypeRecommendationStatus,
   TypeSetLive,
+  TypeSettingsSystemInfo,
   TypeDashboardSummary,
   TypeStrategyPerformance,
   TypeStudyHandle,
@@ -990,4 +991,19 @@ export const listPredictionOrders = async (
     { cache: "no-store" },
   );
   return jsonOrThrow<TypePredictionOrder[]>(res);
+};
+
+// ---------- Node 3.E.2 — settings/system-info (admin) ----------
+//
+// Admin-only deployment snapshot: build version, env-derived feature
+// flags (secrets surfaced as bool "configured?" only — never raw),
+// dependency health probes (mongo / redis / timescale / quant), and a
+// cron-status placeholder. Auth is by JWT role=admin OR the s2s
+// X-Admin-Key header — apiFetch already forwards the cookie; admin-key
+// fallback callers can pass a custom header.
+export const getSettingsSystemInfo = async (): Promise<TypeSettingsSystemInfo> => {
+  const res = await apiFetch(parseUrl("v1/settings/system-info"), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeSettingsSystemInfo>(res);
 };

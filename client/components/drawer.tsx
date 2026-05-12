@@ -38,6 +38,12 @@ export function Drawer({
   children,
   footer,
 }: DrawerProps) {
+  // HeroUI's <Drawer> renders into a portal with role="dialog" by default;
+  // we still wire aria-modal + aria-labelledby explicitly so the title is
+  // announced and the underlying page tree is correctly marked inert by
+  // assistive tech. The titleId is module-scoped because only one drawer
+  // is typically open at a time.
+  const titleId = "drawer-title";
   return (
     <HeroDrawer
       isOpen={open}
@@ -45,12 +51,17 @@ export function Drawer({
       placement={side}
       size={size}
       backdrop="opaque"
+      aria-modal="true"
+      aria-labelledby={title ? titleId : undefined}
     >
       <DrawerContent>
         {() => (
           <>
             {title && (
-              <DrawerHeader className="text-text-primary border-b border-border-default">
+              <DrawerHeader
+                id={titleId}
+                className="text-text-primary border-b border-border-default"
+              >
                 {title}
               </DrawerHeader>
             )}

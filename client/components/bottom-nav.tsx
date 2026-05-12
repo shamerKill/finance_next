@@ -159,7 +159,8 @@ export function BottomNav() {
             key={entry.href}
             href={entry.href}
             aria-current={active ? "page" : undefined}
-            className={`flex flex-col items-center justify-center gap-0.5 text-[10px] leading-none ${
+            aria-label={`导航至${entry.label}`}
+            className={`flex flex-col items-center justify-center gap-0.5 text-[10px] leading-none focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-info focus-visible:ring-inset ${
               active
                 ? "text-accent-info"
                 : "text-text-tertiary hover:text-text-secondary"

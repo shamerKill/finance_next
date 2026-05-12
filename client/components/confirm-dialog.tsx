@@ -63,6 +63,13 @@ export function ConfirmDialog({
     }
   };
 
+  // Stable ids so the modal header / body can wire aria-labelledby /
+  // aria-describedby for screen readers. We use deterministic ids
+  // (suffixed by React's useId is unnecessary here — only one
+  // ConfirmDialog is open at a time per app).
+  const titleId = "confirm-dialog-title";
+  const messageId = "confirm-dialog-message";
+
   return (
     <Modal
       isOpen={open}
@@ -70,11 +77,13 @@ export function ConfirmDialog({
       isDismissable={!busy}
       isKeyboardDismissDisabled={busy}
       placement="center"
+      aria-labelledby={titleId}
+      aria-describedby={message ? messageId : undefined}
     >
       <ModalContent>
-        <ModalHeader className="text-text-primary">{title}</ModalHeader>
+        <ModalHeader id={titleId} className="text-text-primary">{title}</ModalHeader>
         {message && (
-          <ModalBody className="text-text-secondary text-sm">
+          <ModalBody id={messageId} className="text-text-secondary text-sm">
             {message}
           </ModalBody>
         )}

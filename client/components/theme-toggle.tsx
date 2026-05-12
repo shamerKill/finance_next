@@ -113,7 +113,11 @@ export function ThemeToggle() {
         onAction={(key) => setTheme(String(key) as ThemeMode)}
       >
         {OPTIONS.map((opt) => (
-          <DropdownItem key={opt.key} description={opt.description}>
+          <DropdownItem
+            key={opt.key}
+            description={opt.description}
+            aria-label={`切换至${opt.label}主题`}
+          >
             {opt.label}
           </DropdownItem>
         ))}

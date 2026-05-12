@@ -120,6 +120,7 @@ export function UserMenu({ user }: UserMenuProps) {
             <DropdownItem
               key={`${THEME_KEY_PREFIX}${opt.key}`}
               description={opt.description}
+              aria-label={`切换至${opt.label}主题`}
             >
               {opt.label}
               {theme === opt.key ? "  ✓" : ""}

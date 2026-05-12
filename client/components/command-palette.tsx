@@ -142,6 +142,9 @@ export function CommandPalette({
       e.preventDefault();
       const item = filtered[activeIndex];
       if (item) handleSelect(item);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
     }
   };
 
@@ -158,6 +161,11 @@ export function CommandPalette({
         <ModalHeader className="px-3 py-2 border-b border-border-default">
           <Input
             autoFocus
+            aria-label="搜索导航"
+            role="combobox"
+            aria-expanded={open}
+            aria-controls="command-palette-listbox"
+            aria-autocomplete="list"
             value={query}
             onValueChange={(v) => {
               setQuery(v);
@@ -171,14 +179,19 @@ export function CommandPalette({
           />
         </ModalHeader>
         <ModalBody className="px-0 py-2 max-h-[60vh] overflow-y-auto">
-          <div ref={listRef}>
+          <div
+            ref={listRef}
+            id="command-palette-listbox"
+            role="listbox"
+            aria-label="搜索结果"
+          >
             {grouped.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-text-tertiary">
                 未找到匹配项
               </div>
             ) : (
               grouped.map(([group, groupItems]) => (
-                <div key={group} className="py-1">
+                <div key={group} className="py-1" role="group" aria-label={group}>
                   <div className="px-4 py-1 text-xs uppercase tracking-wide text-text-tertiary">
                     {group}
                   </div>
@@ -189,6 +202,8 @@ export function CommandPalette({
                       <button
                         key={item.id}
                         type="button"
+                        role="option"
+                        aria-selected={isActive}
                         onClick={() => handleSelect(item)}
                         onMouseEnter={() => setActiveIndex(idx)}
                         className={`w-full flex items-center justify-between gap-3 px-4 py-2 text-left text-sm ${

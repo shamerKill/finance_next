@@ -63,14 +63,20 @@ export function OrderBook({
       ...trimmedAsks.map((a) => a.size),
     );
 
+  const totalRows = trimmedAsks.length + trimmedBids.length + (mid ? 1 : 0);
+
   return (
     <div
+      role="table"
+      aria-label="订单簿（买卖盘）"
+      aria-rowcount={totalRows}
+      aria-colcount={2}
       className={`font-mono text-mono-sm tnum text-text-primary ${className ?? ""}`}
     >
       {/* Asks rendered top-down with the lowest ask closest to the spread.
        * The array is ascending (closest-first), so we reverse to put the
        * furthest ask at the top. */}
-      <div className="flex flex-col-reverse">
+      <div className="flex flex-col-reverse" role="rowgroup" aria-label="卖盘">
         {trimmedAsks.map((lvl, i) => (
           <OrderBookRow
             key={`ask-${i}-${lvl.price}`}
@@ -83,11 +89,15 @@ export function OrderBook({
         ))}
       </div>
       {mid && (
-        <div className="border-y border-border-default bg-bg-surface-2 px-2 py-1 text-center text-text-secondary">
+        <div
+          role="row"
+          aria-label="中间价"
+          className="border-y border-border-default bg-bg-surface-2 px-2 py-1 text-center text-text-secondary"
+        >
           {mid}
         </div>
       )}
-      <div>
+      <div role="rowgroup" aria-label="买盘">
         {trimmedBids.map((lvl, i) => (
           <OrderBookRow
             key={`bid-${i}-${lvl.price}`}
@@ -124,17 +134,22 @@ function OrderBookRow({
   // readable in light + dark themes.
   const barColor = side === "bid" ? "bg-accent-up/10" : "bg-accent-down/10";
 
+  const sideLabel = side === "bid" ? "买" : "卖";
   return (
-    <div className="relative grid grid-cols-2 px-2 h-7 items-center hover:bg-bg-surface-2/60">
+    <div
+      role="row"
+      aria-label={`${sideLabel} ${priceFmt(level.price)} 数量 ${sizeFmt(level.size)}`}
+      className="relative grid grid-cols-2 px-2 h-7 items-center hover:bg-bg-surface-2/60"
+    >
       <div
         aria-hidden
         className={`absolute inset-y-0 right-0 ${barColor}`}
         style={{ width: `${widthPct}%` }}
       />
-      <div className={`relative z-10 text-left ${priceColor}`}>
+      <div role="cell" className={`relative z-10 text-left ${priceColor}`}>
         {priceFmt(level.price)}
       </div>
-      <div className="relative z-10 text-right text-text-secondary">
+      <div role="cell" className="relative z-10 text-right text-text-secondary">
         {sizeFmt(level.size)}
       </div>
     </div>

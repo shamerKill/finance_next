@@ -10,6 +10,12 @@ import { Children, ReactNode, cloneElement, isValidElement } from "react";
 // accept an `isInvalid` prop. When `error` is set we forward that prop to
 // a *single* child if it's a React element. Multi-child cases (`<input>`
 // + helper button) should pass `isInvalid` themselves.
+//
+// Node 5.D.1 — input slot is `min-h-[44px]` (iOS HIG touch target). HeroUI
+// inputs already render to ≥44 in `md` size; the wrapper enforces this as
+// a floor for raw `<input>` / `<select>` / `<textarea>` children. For
+// numeric inputs, set `inputMode="decimal"` directly on the child <Input>
+// (or `inputMode="numeric"` for integer-only) to hint the mobile keyboard.
 
 export interface FormFieldProps {
   label: ReactNode;
@@ -31,16 +37,20 @@ export function FormField({
   children,
   className,
 }: FormFieldProps) {
-  // Forward isInvalid to a single HeroUI input child so the ring color
-  // matches. We don't try to be clever about multi-child cases — those
-  // call sites should pass isInvalid themselves.
+  // Forward isInvalid + aria-describedby to a single HeroUI input child so
+  // screen readers announce the hint/error and the ring color matches.
+  // Multi-child call sites should set both props themselves.
+  const hintId = hint && htmlFor ? `${htmlFor}-hint` : undefined;
+  const errorId = error && htmlFor ? `${htmlFor}-error` : undefined;
+  const describedBy = [errorId, hintId].filter(Boolean).join(" ") || undefined;
+
   const child = Children.only(children);
-  const wrapped =
-    isValidElement(child) && error
-      ? cloneElement(child as React.ReactElement<Record<string, unknown>>, {
-          isInvalid: true,
-        })
-      : child;
+  const wrapped = isValidElement(child)
+    ? cloneElement(child as React.ReactElement<Record<string, unknown>>, {
+        ...(error ? { isInvalid: true } : {}),
+        ...(describedBy ? { "aria-describedby": describedBy } : {}),
+      })
+    : child;
 
   return (
     <div className={`flex flex-col gap-1 ${className ?? ""}`}>
@@ -50,15 +60,19 @@ export function FormField({
       >
         {label}
         {required && (
-          <span className="text-accent-down" aria-label="required">
+          <span className="text-accent-down" aria-label="必填">
             *
           </span>
         )}
       </label>
-      {hint && <div className="text-xs text-text-tertiary">{hint}</div>}
-      <div>{wrapped}</div>
+      {hint && (
+        <div id={hintId} className="text-xs text-text-tertiary">
+          {hint}
+        </div>
+      )}
+      <div className="[&>*]:min-h-[44px]">{wrapped}</div>
       {error && (
-        <div className="text-xs text-accent-down" role="alert">
+        <div id={errorId} className="text-xs text-accent-down" role="alert">
           {error}
         </div>
       )}

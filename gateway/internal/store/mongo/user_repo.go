@@ -91,6 +91,14 @@ func (r *UserRepo) Count(ctx context.Context) (int64, error) {
 	return r.col.CountDocuments(ctx, bson.D{})
 }
 
+// CountByRole returns the number of users with the given role. Used by
+// the claim-legacy endpoint to refuse the migration unless exactly one
+// admin exists — otherwise legacy `userId="default"` rows could be
+// silently re-homed to whichever admin made the call first.
+func (r *UserRepo) CountByRole(ctx context.Context, role string) (int64, error) {
+	return r.col.CountDocuments(ctx, bson.D{{Key: "role", Value: role}})
+}
+
 // Insert persists a new user. Returns ErrUserEmailConflict on duplicate
 // email (case-insensitive). The caller is expected to set CreatedAt /
 // UpdatedAt; Insert does NOT touch them.

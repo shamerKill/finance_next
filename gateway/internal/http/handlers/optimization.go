@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"time"
 
+	gwmw "github.com/finance_next/gateway/internal/http/middleware"
 	"github.com/finance_next/gateway/internal/quantclient"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	quantv1 "github.com/finance_next/shared-proto/gen/go/quantpb/v1"
@@ -99,8 +100,9 @@ func (h *OptimizationHandler) list(c echo.Context) error {
 			limit = v
 		}
 	}
-	docs, err := h.repo.FindAll(
+	docs, err := h.repo.FindAllForUser(
 		c.Request().Context(),
+		gwmw.FromEcho(c),
 		c.QueryParam("strategyId"),
 		limit,
 	)
@@ -116,7 +118,7 @@ func (h *OptimizationHandler) findOne(c echo.Context) error {
 	if h.repo == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "optimization repo not configured")
 	}
-	doc, err := h.repo.FindByID(c.Request().Context(), c.Param("id"))
+	doc, err := h.repo.FindByIDForUser(c.Request().Context(), gwmw.FromEcho(c), c.Param("id"))
 	if errors.Is(err, mongostore.ErrOptimizationRunNotFound) {
 		return echo.NewHTTPError(http.StatusNotFound, "optimization run not found")
 	}

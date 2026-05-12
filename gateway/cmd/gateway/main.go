@@ -173,7 +173,13 @@ func main() {
 	// Every user-scoped collection gets userId="default" on docs that
 	// pre-date the boundary. Runs after every EnsureIndexes so the new
 	// compound indexes already exist when later reads happen.
-	runUserIDBackfills(connectCtx, logger, optRepo, acctRepo, orderRepo, walletRepo, predStratRepo, predOrderRepo)
+	//
+	// Node 1.A.2 adds the three previously un-stamped collections
+	// (ai_recommendations / optimization_runs / backtest_results); their
+	// per-repo EnsureUserIDIndex runs alongside the backfill so the new
+	// (userId, *) compound indexes are present after the first boot
+	// that picks up this code.
+	runUserIDBackfills(connectCtx, logger, optRepo, acctRepo, orderRepo, walletRepo, predStratRepo, predOrderRepo, recRepo, optRunRepo, bktRepo)
 
 	// Phase 7: KEK provider selection. Default is the env-backed Service;
 	// `KEK_PROVIDER=aws-kms` / `gcp-kms` swap to a stub that errors at
@@ -360,6 +366,7 @@ func main() {
 
 		UserRepo:       userRepo,
 		InvitationRepo: invitationRepo,
+		MongoDB:        db,
 
 		RequireUserID:  cfg.RequireUserID,
 		AllowedOrigins: cfg.AllowedOrigins,
@@ -433,6 +440,13 @@ func selectKEKProvider(svc *crypto.Service, log *slog.Logger) crypto.KEKProvider
 // Each call is idempotent; subsequent boots become no-ops once every
 // row carries the field. Failures are logged but never fatal — a Mongo
 // blip should not block gateway startup.
+//
+// Node 1.A.2 added the last three collections (ai_recommendations /
+// optimization_runs / backtest_results) and made their per-repo
+// EnsureUserIDIndex part of the same loop so the new compound indexes
+// are guaranteed to exist after the first boot that picks up this
+// code. The order matters only for log readability — operations on
+// distinct collections are independent.
 func runUserIDBackfills(
 	ctx context.Context,
 	log *slog.Logger,
@@ -442,27 +456,37 @@ func runUserIDBackfills(
 	wallet *mongostore.WalletRepo,
 	predStrat *mongostore.PredictionStrategyRepo,
 	predOrder *mongostore.PredictionOrderRepo,
+	rec *mongostore.RecommendationRepo,
+	optRun *mongostore.OptimizationRunRepo,
+	bkt *mongostore.BacktestRepo,
 ) {
 	type job struct {
-		name string
-		run  func(context.Context) (int64, error)
+		name      string
+		backfill  func(context.Context) (int64, error)
+		ensureIdx func(context.Context) error // optional Node 1.A.2 (userId,*) index ensure
 	}
 	jobs := []job{
-		{"options", opt.BackfillMissingUserID},
-		{"accounts", acct.BackfillMissingUserID},
-		{"order_log", order.BackfillMissingUserID},
-		{"polygon_wallets", wallet.BackfillMissingUserID},
-		{"prediction_strategies", predStrat.BackfillMissingUserID},
-		{"prediction_orders", predOrder.BackfillMissingUserID},
+		{"options", opt.BackfillMissingUserID, nil},
+		{"accounts", acct.BackfillMissingUserID, nil},
+		{"order_log", order.BackfillMissingUserID, nil},
+		{"polygon_wallets", wallet.BackfillMissingUserID, nil},
+		{"prediction_strategies", predStrat.BackfillMissingUserID, nil},
+		{"prediction_orders", predOrder.BackfillMissingUserID, nil},
+		{"ai_recommendations", rec.BackfillMissingUserID, rec.EnsureUserIDIndex},
+		{"optimization_runs", optRun.BackfillMissingUserID, optRun.EnsureUserIDIndex},
+		{"backtest_results", bkt.BackfillMissingUserID, bkt.EnsureUserIDIndex},
 	}
 	for _, j := range jobs {
-		n, err := j.run(ctx)
+		n, err := j.backfill(ctx)
 		if err != nil {
 			log.Warn("userId backfill failed", "collection", j.name, "err", err)
-			continue
-		}
-		if n > 0 {
+		} else if n > 0 {
 			log.Info("userId backfill applied", "collection", j.name, "docs", n)
+		}
+		if j.ensureIdx != nil {
+			if err := j.ensureIdx(ctx); err != nil {
+				log.Warn("ensure userId index failed", "collection", j.name, "err", err)
+			}
 		}
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"time"
 
+	gwmw "github.com/finance_next/gateway/internal/http/middleware"
 	"github.com/finance_next/gateway/internal/quantclient"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	"github.com/finance_next/gateway/internal/store/timescale"
@@ -167,7 +168,7 @@ func (h *BacktestHandler) list(c echo.Context) error {
 			limit = v
 		}
 	}
-	docs, err := h.repo.FindAll(c.Request().Context(), strategyID, limit)
+	docs, err := h.repo.FindAllForUser(c.Request().Context(), gwmw.FromEcho(c), strategyID, limit)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -180,7 +181,7 @@ func (h *BacktestHandler) findOne(c echo.Context) error {
 	if h.repo == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "mongo not configured for backtests")
 	}
-	doc, err := h.repo.FindByID(c.Request().Context(), c.Param("id"))
+	doc, err := h.repo.FindByIDForUser(c.Request().Context(), gwmw.FromEcho(c), c.Param("id"))
 	if errors.Is(err, mongostore.ErrBacktestNotFound) {
 		return echo.NewHTTPError(http.StatusNotFound, "backtest not found")
 	}
@@ -221,7 +222,7 @@ func (h *BacktestHandler) trades(c echo.Context) error {
 	if h.repo == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "mongo not configured for backtests")
 	}
-	doc, err := h.repo.FindByID(c.Request().Context(), c.Param("id"))
+	doc, err := h.repo.FindByIDForUser(c.Request().Context(), gwmw.FromEcho(c), c.Param("id"))
 	if errors.Is(err, mongostore.ErrBacktestNotFound) {
 		return echo.NewHTTPError(http.StatusNotFound, "backtest not found")
 	}

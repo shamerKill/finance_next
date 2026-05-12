@@ -60,3 +60,41 @@ func TestUserIDFilter_DefaultIncludesLegacyDocs(t *testing.T) {
 		t.Errorf("non-default tenant should be a strict equality filter: %+v", otherFilter)
 	}
 }
+
+// --- Node 1.A.2 guards ----------------------------------------------------
+
+// TestRecommendation_FindByIDForUser_RejectsEmptyUserID locks in that
+// the per-user lookup refuses an empty userID — a handler that
+// accidentally passed "" would otherwise bypass the tenant boundary.
+func TestRecommendation_FindByIDForUser_RejectsEmptyUserID(t *testing.T) {
+	r := &RecommendationRepo{}
+	_, err := r.FindByIDForUser(context.Background(), "", "rec-1")
+	if err == nil {
+		t.Fatal("expected error for empty userID, got nil")
+	}
+	if !strings.Contains(err.Error(), "userID required") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestOptimization_FindByIDForUser_RejectsEmptyUserID(t *testing.T) {
+	r := &OptimizationRunRepo{}
+	_, err := r.FindByIDForUser(context.Background(), "", "study-1")
+	if err == nil {
+		t.Fatal("expected error for empty userID, got nil")
+	}
+	if !strings.Contains(err.Error(), "userID required") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestOptimization_FindAllForUser_RejectsEmptyUserID(t *testing.T) {
+	r := &OptimizationRunRepo{}
+	_, err := r.FindAllForUser(context.Background(), "", "", 10)
+	if err == nil {
+		t.Fatal("expected error for empty userID, got nil")
+	}
+	if !strings.Contains(err.Error(), "userID required") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}

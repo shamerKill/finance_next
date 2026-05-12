@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/finance_next/gateway/internal/domain"
+	gwmw "github.com/finance_next/gateway/internal/http/middleware"
 	mongostore "github.com/finance_next/gateway/internal/store/mongo"
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
@@ -79,6 +80,7 @@ func (h *RecommendationHandler) list(c echo.Context) error {
 		}
 	}
 	docs, err := h.repo.FindAll(c.Request().Context(), mongostore.RecommendationListOptions{
+		UserID:     gwmw.FromEcho(c),
 		Status:     c.QueryParam("status"),
 		StrategyID: c.QueryParam("strategyId"),
 		Limit:      limit,
@@ -101,7 +103,7 @@ func (h *RecommendationHandler) findOne(c echo.Context) error {
 	if h.repo == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "recommendation repo not configured")
 	}
-	doc, err := h.repo.FindByID(c.Request().Context(), c.Param("id"))
+	doc, err := h.repo.FindByIDForUser(c.Request().Context(), gwmw.FromEcho(c), c.Param("id"))
 	if errors.Is(err, mongostore.ErrRecommendationNotFound) {
 		return echo.NewHTTPError(http.StatusNotFound, "recommendation not found")
 	}
@@ -118,8 +120,17 @@ func (h *RecommendationHandler) reject(c echo.Context) error {
 	if h.repo == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "recommendation repo not configured")
 	}
-	// Phase 7 will replace this with the authenticated user's identity.
-	reviewer := c.Request().Header.Get("X-User") // optional; empty-string accepted
+	// R2: pre-check that the doc belongs to this tenant before mutating.
+	// Without this guard a caller could reject another tenant's
+	// recommendation by id (MarkRejected itself doesn't see userId).
+	userID := gwmw.FromEcho(c)
+	if _, err := h.repo.FindByIDForUser(c.Request().Context(), userID, c.Param("id")); err != nil {
+		if errors.Is(err, mongostore.ErrRecommendationNotFound) {
+			return echo.NewHTTPError(http.StatusNotFound, "recommendation not found")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	reviewer := userID
 	doc, err := h.repo.MarkRejected(c.Request().Context(), c.Param("id"), reviewer)
 	if errors.Is(err, mongostore.ErrRecommendationNotFound) {
 		return echo.NewHTTPError(http.StatusNotFound, "recommendation not found")
@@ -149,13 +160,15 @@ func (h *RecommendationHandler) approve(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "recommendation deps not configured")
 	}
 	id := c.Param("id")
-	reviewer := c.Request().Header.Get("X-User")
+	userID := gwmw.FromEcho(c)
+	reviewer := userID
 	now := time.Now().UTC()
 
 	// 1. Read the recommendation outside the tx so we can early-out on
 	//    invalid state (already approved, missing, etc.) without
-	//    consuming a session.
-	rec, err := h.repo.FindByID(c.Request().Context(), id)
+	//    consuming a session. UserID-scoped so a caller can't apply
+	//    another tenant's recommendation.
+	rec, err := h.repo.FindByIDForUser(c.Request().Context(), userID, id)
 	if errors.Is(err, mongostore.ErrRecommendationNotFound) {
 		return echo.NewHTTPError(http.StatusNotFound, "recommendation not found")
 	}
@@ -301,7 +314,7 @@ func (h *RecommendationHandler) approve(c echo.Context) error {
 	}
 
 	// Re-read the (now updated) recommendation + strategy for the response.
-	approvedRec, err := h.repo.FindByID(c.Request().Context(), id)
+	approvedRec, err := h.repo.FindByIDForUser(c.Request().Context(), userID, id)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}

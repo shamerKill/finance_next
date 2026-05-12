@@ -54,8 +54,15 @@ type ExpectedDelta struct {
 }
 
 // RecommendationDoc mirrors the Python writer's shape.
+//
+// UserID is the R2 multi-tenant boundary owner. Node 1.A.2 added the
+// field; legacy docs predating that boot are backfilled to
+// "default" via BackfillMissingUserID. The HTTP handlers filter on
+// userId via userIDFilter, which keeps "default" callers seeing
+// legacy un-stamped rows.
 type RecommendationDoc struct {
 	ID             string                       `bson:"_id"               json:"id"`
+	UserID         string                       `bson:"userId,omitempty"  json:"userId,omitempty"`
 	StrategyID     string                       `bson:"strategyId"        json:"strategyId"`
 	StudyID        string                       `bson:"studyId"           json:"studyId"`
 	ProposedParams map[string]any               `bson:"proposedParams"    json:"proposedParams"`
@@ -90,8 +97,14 @@ type OptimizationCost struct {
 }
 
 // OptimizationRunDoc is the head document for one Optuna study.
+//
+// UserID is the R2 multi-tenant boundary owner. Node 1.A.2 added the
+// field; legacy docs are backfilled via BackfillMissingUserID. The HTTP
+// list filter goes through userIDFilter so "default" callers still see
+// pre-migration rows.
 type OptimizationRunDoc struct {
 	ID                string           `bson:"_id"               json:"studyId"`
+	UserID            string           `bson:"userId,omitempty"  json:"userId,omitempty"`
 	StrategyID        string           `bson:"strategyId"        json:"strategyId"`
 	Algorithm         string           `bson:"algorithm"         json:"algorithm"`
 	ParamSpace        map[string]any   `bson:"paramSpace"        json:"paramSpace"`
@@ -135,24 +148,70 @@ func (r *RecommendationRepo) EnsureIndexes(ctx context.Context) error {
 	return err
 }
 
+// EnsureUserIDIndex installs (userId, status, createdAt desc) — supports
+// the dashboard's pending-review badge + per-user list queries. Kept
+// separate from EnsureIndexes so the boot orchestration can call it
+// after BackfillMissingUserID runs (otherwise a partial-fill collection
+// would have a less-useful index).
+func (r *RecommendationRepo) EnsureUserIDIndex(ctx context.Context) error {
+	_, err := r.col.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "userId", Value: 1},
+			{Key: "status", Value: 1},
+			{Key: "createdAt", Value: -1},
+		},
+		Options: options.Index().SetName("userId_status_createdAt"),
+	})
+	return err
+}
+
+// BackfillMissingUserID upserts userId="default" on every doc missing
+// the field. Idempotent; safe to run on every boot. Phase 6 quant writer
+// did not stamp userId — this fills the gap until that worker rolls out
+// the new shape (separate plan node).
+func (r *RecommendationRepo) BackfillMissingUserID(ctx context.Context) (int64, error) {
+	res, err := r.col.UpdateMany(ctx,
+		bson.M{"userId": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"userId": "default"}},
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
+}
+
 // ListOptions filters list calls.
+//
+// UserID is the R2 multi-tenant boundary; empty UserID means cross-tenant
+// scan (only valid for background workers / migration paths). HTTP
+// handlers must always set UserID — the handler layer takes the resolved
+// userId from the echo context.
 type RecommendationListOptions struct {
+	UserID     string
 	Status     string
 	StrategyID string
 	Limit      int
 }
 
 // FindAll returns docs (most-recent first) with optional filters.
+//
+// When opts.UserID is non-empty the query is constrained via userIDFilter
+// (which folds in legacy docs without the field for the "default"
+// tenant). Empty UserID returns every doc across tenants — reserved for
+// background callers; HTTP handlers should always pass UserID.
 func (r *RecommendationRepo) FindAll(ctx context.Context, opts RecommendationListOptions) ([]RecommendationDoc, error) {
 	if opts.Limit <= 0 {
 		opts.Limit = 100
 	}
-	filter := bson.D{}
+	filter := bson.M{}
+	if opts.UserID != "" {
+		filter = userIDFilter(opts.UserID)
+	}
 	if opts.Status != "" {
-		filter = append(filter, bson.E{Key: "status", Value: opts.Status})
+		filter["status"] = opts.Status
 	}
 	if opts.StrategyID != "" {
-		filter = append(filter, bson.E{Key: "strategyId", Value: opts.StrategyID})
+		filter["strategyId"] = opts.StrategyID
 	}
 	cur, err := r.col.Find(
 		ctx,
@@ -177,9 +236,32 @@ func (r *RecommendationRepo) FindAll(ctx context.Context, opts RecommendationLis
 }
 
 // FindByID returns one recommendation.
+//
+// Deprecated: cross-tenant lookup. Handlers should use FindByIDForUser
+// so a caller can't read another tenant's recommendation by id.
 func (r *RecommendationRepo) FindByID(ctx context.Context, id string) (*RecommendationDoc, error) {
 	var d RecommendationDoc
 	err := r.col.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, ErrRecommendationNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+// FindByIDForUser returns one recommendation only when it belongs to
+// userID (or has no userId field and the caller is the "default"
+// tenant). Empty userID is rejected.
+func (r *RecommendationRepo) FindByIDForUser(ctx context.Context, userID, id string) (*RecommendationDoc, error) {
+	if userID == "" {
+		return nil, errors.New("FindByIDForUser: userID required")
+	}
+	match := userIDFilter(userID)
+	match["_id"] = id
+	var d RecommendationDoc
+	err := r.col.FindOne(ctx, match).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, ErrRecommendationNotFound
 	}
@@ -316,7 +398,37 @@ func (r *OptimizationRunRepo) EnsureIndexes(ctx context.Context) error {
 	return err
 }
 
+// EnsureUserIDIndex installs (userId, startedAt desc) — supports the
+// dashboard's per-user spent-today aggregation + study listings. See
+// EnsureIndexes for the original index set.
+func (r *OptimizationRunRepo) EnsureUserIDIndex(ctx context.Context) error {
+	_, err := r.col.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "userId", Value: 1},
+			{Key: "startedAt", Value: -1},
+		},
+		Options: options.Index().SetName("userId_startedAt"),
+	})
+	return err
+}
+
+// BackfillMissingUserID upserts userId="default" on every doc missing
+// the field. Idempotent. Phase 6 quant writer did not stamp userId —
+// this is the gateway-side migration safety net.
+func (r *OptimizationRunRepo) BackfillMissingUserID(ctx context.Context) (int64, error) {
+	res, err := r.col.UpdateMany(ctx,
+		bson.M{"userId": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"userId": "default"}},
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
+}
+
 // FindByID returns the head doc for a study id.
+//
+// Deprecated: cross-tenant lookup. Handlers should use FindByIDForUser.
 func (r *OptimizationRunRepo) FindByID(ctx context.Context, id string) (*OptimizationRunDoc, error) {
 	var d OptimizationRunDoc
 	err := r.col.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
@@ -329,7 +441,29 @@ func (r *OptimizationRunRepo) FindByID(ctx context.Context, id string) (*Optimiz
 	return &d, nil
 }
 
+// FindByIDForUser returns the head doc only when it belongs to userID
+// (or has no userId field and the caller is the "default" tenant).
+// Empty userID is rejected.
+func (r *OptimizationRunRepo) FindByIDForUser(ctx context.Context, userID, id string) (*OptimizationRunDoc, error) {
+	if userID == "" {
+		return nil, errors.New("FindByIDForUser: userID required")
+	}
+	match := userIDFilter(userID)
+	match["_id"] = id
+	var d OptimizationRunDoc
+	err := r.col.FindOne(ctx, match).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, ErrOptimizationRunNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
 // FindAll lists studies, optionally filtered by strategyId. Most-recent first.
+//
+// Deprecated: cross-tenant scan. Use FindAllForUser from HTTP handlers.
 func (r *OptimizationRunRepo) FindAll(ctx context.Context, strategyID string, limit int) ([]OptimizationRunDoc, error) {
 	if limit <= 0 {
 		limit = 100
@@ -338,6 +472,29 @@ func (r *OptimizationRunRepo) FindAll(ctx context.Context, strategyID string, li
 	if strategyID != "" {
 		filter = bson.D{{Key: "strategyId", Value: strategyID}}
 	}
+	return r.findWithFilter(ctx, filter, limit)
+}
+
+// FindAllForUser is the userId-scoped variant. Empty userID is rejected.
+func (r *OptimizationRunRepo) FindAllForUser(ctx context.Context, userID, strategyID string, limit int) ([]OptimizationRunDoc, error) {
+	if userID == "" {
+		return nil, errors.New("FindAllForUser: userID required")
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	match := userIDFilter(userID)
+	if strategyID != "" {
+		match["strategyId"] = strategyID
+	}
+	filter := bson.D{}
+	for k, v := range match {
+		filter = append(filter, bson.E{Key: k, Value: v})
+	}
+	return r.findWithFilter(ctx, filter, limit)
+}
+
+func (r *OptimizationRunRepo) findWithFilter(ctx context.Context, filter bson.D, limit int) ([]OptimizationRunDoc, error) {
 	cur, err := r.col.Find(
 		ctx,
 		filter,

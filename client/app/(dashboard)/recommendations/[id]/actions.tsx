@@ -1,8 +1,20 @@
 "use client";
 
+// Approve / reject / "backtest this" buttons.
+//
+// 2.C.5.b refactor — destructive / state-changing actions go through
+// <ConfirmDialog>; success/failure surfaces via the design-system toast
+// API. The backtest action still navigates straight to /backtests/new
+// with the proposed params pre-filled via URL query string — operators
+// can dry-run the AI's suggestion before committing to it.
+
+import { Button } from "@heroui/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Callout } from "@/components/callout";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useToast } from "@/components/toast";
 import {
   approveRecommendation,
   rejectRecommendation,
@@ -23,10 +35,6 @@ interface Props {
   actionable: boolean;
 }
 
-// Approve / reject / "backtest this" buttons. The backtest action
-// navigates to /backtests/new with the proposed params pre-filled via
-// URL query string — operators can dry-run the AI's suggestion before
-// committing to it.
 export default function RecommendationActions({
   id,
   strategyId,
@@ -35,35 +43,36 @@ export default function RecommendationActions({
   actionable,
 }: Props) {
   const router = useRouter();
-  const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
+  const toast = useToast();
   const [error, setError] = useState<string | null>(null);
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
 
-  const onApprove = async () => {
-    if (!confirm("批准此推荐？策略参数将立即更新。")) {
-      return;
-    }
-    setBusy("approve");
+  const doApprove = async () => {
     setError(null);
     try {
       await approveRecommendation(id);
+      toast.success("已通过");
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "批准失败");
-    } finally {
-      setBusy(null);
+      const msg = e instanceof Error ? e.message : "批准失败";
+      setError(msg);
+      toast.error("批准失败", { description: msg });
+      throw e;
     }
   };
 
-  const onReject = async () => {
-    setBusy("reject");
+  const doReject = async () => {
     setError(null);
     try {
       await rejectRecommendation(id);
+      toast.success("已拒绝");
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "拒绝失败");
-    } finally {
-      setBusy(null);
+      const msg = e instanceof Error ? e.message : "拒绝失败";
+      setError(msg);
+      toast.error("拒绝失败", { description: msg });
+      throw e;
     }
   };
 
@@ -81,40 +90,56 @@ export default function RecommendationActions({
   };
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-3">
         {actionable && (
           <>
-            <button
-              onClick={onApprove}
-              disabled={busy !== null}
-              className="rounded-md bg-success px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            <Button
+              color="success"
+              onPress={() => setApproveOpen(true)}
             >
-              {busy === "approve" ? "批准中…" : "批准"}
-            </button>
-            <button
-              onClick={onReject}
-              disabled={busy !== null}
-              className="rounded-md bg-default-200 px-4 py-2 text-sm font-medium text-default-700 disabled:opacity-50"
+              批准
+            </Button>
+            <Button
+              variant="flat"
+              onPress={() => setRejectOpen(true)}
             >
-              {busy === "reject" ? "拒绝中…" : "拒绝"}
-            </button>
+              拒绝
+            </Button>
           </>
         )}
-        <button
-          type="button"
-          onClick={onBacktest}
-          disabled={busy !== null}
-          className="rounded-md border border-primary bg-white px-4 py-2 text-sm font-medium text-primary hover:bg-primary-50 disabled:opacity-50"
+        <Button
+          variant="bordered"
+          color="primary"
+          onPress={onBacktest}
         >
           回测此参数
-        </button>
+        </Button>
       </div>
       {error && (
-        <div className="rounded-md bg-danger-50 p-2 text-xs text-danger-700">
+        <Callout variant="danger" title="操作失败">
           {error}
-        </div>
+        </Callout>
       )}
+
+      <ConfirmDialog
+        open={approveOpen}
+        onOpenChange={setApproveOpen}
+        title="批准此推荐？"
+        message="策略参数将立即更新，currentVersion 自增 1；同策略其他 pending 推荐将被替代。"
+        confirmLabel="批准"
+        confirmColor="primary"
+        onConfirm={doApprove}
+      />
+      <ConfirmDialog
+        open={rejectOpen}
+        onOpenChange={setRejectOpen}
+        title="拒绝此推荐？"
+        message="状态将变为已拒绝；策略保持不变。"
+        confirmLabel="拒绝"
+        confirmColor="danger"
+        onConfirm={doReject}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-// Recommendations list (Phase 6 → Phase D polish).
+// Recommendations list (Phase 6 → 2.C.5.b polish).
 //
 // Server component:
 //   1. Fetches recommendations filtered by status (default pending_review).
@@ -9,9 +9,12 @@
 //      looking like noise.
 // The interactive table lives in the `RecommendationsList` client
 // component (expand / bulk-reject).
+//
+// 2.C.5.b refactor — PageHeader / Callout / StatusBadge for status filter chips.
 
 import Link from "next/link";
 
+import { Callout } from "@/components/callout";
 import { PageHeader } from "@/components/page-header";
 import { getStrategy, listRecommendations } from "@/data/api-client";
 import type {
@@ -116,15 +119,16 @@ export default async function RecommendationsListPage({ searchParams }: PageProp
         subtitle="AI 生成的策略参数推荐。所有变更均需人工显式批准——不存在自动应用。"
       />
 
-      <nav className="flex gap-2 text-sm">
+      {/* Status filter chips. Server links keep URL-driven filter state. */}
+      <nav className="flex flex-wrap gap-2 text-sm" aria-label="状态过滤">
         {filters.map((f) => (
           <Link
             key={f}
             href={`/recommendations?status=${f}`}
-            className={`rounded-full border px-3 py-1 ${
+            className={`rounded-full border px-3 py-1 transition-colors ${
               status === f
-                ? "border-primary text-primary"
-                : "border-default-200 text-default-600"
+                ? "border-brand-primary bg-brand-primary text-white"
+                : "border-border-default bg-bg-surface text-text-secondary hover:bg-bg-surface-2"
             }`}
           >
             {FILTER_LABELS[f]}
@@ -133,9 +137,9 @@ export default async function RecommendationsListPage({ searchParams }: PageProp
       </nav>
 
       {error && (
-        <div className="rounded-md bg-danger-50 p-3 text-sm text-danger-700">
-          加载推荐失败：{error}
-        </div>
+        <Callout variant="danger" title="加载推荐失败">
+          {error}
+        </Callout>
       )}
 
       {!error && (

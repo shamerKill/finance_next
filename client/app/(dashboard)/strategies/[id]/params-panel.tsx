@@ -8,6 +8,8 @@
 // The 11-field /option create form is for *new* strategies. This panel
 // covers the in-place edit gap that previously forced users to delete
 // + recreate when they wanted to tweak a single rate.
+//
+// 2.C.5.b refactor — Section wrap + FormField inputs in the edit modal.
 
 import {
   Button,
@@ -24,7 +26,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Callout } from "@/components/callout";
+import { FormField } from "@/components/form-field";
 import { Section } from "@/components/section";
+import { useToast } from "@/components/toast";
 import { updateOption } from "@/data/api-client";
 import type { TypeOption } from "@/data/type";
 
@@ -36,6 +41,7 @@ function fmtPct(n: number): string {
 
 export function ParamsPanel({ strategy }: Props) {
   const router = useRouter();
+  const toast = useToast();
   const id = strategy.id ?? "";
 
   // Local edit-mode state. Initialised from the strategy on every open;
@@ -88,9 +94,12 @@ export function ParamsPanel({ strategy }: Props) {
         createCostOrderInProfit,
       });
       router.refresh();
+      toast.success("策略参数已更新");
       close();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      toast.error("保存失败", { description: msg });
     } finally {
       setBusy(false);
     }
@@ -106,7 +115,7 @@ export function ParamsPanel({ strategy }: Props) {
             reset();
             onOpen();
           }}
-          className="text-xs text-primary hover:underline"
+          className="text-xs text-brand-primary hover:underline"
         >
           编辑 →
         </button>
@@ -137,14 +146,14 @@ export function ParamsPanel({ strategy }: Props) {
 
       {strategy.createPositions && strategy.createPositions.length > 0 && (
         <div className="mt-4">
-          <div className="text-xs text-default-500 mb-1">
+          <div className="text-xs text-text-tertiary mb-1">
             分批开仓档位（{strategy.createPositions.length}）
           </div>
-          <div className="rounded border border-default-200 divide-y divide-default-200 text-xs">
+          <div className="rounded border border-border-default divide-y divide-border-default text-xs">
             {strategy.createPositions.map((p, i) => (
               <div
                 key={i}
-                className="flex justify-between px-2 py-1 font-mono"
+                className="flex justify-between px-2 py-1 font-mono tnum"
               >
                 <span>#{i + 1}</span>
                 <span>marginRate {(p.marginRate * 100).toFixed(1)}%</span>
@@ -155,11 +164,11 @@ export function ParamsPanel({ strategy }: Props) {
         </div>
       )}
 
-      <div className="mt-3 text-xs text-default-400">
+      <div className="mt-3 text-xs text-text-tertiary">
         想用 AI 优化这些参数？
         <Link
           href={`/recommendations?strategyId=${id}`}
-          className="text-primary hover:underline ml-1"
+          className="text-brand-primary hover:underline ml-1"
         >
           查看推荐 →
         </Link>
@@ -172,74 +181,92 @@ export function ParamsPanel({ strategy }: Props) {
               <ModalHeader>编辑策略参数</ModalHeader>
               <ModalBody>
                 {error && (
-                  <div className="rounded border border-danger-200 bg-danger-50 p-2 text-xs text-danger-700 mb-3">
+                  <Callout variant="danger" title="保存失败">
                     {error}
-                  </div>
+                  </Callout>
                 )}
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <Input
-                    type="number"
-                    label="止盈率"
-                    description="0..1（例 0.05 = 5%）"
-                    step="0.001"
-                    value={String(stopProfitRate)}
-                    onChange={(e) => setStopProfitRate(Number(e.target.value))}
-                  />
-                  <Input
-                    type="number"
-                    label="止损率"
-                    description="0..1"
-                    step="0.001"
-                    value={String(stopLossRate)}
-                    onChange={(e) => setStopLossRate(Number(e.target.value))}
-                  />
-                  <Input
-                    type="number"
-                    label="补仓后止盈降低"
-                    description="0..1"
-                    step="0.001"
-                    value={String(profitRateAfterAdd)}
-                    onChange={(e) =>
-                      setProfitRateAfterAdd(Number(e.target.value))
-                    }
-                  />
-                  <Input
-                    type="number"
-                    label="杠杆"
-                    description="1..125"
-                    step="1"
-                    value={String(positionLevel)}
-                    onChange={(e) => setPositionLevel(Number(e.target.value))}
-                  />
-                  <Input
-                    type="number"
-                    label="订单组保证金 (USD)"
-                    step="1"
-                    value={String(orderGroupMargin)}
-                    onChange={(e) =>
-                      setOrderGroupMargin(Number(e.target.value))
-                    }
-                  />
-                  <Input
-                    type="number"
-                    label="未开仓停止时间 (分钟)"
-                    step="1"
-                    value={String(openPositionStopTime)}
-                    onChange={(e) =>
-                      setOpenPositionStopTime(Number(e.target.value))
-                    }
-                  />
-                  <Input
-                    label="交易对"
-                    description="例 BTCUSDT"
-                    value={execSymbol}
-                    onChange={(e) => setExecSymbol(e.target.value)}
-                    className="col-span-2"
-                  />
-                  <div className="col-span-2 flex items-center justify-between rounded border border-default-200 px-3 py-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <FormField label="止盈率" hint="0..1（例 0.05 = 5%）">
+                    <Input
+                      type="number"
+                      aria-label="止盈率"
+                      step="0.001"
+                      value={String(stopProfitRate)}
+                      onChange={(e) =>
+                        setStopProfitRate(Number(e.target.value))
+                      }
+                    />
+                  </FormField>
+                  <FormField label="止损率" hint="0..1">
+                    <Input
+                      type="number"
+                      aria-label="止损率"
+                      step="0.001"
+                      value={String(stopLossRate)}
+                      onChange={(e) =>
+                        setStopLossRate(Number(e.target.value))
+                      }
+                    />
+                  </FormField>
+                  <FormField label="补仓后止盈降低" hint="0..1">
+                    <Input
+                      type="number"
+                      aria-label="补仓后止盈降低"
+                      step="0.001"
+                      value={String(profitRateAfterAdd)}
+                      onChange={(e) =>
+                        setProfitRateAfterAdd(Number(e.target.value))
+                      }
+                    />
+                  </FormField>
+                  <FormField label="杠杆" hint="1..125">
+                    <Input
+                      type="number"
+                      aria-label="杠杆"
+                      step="1"
+                      value={String(positionLevel)}
+                      onChange={(e) =>
+                        setPositionLevel(Number(e.target.value))
+                      }
+                    />
+                  </FormField>
+                  <FormField label="订单组保证金 (USD)">
+                    <Input
+                      type="number"
+                      aria-label="订单组保证金"
+                      step="1"
+                      value={String(orderGroupMargin)}
+                      onChange={(e) =>
+                        setOrderGroupMargin(Number(e.target.value))
+                      }
+                    />
+                  </FormField>
+                  <FormField label="未开仓停止时间 (分钟)">
+                    <Input
+                      type="number"
+                      aria-label="未开仓停止时间"
+                      step="1"
+                      value={String(openPositionStopTime)}
+                      onChange={(e) =>
+                        setOpenPositionStopTime(Number(e.target.value))
+                      }
+                    />
+                  </FormField>
+                  <div className="md:col-span-2">
+                    <FormField label="交易对" hint="例 BTCUSDT">
+                      <Input
+                        aria-label="交易对"
+                        value={execSymbol}
+                        onChange={(e) => setExecSymbol(e.target.value)}
+                      />
+                    </FormField>
+                  </div>
+                  <div className="md:col-span-2 flex items-center justify-between rounded border border-border-default px-3 py-2">
                     <div>
-                      <div className="text-sm">止盈后创建保本单</div>
-                      <div className="text-xs text-default-500">
+                      <div className="text-sm font-semibold text-text-primary">
+                        止盈后创建保本单
+                      </div>
+                      <div className="text-xs text-text-tertiary">
                         止盈触发后自动挂一个保本单防止回吐
                       </div>
                     </div>
@@ -251,7 +278,7 @@ export function ParamsPanel({ strategy }: Props) {
                     />
                   </div>
                 </div>
-                <div className="mt-3 text-xs text-default-500">
+                <div className="mt-3 text-xs text-text-tertiary">
                   注：分批开仓档位（createPositions）目前不支持在此面板中编辑，
                   请通过 AI 推荐审批流或重新创建策略调整。
                 </div>
@@ -280,8 +307,8 @@ export function ParamsPanel({ strategy }: Props) {
 function Param({ label, value }: { label: string; value: string }) {
   return (
     <>
-      <dt className="text-default-500">{label}</dt>
-      <dd className="font-mono text-right">{value}</dd>
+      <dt className="text-text-tertiary">{label}</dt>
+      <dd className="font-mono tnum text-right text-text-primary">{value}</dd>
     </>
   );
 }

@@ -6,13 +6,22 @@
 // clusters of near-identical siblings and the "bulk reject similar"
 // action. Server-only renderable pieces (badges, formatters) are still
 // computed inline since they don't need state.
+//
+// 2.C.5.b refactor — ConfirmDialog replaces window.confirm; toast for
+// completion; design-system StatusBadge + EmptyState + tokens. The
+// custom table layout is preserved because rows are not uniform
+// (primary row + collapsed children + footer span) — DataTable would
+// flatten the relationship.
 
 import { Tooltip } from "@heroui/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
+import { useToast } from "@/components/toast";
 import { rejectRecommendation } from "@/data/api-client";
 import {
   DEFAULT_RECOMMENDATION_PERIOD,
@@ -59,12 +68,12 @@ const toneFor = (s: TypeRecommendationStatus) => {
 
 function StrategyCell({ strategy }: { strategy: TypeOption | undefined }) {
   if (!strategy) {
-    return <span className="text-default-400">已删除策略</span>;
+    return <span className="text-text-tertiary">已删除策略</span>;
   }
   return (
     <span>
       <span className="font-medium">{strategy.name}</span>{" "}
-      <span className="ml-1 rounded bg-default-100 px-1.5 py-0.5 text-xs font-mono text-default-600">
+      <span className="ml-1 rounded bg-bg-surface-2 px-1.5 py-0.5 text-xs font-mono tnum text-text-secondary">
         {strategy.execSymbol}
       </span>
     </span>
@@ -81,38 +90,29 @@ function ClusterRows({
   emptyAfter: boolean;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [expanded, setExpanded] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const onBulkReject = async () => {
-    if (
-      !confirm(
-        `确认批量拒绝该 study 下 ${cluster.similar.length} 个相似推荐？此操作不可撤销。`,
-      )
-    ) {
-      return;
-    }
-    setRejecting(true);
     setError(null);
-    try {
-      // Fan-out to the gateway. We don't need fanin ordering — each
-      // call independently flips status to rejected. router.refresh()
-      // at the end repaints the server-rendered table.
-      const results = await Promise.allSettled(
-        cluster.similar.map((r) => rejectRecommendation(r.id)),
-      );
-      const failed = results.filter((r) => r.status === "rejected");
-      if (failed.length) {
-        setError(`${failed.length} / ${results.length} 个推荐拒绝失败`);
-      } else {
-        setExpanded(false);
-        router.refresh();
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "批量拒绝失败");
-    } finally {
-      setRejecting(false);
+    // Fan-out to the gateway. We don't need fanin ordering — each
+    // call independently flips status to rejected. router.refresh()
+    // at the end repaints the server-rendered table.
+    const results = await Promise.allSettled(
+      cluster.similar.map((r) => rejectRecommendation(r.id)),
+    );
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length) {
+      const msg = `${failed.length} / ${results.length} 个推荐拒绝失败`;
+      setError(msg);
+      toast.error(msg);
+      throw new Error(msg);
+    } else {
+      setExpanded(false);
+      toast.success(`已拒绝 ${results.length} 个相似推荐`);
+      router.refresh();
     }
   };
 
@@ -125,7 +125,7 @@ function ClusterRows({
   rows.push(
     <tr
       key={primary.id}
-      className="border-b border-default-100 hover:bg-default-50"
+      className="border-b border-border-default hover:bg-bg-surface-2"
     >
       <td className="py-2 pr-4">
         <StrategyCell strategy={strategy} />
@@ -134,19 +134,19 @@ function ClusterRows({
         <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
       </td>
       <td
-        className={`py-2 pr-4 tabular-nums ${deltaToneClass(primary.expectedDelta?.sharpe)}`}
+        className={`py-2 pr-4 font-mono tnum ${deltaToneClass(primary.expectedDelta?.sharpe)}`}
       >
         {fmtSharpe(primary.expectedDelta?.sharpe)}
       </td>
       <td
-        className={`py-2 pr-4 tabular-nums ${deltaToneClass(primary.expectedDelta?.return)}`}
+        className={`py-2 pr-4 font-mono tnum ${deltaToneClass(primary.expectedDelta?.return)}`}
       >
         {fmtPct(primary.expectedDelta?.return)}
       </td>
-      <td className="py-2 pr-4 text-default-500">
+      <td className="py-2 pr-4 text-text-secondary">
         {new Date(primary.createdAt).toLocaleString()}
       </td>
-      <td className="py-2 pr-4 font-mono text-xs text-default-500">
+      <td className="py-2 pr-4 font-mono tnum text-xs text-text-tertiary">
         {primary.studyId.slice(0, 8)}…
       </td>
       <td className="py-2">
@@ -154,14 +154,14 @@ function ClusterRows({
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="mr-3 text-xs text-default-600 hover:text-primary"
+            className="mr-3 text-xs text-text-secondary hover:text-brand-primary"
           >
             {expanded ? "▾" : "▸"} {cluster.similar.length} 个相似
           </button>
         )}
         <Link
           href={`/recommendations/${primary.id}`}
-          className="text-primary hover:underline"
+          className="text-brand-primary hover:underline"
         >
           审核 →
         </Link>
@@ -174,10 +174,10 @@ function ClusterRows({
       rows.push(
         <tr
           key={sib.id}
-          className="border-b border-default-50 bg-default-50/30"
+          className="border-b border-border-default/60 bg-bg-surface-2/40"
         >
-          <td className="py-1.5 pr-4 pl-6 text-default-500">
-            <span className="text-xs text-default-400">↳</span>{" "}
+          <td className="py-1.5 pr-4 pl-6 text-text-secondary">
+            <span className="text-xs text-text-tertiary">↳</span>{" "}
             <StrategyCell strategy={strategiesById[sib.strategyId]} />
           </td>
           <td className="py-1.5 pr-4">
@@ -186,25 +186,25 @@ function ClusterRows({
             </StatusBadge>
           </td>
           <td
-            className={`py-1.5 pr-4 tabular-nums ${deltaToneClass(sib.expectedDelta?.sharpe)}`}
+            className={`py-1.5 pr-4 font-mono tnum ${deltaToneClass(sib.expectedDelta?.sharpe)}`}
           >
             {fmtSharpe(sib.expectedDelta?.sharpe)}
           </td>
           <td
-            className={`py-1.5 pr-4 tabular-nums ${deltaToneClass(sib.expectedDelta?.return)}`}
+            className={`py-1.5 pr-4 font-mono tnum ${deltaToneClass(sib.expectedDelta?.return)}`}
           >
             {fmtPct(sib.expectedDelta?.return)}
           </td>
-          <td className="py-1.5 pr-4 text-xs text-default-500">
+          <td className="py-1.5 pr-4 text-xs text-text-tertiary">
             {new Date(sib.createdAt).toLocaleString()}
           </td>
-          <td className="py-1.5 pr-4 font-mono text-xs text-default-400">
+          <td className="py-1.5 pr-4 font-mono text-xs text-text-tertiary">
             —
           </td>
           <td className="py-1.5">
             <Link
               href={`/recommendations/${sib.id}`}
-              className="text-xs text-primary hover:underline"
+              className="text-xs text-brand-primary hover:underline"
             >
               审核 →
             </Link>
@@ -213,22 +213,23 @@ function ClusterRows({
       );
     }
     rows.push(
-      <tr key={`${cluster.studyId}-footer`} className="border-b border-default-100 bg-default-50/30">
+      <tr
+        key={`${cluster.studyId}-footer`}
+        className="border-b border-border-default bg-bg-surface-2/40"
+      >
         <td colSpan={7} className="py-2 pl-6 pr-4">
           <div className="flex items-center gap-3 text-xs">
             <button
               type="button"
-              onClick={onBulkReject}
-              disabled={rejecting}
-              className="rounded-md border border-danger-200 bg-danger-50 px-3 py-1 text-danger-700 hover:bg-danger-100 disabled:opacity-50"
+              onClick={() => setConfirmOpen(true)}
+              className="rounded-md border border-accent-down/40 bg-accent-down/10 px-3 py-1 text-accent-down hover:bg-accent-down/20"
             >
-              {rejecting
-                ? "拒绝中…"
-                : `批量拒绝相似 (${cluster.similar.length})`}
+              批量拒绝相似 ({cluster.similar.length})
             </button>
-            {error && <span className="text-danger-600">{error}</span>}
-            {!error && (
-              <span className="text-default-500">
+            {error ? (
+              <span className="text-accent-down">{error}</span>
+            ) : (
+              <span className="text-text-tertiary">
                 批量拒绝会保留排名第一的推荐，仅拒绝相似的{" "}
                 {cluster.similar.length} 个。
               </span>
@@ -248,7 +249,25 @@ function ClusterRows({
     );
   }
 
-  return <>{rows}</>;
+  return (
+    <>
+      {rows}
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="批量拒绝相似推荐"
+        message={
+          <span>
+            确认批量拒绝该 study 下 {cluster.similar.length}{" "}
+            个相似推荐？此操作不可撤销。
+          </span>
+        }
+        confirmLabel="确认拒绝"
+        confirmColor="danger"
+        onConfirm={onBulkReject}
+      />
+    </>
+  );
 }
 
 export function RecommendationsList({
@@ -258,9 +277,10 @@ export function RecommendationsList({
 }: Props) {
   if (clusters.length === 0) {
     return (
-      <div className="rounded-md border border-default-200 py-10 text-center text-default-400">
-        状态为 &quot;{toneFor(status).label}&quot; 的推荐为空。
-      </div>
+      <EmptyState
+        title="暂无推荐"
+        description={`状态为 “${toneFor(status).label}” 的推荐为空。`}
+      />
     );
   }
 
@@ -276,20 +296,22 @@ export function RecommendationsList({
     <>
       {/* Desktop: dense table. */}
       <table className="hidden w-full text-sm md:table">
-        <thead className="border-b border-default-200 text-left text-default-500">
+        <thead className="border-b border-border-default text-left text-text-tertiary">
           <tr>
-            <th className="py-2 pr-4">策略</th>
-            <th className="py-2 pr-4">状态</th>
-            <th className="py-2 pr-4">
+            <th className="py-2 pr-4 font-medium">策略</th>
+            <th className="py-2 pr-4 font-medium">状态</th>
+            <th className="py-2 pr-4 font-medium">
               <Tooltip content="OOS 段年化夏普比率">
-                <span className="cursor-help underline decoration-dotted decoration-default-300 underline-offset-2">
+                <span className="cursor-help underline decoration-dotted decoration-border-default underline-offset-2">
                   Δ 夏普 (年化)
                 </span>
               </Tooltip>
             </th>
-            <th className="py-2 pr-4">Δ 收益 ({headerOosLabel})</th>
-            <th className="py-2 pr-4">创建时间</th>
-            <th className="py-2 pr-4">Study</th>
+            <th className="py-2 pr-4 font-medium">
+              Δ 收益 ({headerOosLabel})
+            </th>
+            <th className="py-2 pr-4 font-medium">创建时间</th>
+            <th className="py-2 pr-4 font-medium">Study</th>
             <th className="py-2"></th>
           </tr>
         </thead>
@@ -314,25 +336,31 @@ export function RecommendationsList({
             <Link
               key={c.studyId}
               href={`/recommendations/${c.primary.id}`}
-              className="block rounded-md border border-default-200 p-3 hover:bg-default-50"
+              className="block rounded-md border border-border-default bg-bg-surface p-3 hover:bg-bg-surface-2"
             >
               <div className="flex items-start justify-between gap-2">
                 <StrategyCell strategy={strategy} />
                 <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
               </div>
               <div className="mt-2 flex gap-4 text-sm">
-                <span className={`tabular-nums ${deltaToneClass(c.primary.expectedDelta?.sharpe)}`}>
+                <span
+                  className={`font-mono tnum ${deltaToneClass(c.primary.expectedDelta?.sharpe)}`}
+                >
                   ΔSharpe {fmtSharpe(c.primary.expectedDelta?.sharpe)}
                 </span>
-                <span className={`tabular-nums ${deltaToneClass(c.primary.expectedDelta?.return)}`}>
+                <span
+                  className={`font-mono tnum ${deltaToneClass(c.primary.expectedDelta?.return)}`}
+                >
                   ΔReturn {fmtPct(c.primary.expectedDelta?.return)}
                 </span>
               </div>
-              <div className="mt-2 text-xs text-default-500">
+              <div className="mt-2 text-xs text-text-tertiary">
                 {new Date(c.primary.createdAt).toLocaleString()} · Study{" "}
-                <span className="font-mono">{c.studyId.slice(0, 8)}…</span>
+                <span className="font-mono tnum">
+                  {c.studyId.slice(0, 8)}…
+                </span>
                 {c.similar.length > 0 && (
-                  <span className="ml-2 text-default-600">
+                  <span className="ml-2 text-text-secondary">
                     +{c.similar.length} 个相似
                   </span>
                 )}

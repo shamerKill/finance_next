@@ -2,10 +2,23 @@
 
 import { Button, Card, CardBody, CardHeader, Input } from "@heroui/react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useState } from "react";
 
 import { AuthError, register } from "@/data/auth-client";
+
+// safeNextOrDashboard sanitises the `?next=` query param that
+// middleware.ts attaches when an unauthenticated request was redirected
+// here. Only same-origin relative paths are honoured ("/foo/bar"); any
+// protocol-relative path ("//evil.com/x") or absolute URL is dropped
+// in favour of /dashboard, which closes the open-redirect CVE that
+// would otherwise apply when ?next= is naively forwarded.
+function safeNextOrDashboard(raw: string | null | undefined): string {
+  if (raw && raw.startsWith("/") && !raw.startsWith("//")) {
+    return raw;
+  }
+  return "/dashboard";
+}
 
 // Register supports two paths:
 //   1. Bootstrap (the gateway has zero users): any email + password is
@@ -13,8 +26,9 @@ import { AuthError, register } from "@/data/auth-client";
 //   2. Subsequent users: the gateway requires an `inviteToken`. We only
 //      reveal that input when the first attempt 403s — keeping the
 //      bootstrap form free of optional clutter for the first run.
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
+  const search = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -37,7 +51,7 @@ export default function RegisterPage() {
         password,
         inviteToken: inviteToken || undefined,
       });
-      router.push("/dashboard");
+      router.push(safeNextOrDashboard(search?.get("next")));
     } catch (e2) {
       if (e2 instanceof AuthError) {
         if (e2.status === 403) {
@@ -129,5 +143,16 @@ export default function RegisterPage() {
         </form>
       </CardBody>
     </Card>
+  );
+}
+
+// Next.js 15+ requires every `useSearchParams` consumer to be wrapped
+// in a Suspense boundary so the static prerender doesn't crash on the
+// missing param context. FIX-A adds it here for the ?next= handling.
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm />
+    </Suspense>
   );
 }

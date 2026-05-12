@@ -242,7 +242,14 @@ func (h *Hub) Subscribe(ctx context.Context, sessionID string, kind TopicKind, i
 		owner, err := resolver.OwnerOf(ctx, id)
 		if err != nil {
 			// Lookup failure — fail-closed (don't smuggle resource access
-			// through a transient Mongo error).
+			// through a transient Mongo error). We log a warning so an
+			// operator hitting a Mongo blip has a breadcrumb beyond the
+			// "forbidden" frame the browser sees.
+			h.log.Warn("ws ownership resolver error",
+				"kind", string(kind),
+				"id", id,
+				"user", sessUserID,
+				"err", err)
 			return ErrOwnershipDenied
 		}
 		if owner == "" || owner != sessUserID {
@@ -278,10 +285,13 @@ func (h *Hub) Subscribe(ctx context.Context, sessionID string, kind TopicKind, i
 				return errors.New("ws: account upstream factory not configured")
 			}
 			acctStream, err = h.acctFactory(newCtx, id)
-		case TopicBacktest, TopicStrategy, TopicOptimization:
+		case TopicBacktest, TopicStrategy, TopicOptimization, TopicPredictionStrategy:
 			// Generic-stream topics. The composed generic factory in
 			// router.go dispatches by kind; we only enforce that *some*
-			// factory exists.
+			// factory exists. Phase 9 added TopicPredictionStrategy here —
+			// without it Subscribe would fall through to the `default`
+			// arm and reject the subscribe as an unknown topic even when
+			// the router wired a Polymarket factory.
 			if h.genericFactory == nil {
 				cancel()
 				return errors.New("ws: generic upstream factory not configured")

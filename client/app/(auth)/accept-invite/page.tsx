@@ -7,6 +7,19 @@ import { FormEvent, Suspense, useState } from "react";
 
 import { AuthError, acceptInvite } from "@/data/auth-client";
 
+// safeNextOrDashboard sanitises the `?next=` query param that
+// middleware.ts attaches when an unauthenticated request was redirected
+// here. Only same-origin relative paths are honoured ("/foo/bar"); any
+// protocol-relative path ("//evil.com/x") or absolute URL is dropped
+// in favour of /dashboard, which closes the open-redirect CVE that
+// would otherwise apply when ?next= is naively forwarded.
+function safeNextOrDashboard(raw: string | null | undefined): string {
+  if (raw && raw.startsWith("/") && !raw.startsWith("//")) {
+    return raw;
+  }
+  return "/dashboard";
+}
+
 function AcceptInviteForm() {
   const router = useRouter();
   const search = useSearchParams();
@@ -35,7 +48,7 @@ function AcceptInviteForm() {
     setLoading(true);
     try {
       await acceptInvite({ token, password });
-      router.push("/dashboard");
+      router.push(safeNextOrDashboard(search?.get("next")));
     } catch (e2) {
       if (e2 instanceof AuthError) setErr(e2.message);
       else setErr("接受邀请失败，请稍后重试");

@@ -2,13 +2,27 @@
 
 import { Button, Card, CardBody, CardHeader, Input } from "@heroui/react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useState } from "react";
 
 import { AuthError, login } from "@/data/auth-client";
 
-export default function LoginPage() {
+// safeNextOrDashboard sanitises the `?next=` query param that
+// middleware.ts attaches when an unauthenticated request was redirected
+// here. Only same-origin relative paths are honoured ("/foo/bar"); any
+// protocol-relative path ("//evil.com/x") or absolute URL is dropped
+// in favour of /dashboard, which closes the open-redirect CVE that
+// would otherwise apply when ?next= is naively forwarded.
+function safeNextOrDashboard(raw: string | null | undefined): string {
+  if (raw && raw.startsWith("/") && !raw.startsWith("//")) {
+    return raw;
+  }
+  return "/dashboard";
+}
+
+function LoginForm() {
   const router = useRouter();
+  const search = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -22,9 +36,10 @@ export default function LoginPage() {
       await login({ email, password });
       // Gateway issued the Set-Cookie header in the same response. The
       // browser commits the cookie before the next request fires, so a
-      // direct push to /dashboard is safe — getMe() inside the dashboard
-      // layout will succeed.
-      router.push("/dashboard");
+      // direct push is safe — getMe() inside the dashboard layout will
+      // succeed. We honour the sanitised ?next= when middleware.ts
+      // forwarded the user here from a protected route.
+      router.push(safeNextOrDashboard(search?.get("next")));
     } catch (e2) {
       if (e2 instanceof AuthError) setErr(e2.message);
       else setErr("登录失败，请稍后重试");
@@ -81,5 +96,17 @@ export default function LoginPage() {
         </form>
       </CardBody>
     </Card>
+  );
+}
+
+// Next.js 15+ requires every `useSearchParams` consumer to be wrapped
+// in a Suspense boundary so the static prerender doesn't crash on the
+// missing param context. accept-invite already does this; FIX-A adds
+// the same pattern to login (and register) so `?next=` parsing builds.
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

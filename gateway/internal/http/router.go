@@ -3,7 +3,6 @@ package http
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -431,9 +430,10 @@ func NewRouter(d Deps) *echo.Echo {
 		}))
 	}
 
-	// Phase 1.A.4 WS auth verifier. The closure binds the JWT secret
-	// from cfg and reuses handlers.ParseJWT — same parser the /api/v1
-	// middleware uses, so cookie + token semantics stay in lock-step.
+	// Phase 1.A.4 WS auth verifier. Builds a closure that
+	//   - validates the auth_token cookie / JWT signature, and
+	//   - (Wave 1 FIX-B) checks the jti against the revoked-set in Redis
+	//     so a logged-out token can't be reused on /ws until natural exp.
 	// A nil verifier (no secret configured) preserves the legacy dev
 	// path where /ws is open; in that mode the ownership resolvers
 	// above still gate every subscribe (sessUserID == "" never matches
@@ -441,21 +441,11 @@ func NewRouter(d Deps) *echo.Echo {
 	// gets a callable /ws if they also leave the resolvers unwired.
 	var verifier ws.AuthVerifier
 	if d.Config != nil && d.Config.AuthJWTSecret != "" {
-		secret := d.Config.AuthJWTSecret
-		verifier = func(r *http.Request) (string, string, error) {
-			cookie, err := r.Cookie(auditmw.AuthCookieName)
-			if err != nil || cookie == nil || cookie.Value == "" {
-				return "", "", errors.New("ws: missing auth_token cookie")
-			}
-			cl, perr := handlers.ParseJWT(cookie.Value, secret)
-			if perr != nil {
-				return "", "", perr
-			}
-			if cl.UserID == "" {
-				return "", "", errors.New("ws: empty subject claim")
-			}
-			return cl.UserID, cl.Role, nil
+		var revStore jtiRevocationStore
+		if d.Redis != nil {
+			revStore = redisRevocationStore{c: d.Redis}
 		}
+		verifier = buildWSVerifier(d.Config.AuthJWTSecret, revStore)
 	}
 
 	wsHandler := ws.NewHandlerWithAuth(hub, nil, d.AllowedOrigins, verifier)

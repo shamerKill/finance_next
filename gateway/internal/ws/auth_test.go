@@ -279,6 +279,67 @@ func TestWS_Subscribe_OwnerAllowed(t *testing.T) {
 	t.Fatalf("expected subscriber count = 1 for alice's own account")
 }
 
+// TestWS_Subscribe_PredictionStrategy_OwnerAllowed pins the FIX-C
+// regression guard: TopicPredictionStrategy must be admitted by the
+// switch arm in Subscribe (pre-FIX it fell through to `default` and
+// rejected even owned subscriptions). The owner-allowed shape mirrors
+// TestWS_Subscribe_OwnerAllowed but on the prediction topic.
+func TestWS_Subscribe_PredictionStrategy_OwnerAllowed(t *testing.T) {
+	// We need a generic factory wired for this topic; the auth-test
+	// harness only wires the account factory. Build a minimal hub +
+	// handler inline so we can pass a nop generic factory too.
+	acctFactory := func(_ context.Context, _ string) (exchange.UserDataStream, error) {
+		return &nopStream{events: make(chan exchange.UserDataEvent), errs: make(chan error)}, nil
+	}
+	genFactory := func(_ context.Context, _ TopicKind, _ string) (GenericUpstream, error) {
+		return &nopGeneric{ch: make(chan GenericEvent)}, nil
+	}
+	hub := NewHubFull(acctFactory, genFactory, nil)
+	hub.SetOwnerResolver(TopicPredictionStrategy, OwnerResolverFunc(func(_ context.Context, id string) (string, error) {
+		if id == "pstrat-alice" {
+			return "alice", nil
+		}
+		return "", nil
+	}))
+	h := NewHandlerWithAuth(hub, nil, nil, stubVerifier)
+	e := echo.New()
+	e.GET("/ws", h.Handle)
+	srv := httptest.NewServer(e)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, wsURL(srv), dialOpts("tok-user-alice"))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test done")
+
+	frame := map[string]any{"type": "subscribe", "topic": "prediction_strategy", "id": "pstrat-alice"}
+	payload, _ := json.Marshal(frame)
+	if err := conn.Write(ctx, websocket.MessageText, payload); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if hub.SubscriberCount(TopicPredictionStrategy, "pstrat-alice") == 1 {
+			return // success
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("expected subscriber count = 1 for alice's prediction strategy (FIX-C regression)")
+}
+
+// nopGeneric is a no-op GenericUpstream used by the prediction-topic
+// subscribe test — Subscribe needs *some* upstream to bind to so the
+// subscriber count can land at 1. The channel stays empty for the
+// lifetime of the test.
+type nopGeneric struct{ ch chan GenericEvent }
+
+func (n *nopGeneric) Events() <-chan GenericEvent { return n.ch }
+func (n *nopGeneric) Stop()                       { close(n.ch) }
+
 func TestWS_Subscribe_NoResolver_LegacyPassthrough(t *testing.T) {
 	// Hub with no resolvers registered — Subscribe falls through to
 	// the legacy no-check path (back-compat for pre-auth tests). With

@@ -183,10 +183,12 @@ func (h *Handler) Handle(c echo.Context) error {
 			}
 			if err := h.hub.Subscribe(ctx, sessionID, topicKind, topicID); err != nil {
 				// Phase 1.A.4: a denied subscription means the authenticated
-				// user doesn't own the requested resource (or no resolver is
-				// registered for the topic). Emit a clear error frame
-				// without revealing whether the resource exists.
-				if errors.Is(err, ErrOwnershipDenied) || errors.Is(err, ErrOwnershipUnknown) {
+				// user doesn't own the requested resource. Emit a clear
+				// error frame without revealing whether the resource exists.
+				// (A "no resolver wired" condition is not surfaced as a
+				// distinct sentinel today — topic kinds with no resolver
+				// fall through to the legacy no-check path; see ownership.go.)
+				if errors.Is(err, ErrOwnershipDenied) {
 					_ = sink.SendJSON(ctx, map[string]any{
 						"type":  "error",
 						"topic": string(topicKind),

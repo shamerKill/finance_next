@@ -51,6 +51,11 @@ export function middleware(req: NextRequest) {
 // the auth whitelist.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)",
+    // FIX-G: `_next/data` is the RSC payload prefetch endpoint Next 15
+    // uses for client-side navigation; excluding it prevents the
+    // middleware from redirect-looping a logged-out user's prefetch
+    // (which would otherwise be served a 307 to /login that the browser
+    // can't follow as an RSC payload).
+    "/((?!_next/static|_next/image|_next/data|favicon.ico|robots.txt|sitemap.xml).*)",
   ],
 };

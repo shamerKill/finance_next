@@ -21,14 +21,13 @@ import (
 // session doesn't own the requested resource (and isn't an admin).
 var ErrOwnershipDenied = errors.New("ws: subscription denied: resource not owned by user")
 
-// ErrOwnershipUnknown is reserved for callers that want to assert
-// "no resolver wired" as a distinct condition. The hub itself does
-// not raise this — topic kinds without a registered resolver fall
-// back to the legacy no-check path so unit tests that pre-date auth
-// keep working without per-test wiring. Production wiring lives in
-// router.go and registers resolvers for every topic whose repo is
-// non-nil, so the legacy path only fires in tests / dev mode.
-var ErrOwnershipUnknown = errors.New("ws: no ownership resolver for topic")
+// Note: an earlier draft also exposed `ErrOwnershipUnknown` as a distinct
+// "no resolver wired" sentinel, but production code never returned it —
+// topic kinds without a registered resolver fall through to the legacy
+// no-check path so unit tests that pre-date auth keep working without
+// per-test wiring. If a future tightening flips that default to
+// fail-closed, reintroduce the sentinel here and surface it from
+// Hub.Subscribe before the resolver lookup.
 
 // OwnerResolver resolves the owning userId of one resource id within a
 // topic kind. A resolver that doesn't know about a given id should

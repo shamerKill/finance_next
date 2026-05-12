@@ -32,6 +32,20 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
+// buildSHA / buildAt are stamped at compile time via:
+//
+//	go build -ldflags "-X main.buildSHA=$(git rev-parse --short HEAD) \
+//	                    -X main.buildAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+//	         ./cmd/gateway
+//
+// Unset (plain `go build`) → fall back to the placeholder values; the
+// /api/v1/settings/system-info handler likewise defaults them to
+// "dev" / "unknown" if these slip through empty.
+var (
+	buildSHA = "dev"
+	buildAt  = "unknown"
+)
+
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
@@ -372,6 +386,10 @@ func main() {
 		AllowedOrigins: cfg.AllowedOrigins,
 
 		Config: cfg,
+
+		// Node 3.E.2: surface build provenance in /settings/system-info.
+		BuildSHA: buildSHA,
+		BuildAt:  buildAt,
 	})
 
 	addr := ":" + cfg.Port

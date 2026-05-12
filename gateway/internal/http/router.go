@@ -97,6 +97,13 @@ type Deps struct {
 	// allowlisting. Entries are full origin URLs (e.g.
 	// "http://localhost:3000"); the WS handler extracts the host part.
 	AllowedOrigins []string
+
+	// Node 3.E.2: build metadata reported by /settings/system-info.
+	// Both fields are injected via -ldflags `-X main.buildSHA=...` and
+	// passed through here. Empty strings fall back to "dev" / "unknown"
+	// inside the handler.
+	BuildSHA string
+	BuildAt  string
 }
 
 // NewRouter wires up middleware, the /api/v1 group, /ws, and resource handlers.
@@ -317,6 +324,20 @@ func NewRouter(d Deps) *echo.Echo {
 	// unset (404). The quant client is forwarded so /admin/ai/prompts
 	// can call GetAIConfig; nil = 503 with a clear message.
 	handlers.NewAdminHandler(d.SystemRepo, d.AuditRepo, d.Quant, d.AdminKey).Register(v1)
+
+	// Node 3.E.2 deployment snapshot. Admin-only; non-admins see 403.
+	// Every dep is optional inside the handler — missing deps surface
+	// as `status="disabled"` in the response body rather than failing
+	// the whole call.
+	handlers.NewSettingsHandler(
+		d.Config,
+		d.MongoDB,
+		d.Timescale,
+		d.Redis,
+		d.Quant,
+		d.BuildSHA,
+		d.BuildAt,
+	).Register(v1)
 
 	// Node 1.A.2 admin user-migration endpoint. Mounted unconditionally
 	// — the handler enforces role=admin from the cookie context. When

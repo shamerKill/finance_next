@@ -38,6 +38,16 @@ func New(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
+// Ping returns nil iff the underlying pool can round-trip a SELECT 1 within
+// the caller's context. Used by /api/v1/settings/system-info to surface
+// dependency health without exposing the pool itself.
+func (s *Store) Ping(ctx context.Context) error {
+	if s == nil || s.pool == nil {
+		return errors.New("timescale store not configured")
+	}
+	return s.pool.Ping(ctx)
+}
+
 // Connect dials TimescaleDB and pings it. Used from main(); separated
 // from New so tests can inject pre-built pools.
 func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) {

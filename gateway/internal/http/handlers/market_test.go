@@ -137,6 +137,72 @@ func TestPostIngest_HappyPath(t *testing.T) {
 	}
 }
 
+// TestPostIngest_TranslatesUpstreamErrors locks in the translateIngestError
+// contract: ccxt BadSymbol → 400 with helpful copy + the user-supplied
+// symbol quoted back; timeouts → 502; everything else → 502 with prefix.
+func TestPostIngest_TranslatesUpstreamErrors(t *testing.T) {
+	cases := []struct {
+		name       string
+		gRPCErr    error
+		wantStatus int
+		wantSub    string
+	}{
+		{
+			name:       "bad symbol → 400 with quoted symbol",
+			gRPCErr:    errFake("rpc error: code = Unknown desc = Unexpected <class 'ccxt.base.errors.BadSymbol'>: binanceusdm does not have market symbol 币安人生USDT"),
+			wantStatus: http.StatusBadRequest,
+			wantSub:    "币安人生USDT",
+		},
+		{
+			name:       "request timeout → 502 with proxy hint",
+			gRPCErr:    errFake("RequestTimeout: binanceusdm GET https://fapi.binance.com/fapi/v1/exchangeInfo"),
+			wantStatus: http.StatusBadGateway,
+			wantSub:    "HTTPS_PROXY",
+		},
+		{
+			name:       "rate limit → 429",
+			gRPCErr:    errFake("RateLimitExceeded: binance code=-1003 Too much request weight used"),
+			wantStatus: http.StatusTooManyRequests,
+			wantSub:    "速率限制",
+		},
+		{
+			name:       "invalid proxy → 500 specific",
+			gRPCErr:    errFake("InvalidProxySettings: binanceusdm you have multiple conflicting proxy settings"),
+			wantStatus: http.StatusInternalServerError,
+			wantSub:    "代理配置冲突",
+		},
+		{
+			name:       "unknown → 502 prefix",
+			gRPCErr:    errFake("something nobody recognises happened"),
+			wantStatus: http.StatusBadGateway,
+			wantSub:    "立即抓取失败",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fq := &fakeQuant{err: tc.gRPCErr}
+			e := newTestEcho(fq, "secret")
+			body := `{"exchange":"binance","symbol":"币安人生USDT","timeframe":"1h","start":"2024-01-01T00:00:00Z","end":"2024-01-02T00:00:00Z"}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/market/ingest", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Admin-Key", "secret")
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status: got %d want %d (body=%s)", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), tc.wantSub) {
+				t.Fatalf("body missing %q; got %s", tc.wantSub, rec.Body.String())
+			}
+		})
+	}
+}
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
+func errFake(s string) error      { return errString(s) }
+
 func TestPostIngest_RejectsInvalidTimeframe(t *testing.T) {
 	e := newTestEcho(&fakeQuant{}, "secret")
 	body := `{"exchange":"binance","symbol":"BTCUSDT","timeframe":"42m","start":"2024-01-01T00:00:00Z","end":"2024-01-02T00:00:00Z"}`

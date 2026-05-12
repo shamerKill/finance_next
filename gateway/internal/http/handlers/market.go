@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/finance_next/gateway/internal/quantclient"
@@ -12,6 +14,47 @@ import (
 	"github.com/labstack/echo/v4"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// sanitizeSymbol normalises user input before forwarding to ccxt.
+// Strips whitespace and any trailing parenthesised hint like
+// "BTCUSDT  (BTC/USDT:USDT)" that the markets-page Autocomplete may have
+// pasted in (the label is "$native  ($canonical)"; we want just the
+// native form). Idempotent on clean inputs.
+func sanitizeSymbol(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.Index(s, "("); i > 0 {
+		s = strings.TrimSpace(s[:i])
+	}
+	// Drop any internal whitespace that might have crept in.
+	return strings.Join(strings.Fields(s), "")
+}
+
+// translateIngestError maps common ccxt / quant errors surfaced through the
+// gRPC ingest RPC into actionable Chinese messages + the right HTTP status.
+// User-input errors return 400; upstream / network errors stay 502.
+// Unknown errors fall through with the raw text + "立即抓取失败：" prefix.
+func translateIngestError(err error, symbol string) (status int, message string) {
+	s := err.Error()
+	switch {
+	case strings.Contains(s, "BadSymbol"):
+		return http.StatusBadRequest,
+			"交易对 " + strconv.Quote(symbol) + " 在该交易所不存在；请检查拼写（例：BTCUSDT），或查看 /api/v1/exchange/meta 获取有效列表。"
+	case strings.Contains(s, "InvalidProxySettings"):
+		return http.StatusInternalServerError, "代理配置冲突：quant worker 不能同时设 http 和 https 代理；只保留 HTTPS_PROXY 后重启。"
+	case strings.Contains(s, "RequestTimeout"), strings.Contains(s, "context deadline exceeded"):
+		return http.StatusBadGateway, "交易所连接超时；如本机被墙请设 HTTPS_PROXY 后重启 quant worker。"
+	case strings.Contains(s, "RateLimitExceeded"), strings.Contains(s, "code=-1003"):
+		return http.StatusTooManyRequests, "触发交易所速率限制，请稍后重试。"
+	case strings.Contains(s, "AuthenticationError"):
+		return http.StatusUnauthorized, "交易所鉴权失败（仅匿名抓取应不需要密钥；请检查 quant 配置）。"
+	case strings.Contains(s, "DDoSProtection"):
+		return http.StatusBadGateway, "交易所触发 DDoS 防护（429/418），请稍后重试。"
+	case strings.Contains(s, "ExchangeNotAvailable"):
+		return http.StatusServiceUnavailable, "交易所暂时不可用，请稍后重试。"
+	default:
+		return http.StatusBadGateway, "立即抓取失败：" + s
+	}
+}
 
 // allowedTimeframes mirrors the timeframes ingested in Phase 2. Anything
 // outside this set is rejected with 400 — better than a silent empty result.
@@ -143,6 +186,14 @@ func (h *MarketHandler) postIngest(c echo.Context) error {
 	if _, ok := allowedTimeframes[body.Timeframe]; !ok {
 		return echo.NewHTTPError(http.StatusBadRequest, "timeframe must be one of 1m, 5m, 1h, 1d")
 	}
+	// Defensive cleanup: the markets controls Autocomplete renders labels
+	// like "BTCUSDT  (BTC/USDT:USDT)" and a stray copy/paste of that
+	// label as the symbol value would otherwise be sent verbatim to ccxt
+	// → BadSymbol. Strip whitespace + any trailing parenthesised suffix.
+	body.Symbol = sanitizeSymbol(body.Symbol)
+	if body.Symbol == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "symbol 不能为空")
+	}
 	start, err := parseTime(body.Start)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid start: "+err.Error())
@@ -170,7 +221,8 @@ func (h *MarketHandler) postIngest(c echo.Context) error {
 	})
 	if err != nil {
 		c.Logger().Errorf("quant.IngestNow failed: %v", err)
-		return echo.NewHTTPError(http.StatusBadGateway, "quant ingest failed")
+		status, msg := translateIngestError(err, body.Symbol)
+		return echo.NewHTTPError(status, msg)
 	}
 
 	return c.JSON(http.StatusOK, ingestResponseBody{

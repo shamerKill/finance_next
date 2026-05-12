@@ -43,6 +43,31 @@ const RANGE_LABEL: Record<(typeof RANGES)[number], string> = {
   "365d": "最近 1 年",
 };
 
+// HeroUI's <Autocomplete> with allowsCustomValue puts the displayed label
+// into the input field when the user picks a suggestion. If we just read
+// e.target.value verbatim we end up posting "BTCUSDT  (BTC/USDT:USDT)" to
+// ccxt and get BadSymbol back. Resolve the displayed text back to a key
+// (the key IS the bare symbol like "BTCUSDT") by matching against the
+// candidate list; strip whitespace + trailing parens for safety so a
+// hand-typed "BTCUSDT  (BTC/USDT)" still resolves cleanly.
+function resolveSymbolInput(
+  e: { target: EventTarget | null },
+  items: { key: string; label: string }[],
+  current: string,
+): string {
+  const raw = ((e.target as HTMLInputElement | null)?.value ?? "").trim();
+  if (!raw) return current;
+  // Exact label match → use its key
+  const byLabel = items.find((i) => i.label === raw);
+  if (byLabel) return byLabel.key;
+  // Strip the trailing parenthesised hint that our own label generator adds.
+  let cleaned = raw;
+  const lparen = cleaned.indexOf("(");
+  if (lparen > 0) cleaned = cleaned.slice(0, lparen).trim();
+  cleaned = cleaned.replace(/\s+/g, "");
+  return cleaned || current;
+}
+
 export type MarketsControlsProps = {
   exchange: TypeExchange;
   symbol: string;
@@ -132,13 +157,11 @@ export function MarketsControls({
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
-            const v = (e.target as HTMLInputElement).value?.trim();
-            if (v && v !== symbol) push({ symbol: v });
+            push({ symbol: resolveSymbolInput(e, symbolItems, symbol) });
           }
         }}
         onBlur={(e) => {
-          const v = (e.target as HTMLInputElement).value?.trim();
-          if (v && v !== symbol) push({ symbol: v });
+          push({ symbol: resolveSymbolInput(e, symbolItems, symbol) });
         }}
         description={
           symbolItems.length

@@ -5,13 +5,16 @@ import {
   Dropdown,
   DropdownItem,
   DropdownMenu,
+  DropdownSection,
   DropdownTrigger,
 } from "@heroui/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { THEME_OPTIONS } from "@/components/theme-toggle";
 import { logout } from "@/data/auth-client";
 import type { TypeUser } from "@/data/type";
+import { ThemeMode, useTheme } from "@/data/use-theme";
 
 interface UserMenuProps {
   user: TypeUser | null;
@@ -26,9 +29,15 @@ interface UserMenuProps {
 // letter of the email, the role badge, and a dropdown carrying account
 // settings (placeholder, disabled until 2.A.4 lands), theme toggle
 // (placeholder, owned by Wave 2 node 2.C.1), and logout.
+// Theme menu keys are prefixed so they don't collide with other top-level
+// menu actions (account / logout). Splitting the prefix back out keeps
+// the onAction switch readable.
+const THEME_KEY_PREFIX = "theme:";
+
 export function UserMenu({ user }: UserMenuProps) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const { theme, setTheme } = useTheme();
 
   if (!user) {
     return (
@@ -46,6 +55,11 @@ export function UserMenu({ user }: UserMenuProps) {
 
   async function onAction(key: string | number) {
     const k = String(key);
+    if (k.startsWith(THEME_KEY_PREFIX)) {
+      const mode = k.slice(THEME_KEY_PREFIX.length) as ThemeMode;
+      setTheme(mode);
+      return;
+    }
     if (k === "logout") {
       if (busy) return;
       setBusy(true);
@@ -82,21 +96,36 @@ export function UserMenu({ user }: UserMenuProps) {
           </span>
         </button>
       </DropdownTrigger>
-      <DropdownMenu aria-label="用户菜单" onAction={onAction}>
-        <DropdownItem
-          key="account"
-          isDisabled
-          description="即将开放"
-        >
-          账户设置
-        </DropdownItem>
-        <DropdownItem
-          key="theme"
-          isDisabled
-          description="即将开放"
-        >
-          切换主题
-        </DropdownItem>
+      <DropdownMenu
+        aria-label="用户菜单"
+        onAction={onAction}
+        closeOnSelect={false}
+      >
+        <DropdownSection showDivider>
+          <DropdownItem
+            key="account"
+            isDisabled
+            description="即将开放"
+          >
+            账户设置
+          </DropdownItem>
+        </DropdownSection>
+        <DropdownSection title="切换主题" showDivider>
+          {/* Three theme rows: light / dark / system. Selected mode
+              gets a check via the description suffix; HeroUI's
+              `selectionMode` on a single <DropdownMenu> would force
+              all items into the selection group (including account /
+              logout), so we render the mark manually. */}
+          {THEME_OPTIONS.map((opt) => (
+            <DropdownItem
+              key={`${THEME_KEY_PREFIX}${opt.key}`}
+              description={opt.description}
+            >
+              {opt.label}
+              {theme === opt.key ? "  ✓" : ""}
+            </DropdownItem>
+          ))}
+        </DropdownSection>
         <DropdownItem
           key="logout"
           color="danger"

@@ -46,7 +46,7 @@ export default async function DashboardLayout({
     <div className="flex min-h-screen flex-col">
       <AuthRedirectListener />
       <KillSwitchBanner />
-      <div className="lg:hidden flex items-center justify-between border-b border-default-200 bg-white">
+      <div className="lg:hidden flex items-center justify-between border-b border-border-default bg-bg-surface">
         <MobileHeader />
         <div className="px-3">
           <UserMenu user={me} />
@@ -55,7 +55,7 @@ export default async function DashboardLayout({
       <div className="flex flex-1">
         <Sidebar />
         <main className="flex-1 min-w-0 flex flex-col">
-          <div className="hidden lg:flex items-center justify-end gap-3 px-6 py-2 border-b border-default-200">
+          <div className="hidden lg:flex items-center justify-end gap-3 px-6 py-2 border-b border-border-default bg-bg-surface">
             <UserMenu user={me} />
           </div>
           <div className="flex-1 p-4 lg:p-6">{children}</div>

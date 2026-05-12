@@ -1,12 +1,104 @@
 @import "tailwindcss";
 @config "../tailwind.config.ts";
 
-:root {
-  --foreground-rgb: 0, 0, 0;
+/*
+ * Node 2.C.1 — theming variables.
+ *
+ * Three theme modes:
+ *   :root and [data-theme="light"]  → explicit light
+ *   [data-theme="dark"]             → explicit dark
+ *   [data-theme="system"]           → follow prefers-color-scheme
+ *
+ * The `useTheme()` hook writes the user choice ("light" | "dark" |
+ * "system") to <html data-theme=…>; a small inline script in
+ * `app/layout.tsx` re-applies the stored choice before React hydrates
+ * so a refresh never flashes.
+ *
+ * Values are stored as space-separated R G B triples so that the
+ * tailwind `rgb(var(--token) / <alpha-value>)` form can plug in any
+ * opacity (e.g. `bg-bg-surface/50`).
+ */
+
+:root,
+[data-theme="light"] {
+  --bg-canvas: 250 250 250; /* #FAFAFA */
+  --bg-surface: 255 255 255; /* #FFFFFF */
+  --bg-surface-2: 245 245 245; /* #F5F5F5 */
+  --border-default: 229 231 235; /* #E5E7EB */
+  --text-primary: 17 17 17; /* #111111 */
+  --text-secondary: 94 102 115; /* #5E6673 */
+  --text-tertiary: 146 154 165; /* #929AA5 */
+  --accent-up: 14 203 129; /* #0ECB81 */
+  --accent-down: 246 70 93; /* #F6465D */
+  --accent-warning: 240 185 11; /* #F0B90B */
+  --accent-info: 31 199 212; /* #1FC7D4 */
+  --brand-primary: 126 231 252; /* #7EE7FC */
 }
 
+[data-theme="dark"] {
+  --bg-canvas: 11 14 17; /* #0B0E11 — Binance dark */
+  --bg-surface: 22 26 30; /* #161A1E */
+  --bg-surface-2: 30 35 41; /* #1E2329 */
+  --border-default: 43 49 57; /* #2B3139 */
+  --text-primary: 234 236 239; /* #EAECEF */
+  --text-secondary: 132 142 156; /* #848E9C */
+  --text-tertiary: 94 102 115; /* #5E6673 */
+  --accent-up: 14 203 129;
+  --accent-down: 246 70 93;
+  --accent-warning: 240 185 11;
+  --accent-info: 31 199 212;
+  --brand-primary: 126 231 252;
+}
+
+/* System mode = follow OS preference. We duplicate the light/dark blocks
+ * inside @media queries instead of falling back to :root because
+ * data-theme="system" overrides the cascade and would otherwise inherit
+ * the explicit light defaults unconditionally. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
+  [data-theme="system"] {
+    --bg-canvas: 11 14 17;
+    --bg-surface: 22 26 30;
+    --bg-surface-2: 30 35 41;
+    --border-default: 43 49 57;
+    --text-primary: 234 236 239;
+    --text-secondary: 132 142 156;
+    --text-tertiary: 94 102 115;
+    --accent-up: 14 203 129;
+    --accent-down: 246 70 93;
+    --accent-warning: 240 185 11;
+    --accent-info: 31 199 212;
+    --brand-primary: 126 231 252;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] {
+    --bg-canvas: 250 250 250;
+    --bg-surface: 255 255 255;
+    --bg-surface-2: 245 245 245;
+    --border-default: 229 231 235;
+    --text-primary: 17 17 17;
+    --text-secondary: 94 102 115;
+    --text-tertiary: 146 154 165;
+    --accent-up: 14 203 129;
+    --accent-down: 246 70 93;
+    --accent-warning: 240 185 11;
+    --accent-info: 31 199 212;
+    --brand-primary: 126 231 252;
+  }
+}
+
+body {
+  background-color: rgb(var(--bg-canvas));
+  color: rgb(var(--text-primary));
+}
+
+@layer utilities {
+  /* Tabular-figure utility — apply to any element rendering numbers in
+   * a table or KPI card to get equal-width digits. Inter and JetBrains
+   * Mono both ship the `tnum` OpenType feature. */
+  .tnum {
+    font-feature-settings: "tnum";
+    font-variant-numeric: tabular-nums;
   }
 }

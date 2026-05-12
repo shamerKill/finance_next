@@ -183,7 +183,7 @@ function SidebarNav({
 // permanent aside sits alongside <main> in the row below.
 export function MobileHeader() {
   return (
-    <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between border-b border-default-200 bg-white px-4 py-3">
+    <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between border-b border-border-default bg-bg-surface px-4 py-3">
       <button
         type="button"
         onClick={() => setDrawer(true)}
@@ -279,7 +279,7 @@ export function Sidebar() {
   return (
     <SidebarCtxContext.Provider value={ctx}>
       {/* Permanent desktop sidebar — visible lg+ only. */}
-      <aside className="hidden lg:block w-56 shrink-0 border-r border-default-200 p-4">
+      <aside className="hidden lg:block w-56 shrink-0 border-r border-border-default bg-bg-surface p-4">
         <div className="text-lg font-semibold mb-6">finance_next</div>
         <SidebarNav pathname={pathname} ctx={ctx} />
       </aside>
@@ -303,7 +303,7 @@ export function Sidebar() {
         />
         {/* Drawer panel */}
         <aside
-          className={`absolute left-0 top-0 h-full w-[280px] max-w-[80%] bg-white p-4 shadow-xl transition-transform ${
+          className={`absolute left-0 top-0 h-full w-[280px] max-w-[80%] bg-bg-surface p-4 shadow-xl transition-transform ${
             drawerOpen ? "translate-x-0" : "-translate-x-full"
           }`}
           role="dialog"

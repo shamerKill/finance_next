@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
+import { ToastProvider } from "@/components/toast-provider";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -40,7 +41,14 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>
       <body className={inter.className}>
-        <Providers>{children}</Providers>
+        <Providers>
+          {/* Node 2.C.2 — mounted once so any client component can call
+           * `useToast()` / `toast.success(...)`. HeroUI's ToastProvider
+           * renders the portal region; we wrap it for default placement
+           * + timeout. */}
+          <ToastProvider />
+          {children}
+        </Providers>
       </body>
     </html>
   );

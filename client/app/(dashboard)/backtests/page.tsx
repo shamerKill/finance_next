@@ -87,6 +87,7 @@ export default async function BacktestsListPage() {
       {runs.length > 0 ? (
         <DataTable<TypeBacktest>
           ariaLabel="backtest runs"
+          mobileLayout="card"
           rows={runs}
           getRowKey={(r) => r.runId}
           columns={[

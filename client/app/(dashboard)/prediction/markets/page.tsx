@@ -54,6 +54,7 @@ export default async function PredictionMarketsPage({
       ) : (
         <DataTable<TypePredictionMarket>
           ariaLabel="预测市场列表"
+          mobileLayout="card"
           rows={markets}
           getRowKey={(m) => m.marketId}
           columns={[

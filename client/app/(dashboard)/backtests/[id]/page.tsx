@@ -138,6 +138,7 @@ export default async function BacktestDetailPage({ params }: Params) {
     <Section title="交易">
       <DataTable<TypeBacktestTrade>
         ariaLabel="backtest trades"
+        mobileLayout="card"
         rows={trades.slice(0, 200)}
         getRowKey={(t) => `${t.entryTs}-${t.exitTs}-${t.entryPrice}`}
         emptyState="暂无交易记录。"

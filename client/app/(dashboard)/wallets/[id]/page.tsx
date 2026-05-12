@@ -198,6 +198,7 @@ export default function WalletDetailPage() {
         ) : (
           <DataTable<TypeWalletPosition>
             ariaLabel="CTF outcome 持仓"
+            mobileLayout="card"
             rows={positions}
             getRowKey={(p) => p.tokenId}
             columns={[

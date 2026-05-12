@@ -65,6 +65,7 @@ export default async function WalletsPage() {
       ) : (
         <DataTable<TypeWallet>
           ariaLabel="Polygon 钱包列表"
+          mobileLayout="card"
           rows={wallets}
           getRowKey={(w) => w.id}
           emptyState="暂无钱包"

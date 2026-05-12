@@ -143,6 +143,7 @@ export default async function PortfolioPage() {
             ) : (
               <DataTable<ExchangeRow>
                 ariaLabel="按交易所汇总"
+                mobileLayout="card"
                 columns={exchangeColumns}
                 rows={summary.perExchange}
                 getRowKey={(row) => row.exchange}
@@ -160,6 +161,7 @@ export default async function PortfolioPage() {
             ) : (
               <DataTable<AssetRow>
                 ariaLabel="资产明细"
+                mobileLayout="card"
                 columns={assetColumns}
                 rows={summary.perAsset}
                 getRowKey={(a) => a.asset}

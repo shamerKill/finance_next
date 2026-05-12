@@ -82,6 +82,7 @@ export default async function OnchainPage() {
       <Section title="最近观测">
         <DataTable
           ariaLabel="onchain metrics"
+          mobileLayout="card"
           columns={COLUMNS}
           rows={rows}
           getRowKey={(r) => `${r.source}-${r.ts}`}

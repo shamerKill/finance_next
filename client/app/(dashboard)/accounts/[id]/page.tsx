@@ -287,6 +287,7 @@ export default async function AccountDetailPage({ params }: PageProps) {
       ) : (
         <DataTable<TypeBalance>
           ariaLabel="账户余额"
+          mobileLayout="card"
           columns={balanceColumns}
           rows={balancesResult.data}
           getRowKey={(b) => `${b.wallet}-${b.asset}`}
@@ -314,6 +315,7 @@ export default async function AccountDetailPage({ params }: PageProps) {
       ) : (
         <DataTable<TypePosition>
           ariaLabel="账户持仓"
+          mobileLayout="card"
           columns={positionColumns}
           rows={positionsResult.data}
           getRowKey={(p) => `${p.symbol}-${p.positionSide}`}

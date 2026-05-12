@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
 
+import { PasswordInput } from "@/components/password-field";
 import { AuthError, register } from "@/data/auth-client";
 
 // safeNextOrDashboard sanitises the `?next=` query param that
@@ -93,9 +94,8 @@ function RegisterForm() {
             isRequired
             isDisabled={loading}
           />
-          <Input
+          <PasswordInput
             label="密码"
-            type="password"
             autoComplete="new-password"
             value={password}
             onValueChange={setPassword}
@@ -103,9 +103,8 @@ function RegisterForm() {
             isDisabled={loading}
             description="至少 8 个字符"
           />
-          <Input
+          <PasswordInput
             label="确认密码"
-            type="password"
             autoComplete="new-password"
             value={confirm}
             onValueChange={setConfirm}

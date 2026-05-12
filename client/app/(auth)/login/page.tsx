@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
 
+import { PasswordInput } from "@/components/password-field";
 import { AuthError, login } from "@/data/auth-client";
 
 // safeNextOrDashboard sanitises the `?next=` query param that
@@ -65,9 +66,8 @@ function LoginForm() {
             isRequired
             isDisabled={loading}
           />
-          <Input
+          <PasswordInput
             label="密码"
-            type="password"
             autoComplete="current-password"
             value={password}
             onValueChange={setPassword}

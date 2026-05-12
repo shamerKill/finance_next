@@ -269,6 +269,7 @@ export default function PredictionStrategyDetailPage() {
       ) : (
         <DataTable<TypePredictionOrder>
           ariaLabel="预测订单列表"
+          mobileLayout="card"
           rows={orders}
           getRowKey={(o) => o.clientOrderId}
           columns={[

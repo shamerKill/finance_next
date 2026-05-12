@@ -147,6 +147,7 @@ export default async function AccountsPage({
       ) : error == null ? (
         <DataTable<TypeAccount>
           ariaLabel="账户列表"
+          mobileLayout="card"
           columns={columns}
           rows={filtered}
           getRowKey={(a) => a.id}

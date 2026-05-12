@@ -85,6 +85,7 @@ export default async function MacroPage() {
       <Section title="最近观测">
         <DataTable
           ariaLabel="macro indicators"
+          mobileLayout="card"
           columns={COLUMNS}
           rows={rows}
           getRowKey={(r) => r.ts}

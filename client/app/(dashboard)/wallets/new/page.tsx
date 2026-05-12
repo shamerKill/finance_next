@@ -10,6 +10,7 @@ import { Callout } from "@/components/callout";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormField } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
+import { PasswordInput } from "@/components/password-field";
 import { Section } from "@/components/section";
 import { createWallet } from "@/data/api-client";
 
@@ -21,7 +22,6 @@ export default function NewWalletPage() {
   const router = useRouter();
   const [label, setLabel] = useState("");
   const [privateKey, setPrivateKey] = useState("");
-  const [showKey, setShowKey] = useState(false);
   const [expectedAddress, setExpectedAddress] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -124,23 +124,12 @@ export default function NewWalletPage() {
             htmlFor="wallet-pk"
             hint="提交后由 gateway 加密入库；私钥永不离开后端。"
           >
-            <Input
+            <PasswordInput
               id="wallet-pk"
-              type={showKey ? "text" : "password"}
               placeholder="0x..."
               value={privateKey}
               onValueChange={setPrivateKey}
               className="font-mono"
-              endContent={
-                <button
-                  type="button"
-                  onClick={() => setShowKey((v) => !v)}
-                  className="text-xs text-text-tertiary hover:text-text-primary px-1"
-                  aria-label={showKey ? "隐藏私钥" : "显示私钥"}
-                >
-                  {showKey ? "隐藏" : "显示"}
-                </button>
-              }
             />
           </FormField>
 

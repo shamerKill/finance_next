@@ -53,6 +53,7 @@ export default async function PredictionStrategiesPage() {
       ) : (
         <DataTable<TypePredictionStrategy>
           ariaLabel="预测策略列表"
+          mobileLayout="card"
           rows={strategies}
           getRowKey={(s) => s.id}
           columns={[

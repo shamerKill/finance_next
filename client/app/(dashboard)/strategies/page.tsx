@@ -122,6 +122,7 @@ const PageStrategies: FC = async () => {
         !error && (
           <DataTable
             ariaLabel="strategies"
+            mobileLayout="card"
             columns={columns}
             rows={strategies}
             getRowKey={(s) => s.id ?? s.name}

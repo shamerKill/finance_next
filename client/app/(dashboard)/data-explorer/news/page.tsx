@@ -104,6 +104,7 @@ export default async function NewsPage() {
       <Section title="最新新闻">
         <DataTable
           ariaLabel="news list"
+          mobileLayout="card"
           columns={COLUMNS}
           rows={items}
           getRowKey={(n) => n.id}

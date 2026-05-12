@@ -19,6 +19,7 @@ import { FC, FormEvent, useState } from "react";
 import { ApiErrorView } from "@/components/api-error";
 import { Callout } from "@/components/callout";
 import { FormField } from "@/components/form-field";
+import { PasswordInput } from "@/components/password-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { createOption } from "@/data/api-client";
@@ -329,8 +330,7 @@ const NewStrategyPage: FC = () => {
                 />
               </FormField>
               <FormField label="Secret 密钥" required>
-                <Input
-                  type="password"
+                <PasswordInput
                   aria-label="Secret 密钥"
                   value={userSecretKey}
                   onValueChange={setUserSecretKey}

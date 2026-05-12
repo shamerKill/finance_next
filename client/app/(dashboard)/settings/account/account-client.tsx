@@ -8,6 +8,7 @@ import { Callout } from "@/components/callout";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormField } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
+import { PasswordInput } from "@/components/password-field";
 import { Section } from "@/components/section";
 import { Stat } from "@/components/stat";
 import { useToast } from "@/components/toast";
@@ -144,9 +145,8 @@ function ChangePasswordForm() {
   return (
     <form className="space-y-4" onSubmit={onSubmit}>
       <FormField label="旧密码" required htmlFor="cp-old">
-        <Input
+        <PasswordInput
           id="cp-old"
-          type="password"
           value={oldPw}
           onValueChange={setOldPw}
           autoComplete="current-password"
@@ -158,18 +158,16 @@ function ChangePasswordForm() {
         hint={`长度 ${PASSWORD_MIN}-${PASSWORD_MAX} 字符`}
         htmlFor="cp-new"
       >
-        <Input
+        <PasswordInput
           id="cp-new"
-          type="password"
           value={newPw}
           onValueChange={setNewPw}
           autoComplete="new-password"
         />
       </FormField>
       <FormField label="确认新密码" required htmlFor="cp-confirm">
-        <Input
+        <PasswordInput
           id="cp-confirm"
-          type="password"
           value={confirmPw}
           onValueChange={setConfirmPw}
           autoComplete="new-password"
@@ -369,9 +367,8 @@ function DeleteAccountForm({ me }: { me: TypeUser }) {
         )}
       </Callout>
       <FormField label="当前密码" required htmlFor="del-pw">
-        <Input
+        <PasswordInput
           id="del-pw"
-          type="password"
           value={password}
           onValueChange={setPassword}
           autoComplete="current-password"

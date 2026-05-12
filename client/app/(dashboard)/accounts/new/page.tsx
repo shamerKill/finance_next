@@ -7,6 +7,7 @@ import { FormEvent, useState } from "react";
 import { ApiErrorView } from "@/components/api-error";
 import { FormField } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
+import { PasswordInput } from "@/components/password-field";
 import { useToast } from "@/components/toast";
 import { createAccount } from "@/data/api-client";
 import { TypeExchange } from "@/data/type";
@@ -108,11 +109,10 @@ export default function NewAccountPage() {
           required
           hint="保存后将经 AES-256-GCM 信封加密，永远不会回显"
         >
-          <Input
+          <PasswordInput
             name="secretKey"
             aria-label="Secret 密钥"
-            type="password"
-            required
+            isRequired
           />
         </FormField>
 
@@ -122,11 +122,10 @@ export default function NewAccountPage() {
             required
             hint="OKX API key 创建时设置的 passphrase"
           >
-            <Input
+            <PasswordInput
               name="passphrase"
               aria-label="Passphrase 口令"
-              type="password"
-              required
+              isRequired
             />
           </FormField>
         )}

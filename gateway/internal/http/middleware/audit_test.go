@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -214,6 +215,62 @@ func TestAudit_Phase9_ScrubsWalletKeys(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected %s in scrubbed payload; got %s", want, got)
 		}
+	}
+}
+
+// TestAudit_CapturesAnonymousOn401 locks in the Fix 3 ordering: audit
+// middleware runs BEFORE WithAuth, so a request that fails cookie auth
+// still produces an audit row with actor="anonymous". This is the
+// critical path for forensics on failed-auth attempts.
+func TestAudit_CapturesAnonymousOn401(t *testing.T) {
+	w := &fakeWriter{}
+	mw, err := New(Config{Writer: w, BufferSize: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go mw.Start(ctx)
+
+	e := echo.New()
+	// Fix 3 mount order: Audit FIRST, then WithAuth.
+	e.Use(mw.Middleware())
+	e.Use(WithAuth(AuthConfig{
+		Secret: "test",
+		Parser: func(token string) (*AuthClaims, error) {
+			// Always reject so we hit the 401 path.
+			return nil, errors.New("invalid token")
+		},
+	}))
+	e.POST("/api/v1/option", func(c echo.Context) error {
+		return c.NoContent(200)
+	})
+
+	req := httptest.NewRequest("POST", "/api/v1/option", strings.NewReader(`{"name":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != 401 {
+		t.Fatalf("expected 401 from failed auth, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if len(w.all()) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	entries := w.all()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 audit entry on 401, got %d", len(entries))
+	}
+	if entries[0].Actor != "anonymous" {
+		t.Errorf("expected actor=anonymous on failed auth, got %q", entries[0].Actor)
+	}
+	if entries[0].StatusCode != 401 {
+		t.Errorf("expected audited status=401, got %d", entries[0].StatusCode)
 	}
 }
 

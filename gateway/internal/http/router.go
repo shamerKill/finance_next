@@ -192,16 +192,29 @@ func NewRouter(d Deps) *echo.Echo {
 	api := e.Group("/api")
 	v1 := api.Group("/v1")
 
-	// Phase 1.A.1 cookie / JWT auth. Mounted FIRST so a valid cookie can
-	// populate the userId / userRole context values before WithUserID
-	// runs. The Parser closure binds the JWT secret from cfg so this
-	// middleware doesn't import the handlers package (which would
-	// create an import cycle).
+	// Fix 3: audit middleware mounts FIRST so 401s and other failed-auth
+	// requests still produce a row (actor="anonymous" when WithAuth
+	// hasn't populated the context yet). When WithAuth subsequently
+	// admits a request and writes the userId into the Echo context,
+	// audit.actorFromContext picks that up — both successful and failed
+	// paths land in the audit log.
+	if d.AuditMiddleware != nil {
+		v1.Use(d.AuditMiddleware.Middleware())
+	}
+
+	// Phase 1.A.1 cookie / JWT auth. Mounted after Audit (so 401s are
+	// audited) but before WithUserID (so a successful cookie populates
+	// the context the user-id middleware would otherwise default to
+	// "default"). The Parser closure binds the JWT secret from cfg so
+	// this middleware doesn't import the handlers package (which
+	// would create an import cycle).
 	if d.Config != nil && d.Config.AuthJWTSecret != "" {
 		secret := d.Config.AuthJWTSecret
 		v1.Use(auditmw.WithAuth(auditmw.AuthConfig{
-			Secret: secret,
-			Redis:  d.Redis,
+			Secret:         secret,
+			Redis:          d.Redis,
+			AllowS2SHeader: d.Config.AllowS2SHeader,
+			AdminKey:       d.Config.AdminKey,
 			Parser: func(token string) (*auditmw.AuthClaims, error) {
 				cl, err := handlers.ParseJWT(token, secret)
 				if err != nil {
@@ -219,20 +232,11 @@ func NewRouter(d Deps) *echo.Echo {
 		}))
 	}
 
-	// R2 multi-tenant userId middleware. MUST be mounted BEFORE the audit
-	// middleware so audit entries can pick up the resolved userId from
-	// the Echo context. WithAuth above already sets the userId from the
-	// JWT when the cookie is valid; WithUserID's header fallback then
-	// only kicks in for s2s callers and is otherwise a no-op (the
-	// existing context value is left untouched when present).
+	// R2 multi-tenant userId middleware. Mounted LAST so it observes
+	// any userId WithAuth wrote into the context. WithUserID's own
+	// no-op short-circuit kicks in when the context value is already
+	// present.
 	v1.Use(auditmw.WithUserID(d.RequireUserID))
-
-	// Phase 7 audit middleware. Mounted on the v1 group so every API
-	// mutation is captured; /healthz and /metrics are not under v1 and
-	// therefore intentionally not audited.
-	if d.AuditMiddleware != nil {
-		v1.Use(d.AuditMiddleware.Middleware())
-	}
 
 	// Phase 1.A.1 auth handlers. Mounted on the v1 group; the white-list
 	// inside WithAuth keeps /auth/register|login|accept-invite|logout

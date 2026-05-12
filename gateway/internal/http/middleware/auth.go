@@ -6,24 +6,22 @@
 // userId comes from the JWT `sub` claim and the role is exposed under
 // the `userRole` Echo context key.
 //
-// `X-User-Id` header continues to work as a SYSTEM-TO-SYSTEM backdoor:
-// when no cookie is present but the header is set, the request is
-// allowed through and WithUserID populates the context from the header.
-// This is only safe when the gateway sits behind a trusted reverse
-// proxy that strips client-supplied X-User-Id headers and re-injects
-// the verified subject. Public-facing deployments MUST not trust the
-// header — operators set `REQUIRE_USER_ID=true` and a corresponding
-// proxy ACL. In Phase 2 we'll lift the header path entirely once every
-// internal caller has been moved to cookies/JWT.
+// Header bypass is OPT-IN ONLY. Default deployments require a valid
+// cookie on every /api/v1 path outside the white-list — a plain
+// `X-User-Id` header NEVER authenticates a caller. When operators set
+// `ALLOW_S2S_HEADER=true` AND configure `ADMIN_KEY`, a request without
+// a cookie that carries a matching `X-Admin-Key` is allowed through
+// (the per-handler admin-key check then runs as before). The compose
+// stack ships with ALLOW_S2S_HEADER unset → no header bypass.
 //
-// White-list: /api/v1/auth/{register,login,accept-invite}. Other
-// /api/v1 paths require a valid cookie OR an X-User-Id header.
+// White-list: /api/v1/auth/{register,login,accept-invite,logout}.
 // /healthz, /metrics, /ws are outside /api/v1 and therefore never
 // touched by this middleware.
 package middleware
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"strings"
@@ -83,6 +81,20 @@ type AuthConfig struct {
 	// "/auth/accept-invite", "/auth/logout"}. Logout is whitelisted so
 	// the handler itself can decide whether to act on the cookie.
 	WhitelistPrefixes []string
+
+	// AllowS2SHeader toggles the system-to-system header bypass. When
+	// false (default) the middleware NEVER accepts a request based on
+	// the X-User-Id or X-Admin-Key header alone — a valid cookie is
+	// required for every non-whitelisted path. When true, a missing /
+	// invalid cookie may still be admitted iff the request carries
+	// `X-Admin-Key: <AdminKey>` (constant-time compared); bare
+	// X-User-Id is never enough.
+	AllowS2SHeader bool
+
+	// AdminKey is compared against the X-Admin-Key header on the s2s
+	// bypass path. Empty AdminKey disables the bypass entirely even
+	// when AllowS2SHeader is true (we refuse to match against "").
+	AdminKey string
 }
 
 // DefaultAuthWhitelist returns the canonical bypass list. Mutating the
@@ -101,10 +113,13 @@ var ErrAuthMissingSecret = errors.New("auth secret not configured")
 // Behaviour:
 //   - whitelist path → next.ServeHTTP (no context mutation)
 //   - valid cookie  → context["userId"]=sub, context["userRole"]=role; next
-//   - no cookie + X-User-Id header set → next (header-based s2s backdoor;
-//     WithUserID downstream copies the header into the context)
-//   - no cookie + X-Admin-Key set → next (admin-key s2s; same fallback)
+//   - no cookie / invalid cookie + cfg.AllowS2SHeader=true +
+//     X-Admin-Key matches cfg.AdminKey (constant-time) → next
 //   - otherwise → 401 with body {"error":"unauthorized"}
+//
+// Bare `X-User-Id` is NEVER sufficient to authenticate. The opt-in
+// s2s path requires a real shared secret (AdminKey) so a leaked
+// proxy or a curl from the host network can't bypass the cookie.
 func WithAuth(cfg AuthConfig) echo.MiddlewareFunc {
 	whitelist := cfg.WhitelistPrefixes
 	if len(whitelist) == 0 {
@@ -136,19 +151,21 @@ func WithAuth(cfg AuthConfig) echo.MiddlewareFunc {
 					c.Set(ContextRoleKey, claims.Role)
 					return next(c)
 				}
-				// Fall through to header backdoor; an invalid cookie
-				// alone shouldn't lock out an s2s caller that meant
-				// to use the header.
+				// Fall through to the s2s admin-key check; an invalid
+				// cookie alone shouldn't lock out an s2s caller that
+				// meant to use the header.
 			}
 
-			// Header backdoor (system-to-system). We accept either an
-			// explicit X-User-Id (deployments with a trusted reverse
-			// proxy) or X-Admin-Key (the legacy /admin/* path which
-			// has its own per-handler key check). The handler /
-			// downstream middleware enforces the actual authorisation.
-			if c.Request().Header.Get(HeaderUserID) != "" ||
-				c.Request().Header.Get(HeaderAdminKey) != "" {
-				return next(c)
+			// Opt-in s2s bypass (default = disabled). Only honoured when
+			// the operator has explicitly set ALLOW_S2S_HEADER=true AND
+			// AdminKey is non-empty AND the incoming X-Admin-Key
+			// constant-time matches. Bare X-User-Id is never sufficient.
+			if cfg.AllowS2SHeader && cfg.AdminKey != "" {
+				if k := c.Request().Header.Get(HeaderAdminKey); k != "" {
+					if subtle.ConstantTimeCompare([]byte(k), []byte(cfg.AdminKey)) == 1 {
+						return next(c)
+					}
+				}
 			}
 
 			return unauthorized(c)

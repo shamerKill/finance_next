@@ -54,6 +54,16 @@ type Config struct {
 	AuthCookieDomain  string
 	AuthCookieSecure  bool
 
+	// AllowS2SHeader controls the system-to-system header bypass on
+	// WithAuth. False (default) → /api/v1 always requires a valid auth
+	// cookie; `X-User-Id` and `X-Admin-Key` headers alone never
+	// authenticate a caller. True (env `ALLOW_S2S_HEADER=true`) → when
+	// no cookie is present, a request carrying a matching `X-Admin-Key`
+	// is allowed through. Operators MUST ensure the gateway port is not
+	// internet-facing when enabling this — anyone who can reach the
+	// socket bypasses cookie auth.
+	AllowS2SHeader bool
+
 	// AllowedOrigins is the comma-split, trimmed list parsed from the
 	// `ALLOWED_ORIGINS` env var. Empty (default) → CORS allows "*" and
 	// the WebSocket Accept uses InsecureSkipVerify (dev-friendly).
@@ -85,6 +95,7 @@ func Load() (*Config, error) {
 		AdminKey:      os.Getenv("ADMIN_KEY"),
 		RedisURL:       os.Getenv("REDIS_URL"),
 		RequireUserID:  os.Getenv("REQUIRE_USER_ID") == "true",
+		AllowS2SHeader: os.Getenv("ALLOW_S2S_HEADER") == "true",
 		AllowedOrigins: parseAllowedOrigins(os.Getenv("ALLOWED_ORIGINS")),
 
 		AuthJWTSecret:    os.Getenv("AUTH_JWT_SECRET"),

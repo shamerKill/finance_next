@@ -37,11 +37,11 @@ func NewUserRepo(db *mongo.Database) *UserRepo {
 	return &UserRepo{col: db.Collection(UserCollectionName)}
 }
 
-// EnsureIndexes creates:
-//   - unique(id)    — primary id lookup (handler-assigned 32 hex chars)
-//   - unique(email) — global email uniqueness, case-insensitive (collation)
-func (r *UserRepo) EnsureIndexes(ctx context.Context) error {
-	_, err := r.col.Indexes().CreateMany(ctx, []mongo.IndexModel{
+// UserIndexModels returns the index models EnsureIndexes installs.
+// Exported so unit tests can lock down the partial-admin filter
+// without a live Mongo connection.
+func UserIndexModels() []mongo.IndexModel {
+	return []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "id", Value: 1}},
 			Options: options.Index().SetUnique(true).SetName("uniq_id"),
@@ -56,7 +56,32 @@ func (r *UserRepo) EnsureIndexes(ctx context.Context) error {
 				SetName("uniq_email_ci").
 				SetCollation(&options.Collation{Locale: "en", Strength: 2}),
 		},
-	})
+		{
+			Keys: bson.D{{Key: "role", Value: 1}},
+			Options: options.Index().
+				SetUnique(true).
+				SetName("uniq_admin_role").
+				// Partial filter: only docs with role=="admin" participate
+				// in the unique constraint. role=="member" rows coexist
+				// freely. This makes the bootstrap admin role globally
+				// at-most-once across the whole users collection — Fix 5
+				// defends against the first-admin race where two
+				// concurrent /auth/register calls both see Count()==0.
+				SetPartialFilterExpression(bson.M{"role": "admin"}),
+		},
+	}
+}
+
+// EnsureIndexes creates:
+//   - unique(id)    — primary id lookup (handler-assigned 32 hex chars)
+//   - unique(email) — global email uniqueness, case-insensitive (collation)
+//   - partial unique(role="admin") — Fix 5: defends against the
+//     first-admin race. Even if two concurrent /auth/register calls
+//     both observe Count()==0 and try to insert with role=admin,
+//     Mongo rejects the loser with a duplicate-key error and the
+//     handler maps it to a 409 conflict.
+func (r *UserRepo) EnsureIndexes(ctx context.Context) error {
+	_, err := r.col.Indexes().CreateMany(ctx, UserIndexModels())
 	return err
 }
 

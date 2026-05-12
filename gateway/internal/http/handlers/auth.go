@@ -32,6 +32,7 @@ import (
 	"net/mail"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/finance_next/gateway/internal/config"
@@ -46,12 +47,6 @@ import (
 // AuthCookieName is the cookie carrying the JWT. The frontend never reads
 // it (HttpOnly); /auth/me is the canonical way to know the current user.
 const AuthCookieName = "auth_token"
-
-// RevokedJTISetKey is the Redis SET storing JTIs of logged-out tokens.
-// We use SADD on logout with a per-entry expiry via a parallel
-// `auth:revoked:<jti>` key (Redis SETs themselves don't support
-// per-member TTL). The middleware checks both — see middleware/auth.go.
-const RevokedJTISetKey = "auth:revoked"
 
 // LoginRateLimitPerMinute caps /auth/login attempts per source IP.
 const LoginRateLimitPerMinute = 5
@@ -69,6 +64,18 @@ type AuthHandler struct {
 	redis       *redis.Client
 
 	loginLimiter *ipLimiter
+
+	// dummyHash is a pre-computed argon2id hash used to equalise the
+	// login latency between "user not found" and "wrong password". On
+	// a not-found we still run VerifyPassword against this hash and
+	// discard the result, so external timing observation can't be
+	// used to enumerate registered email addresses.
+	dummyHash string
+
+	// verifyCount is incremented every time VerifyPassword runs from
+	// login (including the dummy path). Tests inspect this counter to
+	// confirm the user-not-found branch still pays the hash cost.
+	verifyCount uint64
 }
 
 // NewAuthHandler builds the handler. users / invitations / cfg must be
@@ -79,13 +86,32 @@ func NewAuthHandler(
 	cfg *config.Config,
 	rds *redis.Client,
 ) *AuthHandler {
+	// Pre-compute a dummy argon2id hash once at construction so the
+	// not-found branch of /auth/login spends the same CPU as the
+	// found branch. Failure here should be impossible (rand can only
+	// fail in pathological conditions); we fall back to an empty
+	// string and let VerifyPassword's malformed-input path eat the
+	// time — still better than skipping entirely.
+	dummy, dummyErr := HashPassword("timing-equaliser-not-a-real-password")
+	if dummyErr != nil {
+		dummy = ""
+	}
 	return &AuthHandler{
 		users:        users,
 		invitations:  invitations,
 		cfg:          cfg,
 		redis:        rds,
 		loginLimiter: newIPLimiter(LoginRateLimitPerMinute, time.Minute),
+		dummyHash:    dummy,
 	}
+}
+
+// VerifyCount returns the number of times /auth/login has invoked
+// VerifyPassword (including the dummy-hash path on user-not-found).
+// Exported for tests that assert the timing-equaliser is wired; not
+// part of the runtime API surface.
+func (h *AuthHandler) VerifyCount() uint64 {
+	return atomic.LoadUint64(&h.verifyCount)
 }
 
 // Register binds routes onto the v1 group.
@@ -156,7 +182,11 @@ func (h *AuthHandler) register(c echo.Context) error {
 	invitedBy := ""
 
 	if count == 0 {
-		// Bootstrap: first user becomes admin.
+		// Bootstrap: first user becomes admin. The partial unique
+		// index `uniq_admin_role` on (role="admin") guarantees that
+		// only one of two concurrent bootstrap registers can succeed;
+		// the loser surfaces as ErrUserEmailConflict (duplicate key)
+		// which createUser maps to 409.
 		role = domain.UserRoleAdmin
 	} else {
 		// Subsequent registrations require a valid invitation.
@@ -204,11 +234,18 @@ func (h *AuthHandler) login(c echo.Context) error {
 	ctx := c.Request().Context()
 	user, err := h.users.FindByEmail(ctx, req.Email)
 	if errors.Is(err, mongostore.ErrUserNotFound) {
+		// Pay the argon2 cost even on not-found so attackers can't
+		// distinguish "registered but wrong password" from "no such
+		// account" via response latency. The boolean result is
+		// discarded; we always return the generic 401 below.
+		atomic.AddUint64(&h.verifyCount, 1)
+		_, _ = VerifyPassword(req.Password, h.dummyHash)
 		return echo.NewHTTPError(http.StatusUnauthorized, "invalid email or password")
 	}
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	atomic.AddUint64(&h.verifyCount, 1)
 	ok, vErr := VerifyPassword(req.Password, user.PasswordHash)
 	if vErr != nil || !ok {
 		return echo.NewHTTPError(http.StatusUnauthorized, "invalid email or password")
@@ -235,10 +272,12 @@ func (h *AuthHandler) logout(c echo.Context) error {
 			if claims, err := parseJWT(cookie.Value, h.cfg.AuthJWTSecret); err == nil && claims.ID != "" {
 				ttl := time.Until(claims.ExpiresAt.Time)
 				if ttl > 0 {
+					// Single per-jti key with TTL. middleware/auth.go
+					// reads this same key; the old SADD into a
+					// parallel set was dead code (never consulted)
+					// and only kept around for a misleading comment.
 					_ = h.redis.Set(c.Request().Context(),
 						"auth:revoked:"+claims.ID, "1", ttl).Err()
-					_ = h.redis.SAdd(c.Request().Context(),
-						RevokedJTISetKey, claims.ID).Err()
 				}
 			}
 		}
@@ -648,6 +687,18 @@ func clientIP(c echo.Context) string {
 
 // ---------- in-memory IP rate-limiter ----------
 
+// maxIPLimiterEntries caps the size of the per-IP state map. A bursty
+// X-Forwarded-For sender could otherwise fill memory with unique
+// fake-IP entries; once the cap is hit, allow() refuses every new IP
+// until expired entries are reaped on subsequent calls. Already-tracked
+// IPs continue to be served.
+const maxIPLimiterEntries = 10000
+
+// gcScanBudget bounds how many entries we scan per allow() call when
+// opportunistically reaping expired rows — keeps the critical section
+// short even under hostile traffic.
+const gcScanBudget = 100
+
 // ipLimiter is a tiny fixed-window counter per IP. Reset every `window`.
 // Not concurrency-fancy: a single sync.Mutex around a map; the login
 // path is not on a hot path so contention cost is negligible.
@@ -672,7 +723,9 @@ func newIPLimiter(limit int, window time.Duration) *ipLimiter {
 }
 
 // allow returns true iff the IP is within the rate budget. Side effect:
-// increments the per-IP counter.
+// increments the per-IP counter. Opportunistically reaps up to
+// gcScanBudget expired entries on every call so the map can't grow
+// unbounded under hostile X-Forwarded-For flooding.
 func (l *ipLimiter) allow(ip string) bool {
 	if ip == "" {
 		// Unknown source — let it through; the user-id middleware will
@@ -682,8 +735,31 @@ func (l *ipLimiter) allow(ip string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()
+
+	// Opportunistic GC. Map iteration order is randomised so scanning a
+	// bounded prefix eventually visits every entry; we just need to
+	// keep up with steady-state growth, not amortise the whole map
+	// every call.
+	scanned := 0
+	for k, v := range l.state {
+		if scanned >= gcScanBudget {
+			break
+		}
+		scanned++
+		if now.After(v.resetAt) {
+			delete(l.state, k)
+		}
+	}
+
 	s, ok := l.state[ip]
 	if !ok || now.After(s.resetAt) {
+		// Fix 4: protective deny when the table is full. Existing IPs
+		// keep working; only brand-new IPs are refused until the GC
+		// catches up. This prevents OOM rather than truly stopping a
+		// determined attacker — paired with the proxy ACL it's enough.
+		if !ok && len(l.state) >= maxIPLimiterEntries {
+			return false
+		}
 		l.state[ip] = &ipState{count: 1, resetAt: now.Add(l.window)}
 		return true
 	}
@@ -692,4 +768,11 @@ func (l *ipLimiter) allow(ip string) bool {
 	}
 	s.count++
 	return true
+}
+
+// size returns the current state map size. Exported only for tests.
+func (l *ipLimiter) size() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.state)
 }

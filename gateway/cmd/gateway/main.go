@@ -42,6 +42,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Opt-in s2s header bypass advisory. We log unconditionally so
+	// operators can grep this line to confirm the gateway's auth
+	// posture. Default deployments leave ALLOW_S2S_HEADER unset and
+	// hit the second branch.
+	if cfg.AllowS2SHeader {
+		logger.Warn("WARNING: ALLOW_S2S_HEADER=true; X-Admin-Key bypass enabled — ensure port is not internet-facing")
+	} else {
+		logger.Info("s2s header bypass disabled (cookie auth required on every /api/v1 path)")
+	}
+
 	cryptoSvc, err := crypto.New(cfg.EncryptionKey)
 	if err != nil {
 		logger.Error("crypto init failed", "err", err)

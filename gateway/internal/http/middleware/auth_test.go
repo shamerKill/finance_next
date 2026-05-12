@@ -6,8 +6,8 @@
 //   * valid cookie → context populated, next called
 //   * missing cookie + non-whitelisted → 401
 //   * tampered / invalid cookie + no header → 401
-//   * cookie absent but X-User-Id header set → next (s2s backdoor)
-//   * cookie absent but X-Admin-Key header set → next (s2s backdoor)
+//   * default config: X-User-Id / X-Admin-Key headers do NOT bypass cookie auth
+//   * AllowS2SHeader=true: only matching X-Admin-Key bypasses; bare X-User-Id still 401
 package middleware
 
 import (
@@ -104,21 +104,89 @@ func TestWithAuth_TamperedCookie401(t *testing.T) {
 	}
 }
 
-func TestWithAuth_HeaderBackdoor_UserID(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/option", nil)
-	req.Header.Set(HeaderUserID, "alice")
-	_, called, _ := runWithAuth(t, req)
-	if !called {
-		t.Fatal("expected handler called via X-User-Id backdoor")
+// TestWithAuth_HeaderBypass_DefaultDenied locks in the post-fix-1 contract:
+// the default config (AllowS2SHeader=false) must REJECT requests that
+// authenticate only via X-User-Id or X-Admin-Key headers. Cookie auth is
+// mandatory on every non-whitelisted path unless an operator opts in.
+func TestWithAuth_HeaderBypass_DefaultDenied(t *testing.T) {
+	cases := []struct {
+		name   string
+		header string
+		value  string
+	}{
+		{"x-user-id alone", HeaderUserID, "alice"},
+		{"x-admin-key alone", HeaderAdminKey, "secret"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := echo.New()
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/option", nil)
+			req.Header.Set(tc.header, tc.value)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			called := false
+			handler := WithAuth(AuthConfig{Secret: "test", Parser: stubParser})(func(c echo.Context) error {
+				called = true
+				return c.NoContent(http.StatusOK)
+			})
+			if err := handler(c); err != nil {
+				e.HTTPErrorHandler(err, c)
+			}
+			if called {
+				t.Fatalf("default cfg should not allow header-only auth (%s=%s)", tc.header, tc.value)
+			}
+			if rec.Code != http.StatusUnauthorized {
+				t.Errorf("expected 401, got %d", rec.Code)
+			}
+		})
 	}
 }
 
-func TestWithAuth_HeaderBackdoor_AdminKey(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/audit", nil)
-	req.Header.Set(HeaderAdminKey, "any")
-	_, called, _ := runWithAuth(t, req)
-	if !called {
-		t.Fatal("expected handler called via X-Admin-Key backdoor")
+// TestWithAuth_HeaderBypass_OptInRequiresAdminKey covers the opt-in path:
+// AllowS2SHeader=true + AdminKey="secret" admits only a request that
+// presents the matching X-Admin-Key. A wrong key or a bare X-User-Id
+// header is still 401.
+func TestWithAuth_HeaderBypass_OptInRequiresAdminKey(t *testing.T) {
+	cases := []struct {
+		name       string
+		header     string
+		value      string
+		wantCalled bool
+	}{
+		{"matching admin key allows", HeaderAdminKey, "secret", true},
+		{"wrong admin key denied", HeaderAdminKey, "wrong", false},
+		{"bare x-user-id denied", HeaderUserID, "alice", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := echo.New()
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/option", nil)
+			req.Header.Set(tc.header, tc.value)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			called := false
+			cfg := AuthConfig{
+				Secret:         "test",
+				Parser:         stubParser,
+				AllowS2SHeader: true,
+				AdminKey:       "secret",
+			}
+			handler := WithAuth(cfg)(func(c echo.Context) error {
+				called = true
+				return c.NoContent(http.StatusOK)
+			})
+			if err := handler(c); err != nil {
+				e.HTTPErrorHandler(err, c)
+			}
+			if called != tc.wantCalled {
+				t.Fatalf("called=%v, want %v (header=%s=%s, status=%d)", called, tc.wantCalled, tc.header, tc.value, rec.Code)
+			}
+			if !tc.wantCalled && rec.Code != http.StatusUnauthorized {
+				t.Errorf("expected 401, got %d", rec.Code)
+			}
+		})
 	}
 }
 

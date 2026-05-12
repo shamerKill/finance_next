@@ -167,7 +167,7 @@ func (m *Middleware) Middleware() echo.MiddlewareFunc {
 
 			entry := &domain.AuditEntry{
 				Ts:           time.Now().UTC(),
-				Actor:        actorFromRequest(req),
+				Actor:        actorFromContext(c, req),
 				Action:       req.Method + " " + path,
 				ResourceType: classifyResource(path),
 				ResourceID:   resourceIDFromPath(path),
@@ -193,10 +193,16 @@ func (m *Middleware) Middleware() echo.MiddlewareFunc {
 	}
 }
 
-// actorFromRequest derives the actor identifier. Pre-auth, we use the
-// admin actor header (set by the admin UI) or fall back to "anonymous".
-// Phase 8 will replace this with the authenticated user id.
-func actorFromRequest(r *http.Request) string {
+// actorFromContext derives the actor identifier. Fix 3 mounts this
+// middleware BEFORE WithAuth so failed-auth requests still produce an
+// audit row; in that case the Echo userId context is unpopulated and
+// we fall back to the admin-actor header / admin-key marker /
+// "anonymous". When WithAuth has run successfully the context carries
+// the authenticated subject — that always wins over the headers.
+func actorFromContext(c echo.Context, r *http.Request) string {
+	if uid, ok := c.Get(ContextKey).(string); ok && uid != "" {
+		return uid
+	}
 	if v := r.Header.Get("X-Admin-Actor"); v != "" {
 		return v
 	}

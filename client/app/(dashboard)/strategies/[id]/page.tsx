@@ -13,6 +13,7 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { RecentTracker } from "@/components/recent-tracker";
 import { Section } from "@/components/section";
 import { StatusBadge } from "@/components/status-badge";
 import {
@@ -168,6 +169,12 @@ export default async function StrategyDetailPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6">
+      <RecentTracker
+        id={id}
+        kind="strategy"
+        label={strategy.name}
+        path={`/strategies/${id}`}
+      />
       <PageHeader
         breadcrumb={
           <Link href="/strategies" className="hover:underline">

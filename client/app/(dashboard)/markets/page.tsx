@@ -7,6 +7,7 @@
 import { ApiErrorView } from "@/components/api-error";
 import { IngestButton } from "@/components/ingest-button";
 import { PageHeader } from "@/components/page-header";
+import { RecentTracker } from "@/components/recent-tracker";
 import { getOhlcv, type TypeOhlcvBar } from "@/data/api-client";
 import type { TypeExchange } from "@/data/type";
 
@@ -110,6 +111,12 @@ export default async function MarketsPage({
 
   return (
     <div className="flex flex-col gap-4">
+      <RecentTracker
+        id={`${exchange}:${symbol}:${timeframe}`}
+        kind="market"
+        label={`${exchange.toUpperCase()} ${symbol} ${timeframe}`}
+        path={`/markets?ex=${exchange}&sym=${symbol}&tf=${timeframe}&range=${range}`}
+      />
       <PageHeader
         title="行情"
         subtitle={`${exchange.toUpperCase()} · ${symbol} · ${timeframe} · ${range}`}

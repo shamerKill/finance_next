@@ -11,6 +11,7 @@
 
 import Link from "next/link";
 
+import { RecentTracker } from "@/components/recent-tracker";
 import {
   getRecommendation,
   getStrategy,
@@ -119,6 +120,12 @@ export default async function RecommendationDetailPage({ params }: PageProps) {
 
   return (
     <div className="flex flex-col gap-6">
+      <RecentTracker
+        id={id}
+        kind="recommendation"
+        label={headerStrategyLabel}
+        path={`/recommendations/${id}`}
+      />
       <header className="flex items-start justify-between gap-4">
         <div>
           <Link

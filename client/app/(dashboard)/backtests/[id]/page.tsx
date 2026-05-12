@@ -11,6 +11,7 @@
 import Link from "next/link";
 
 import { PageHeader } from "@/components/page-header";
+import { RecentTracker } from "@/components/recent-tracker";
 import { getBacktest, getEquityCurve, getStrategy, getTrades } from "@/data/api-client";
 import type {
   TypeBacktest,
@@ -105,6 +106,12 @@ export default async function BacktestDetailPage({ params }: Params) {
 
   return (
     <div className="flex flex-col gap-6">
+      <RecentTracker
+        id={head.runId}
+        kind="backtest"
+        label={strategyLabel}
+        path={`/backtests/${head.runId}`}
+      />
       <PageHeader
         breadcrumb={
           <span className="flex items-center gap-2">

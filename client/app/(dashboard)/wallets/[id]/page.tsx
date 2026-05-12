@@ -13,6 +13,7 @@ import {
   getWalletPositions,
 } from "@/data/api-client";
 import { useAdminKey } from "@/data/use-admin-key";
+import { pushRecent } from "@/data/use-recent-resources";
 import {
   TypeWallet,
   TypeWalletBalance,
@@ -35,7 +36,16 @@ export default function WalletDetailPage() {
     (async () => {
       try {
         const w = await getWallet(id);
-        if (!cancel) setWallet(w);
+        if (!cancel) {
+          setWallet(w);
+          // Node 2.C.4 — 推到 cmd-palette 最近访问 list
+          pushRecent({
+            id,
+            kind: "wallet",
+            label: w.label,
+            path: `/wallets/${id}`,
+          });
+        }
         const b = await getWalletBalance(id).catch(() => null);
         if (!cancel) setBalance(b);
         const p = await getWalletPositions(id).catch(() => []);

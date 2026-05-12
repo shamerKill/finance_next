@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { RecentTracker } from "@/components/recent-tracker";
 import { Section } from "@/components/section";
 import { getAccount, getBalances, getPositions, getOptions } from "@/data/api-client";
 import {
@@ -104,6 +105,12 @@ export default async function AccountDetailPage({ params }: PageProps) {
 
   return (
     <div>
+      <RecentTracker
+        id={account.id}
+        kind="account"
+        label={account.label}
+        path={`/accounts/${account.id}`}
+      />
       <PageHeader
         breadcrumb={
           <Link href="/accounts" className="hover:underline">

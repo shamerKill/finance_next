@@ -1,5 +1,6 @@
 "use client";
 
+import { Tooltip } from "@heroui/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -14,14 +15,14 @@ import { listRecommendations } from "@/data/api-client";
 import { useAdminKey } from "@/data/use-admin-key";
 import { useSystemState } from "@/data/use-system-state";
 
-interface NavItem {
+export interface NavItem {
   href: string;
   label: string;
   // Optional slot rendered after the label — used for badges / dots.
   trailing?: (ctx: SidebarContext) => ReactNode;
 }
 
-interface NavGroup {
+export interface NavGroup {
   label: string;
   items: NavItem[];
 }
@@ -31,7 +32,7 @@ interface SidebarContext {
   tradingHalted: boolean;
 }
 
-const GROUPS: NavGroup[] = [
+export const SIDEBAR_GROUPS: NavGroup[] = [
   {
     label: "运营",
     items: [
@@ -146,7 +147,7 @@ function SidebarNav({
 }) {
   return (
     <nav className="flex flex-col gap-1 text-sm">
-      {GROUPS.map((group) => (
+      {SIDEBAR_GROUPS.map((group) => (
         <div key={group.label} className="flex flex-col gap-0.5">
           <div className="text-xs uppercase tracking-wide text-default-400 mt-4 mb-1">
             {group.label}
@@ -177,13 +178,81 @@ function SidebarNav({
   );
 }
 
+// Single-glyph fallback when an item has no explicit icon. Renders the
+// first character of the Chinese label (e.g. "策" / "回" / "审"). Crude
+// but completely free — no icon-library dependency, no SVG drift.
+function ItemGlyph({ label }: { label: string }) {
+  const ch = label.trim().charAt(0) || "?";
+  return (
+    <span className="inline-flex items-center justify-center w-7 h-7 rounded text-sm font-medium">
+      {ch}
+    </span>
+  );
+}
+
+// Collapsed (icon-rail) nav used on `md~lg`. Each entry is a single
+// glyph rendered inside a HeroUI <Tooltip> that pops out the full label
+// on hover. Group headers are omitted in this mode (no horizontal space)
+// but the items keep their original ordering so muscle-memory survives.
+function SidebarRail({
+  pathname,
+  ctx,
+  onNavigate,
+}: {
+  pathname: string;
+  ctx: SidebarContext;
+  onNavigate?: () => void;
+}) {
+  return (
+    <nav className="flex flex-col items-center gap-1 text-sm">
+      {SIDEBAR_GROUPS.map((group, gi) => (
+        <div key={group.label} className="flex flex-col items-center gap-1">
+          {gi > 0 && (
+            <div className="w-6 my-1 border-t border-border-default" aria-hidden />
+          )}
+          {group.items.map((item) => {
+            const active = isActive(pathname, item.href);
+            const trailing = item.trailing?.(ctx);
+            return (
+              <Tooltip
+                key={item.href}
+                content={item.label}
+                placement="right"
+                delay={300}
+              >
+                <Link
+                  href={item.href}
+                  onClick={onNavigate}
+                  aria-label={item.label}
+                  className={`relative flex items-center justify-center w-10 h-10 rounded ${
+                    active
+                      ? "bg-primary-50 text-primary-700"
+                      : "text-text-secondary hover:bg-default-100 hover:text-text-primary"
+                  }`}
+                >
+                  <ItemGlyph label={item.label} />
+                  {trailing && (
+                    <span className="absolute -top-1 -right-1 pointer-events-none">
+                      {trailing}
+                    </span>
+                  )}
+                </Link>
+              </Tooltip>
+            );
+          })}
+        </div>
+      ))}
+    </nav>
+  );
+}
+
 // Mobile header — visible <lg only. Renders the hamburger button that
 // opens the shared drawer. Lives outside <Sidebar> so the dashboard
 // layout can keep it at the top of the document flow while the
 // permanent aside sits alongside <main> in the row below.
-export function MobileHeader() {
+export function MobileHeader({ trailing }: { trailing?: ReactNode } = {}) {
   return (
-    <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between border-b border-border-default bg-bg-surface px-4 py-3">
+    <header className="md:hidden sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-border-default bg-bg-surface px-4 py-3">
       <button
         type="button"
         onClick={() => setDrawer(true)}
@@ -206,12 +275,14 @@ export function MobileHeader() {
         </svg>
       </button>
       <span className="font-semibold">finance_next</span>
-      <span className="w-6" aria-hidden />
+      <div className="flex items-center gap-1 shrink-0">
+        {trailing ?? <span className="w-6" aria-hidden />}
+      </div>
     </header>
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ collapsed = false }: { collapsed?: boolean } = {}) {
   const pathname = usePathname() ?? "";
   const adminKey = useAdminKey();
   const systemState = useSystemState(adminKey);
@@ -278,16 +349,36 @@ export function Sidebar() {
 
   return (
     <SidebarCtxContext.Provider value={ctx}>
-      {/* Permanent desktop sidebar — visible lg+ only. */}
-      <aside className="hidden lg:block w-56 shrink-0 border-r border-border-default bg-bg-surface p-4">
-        <div className="text-lg font-semibold mb-6">finance_next</div>
-        <SidebarNav pathname={pathname} ctx={ctx} />
-      </aside>
+      {/* Permanent desktop sidebar — visible md+ only. Renders as a 60px
+          icon rail in collapsed mode (md ~ lg) and a 224px labelled
+          aside in full mode (lg+). The route-group layout chooses which
+          mode to ask for via the `collapsed` prop. */}
+      {collapsed ? (
+        <aside
+          className="hidden md:flex lg:hidden flex-col items-center w-[60px] shrink-0 border-r border-border-default bg-bg-surface py-3"
+          aria-label="侧边导航"
+        >
+          <div
+            className="text-base font-semibold mb-4"
+            aria-label="finance_next"
+          >
+            f
+          </div>
+          <SidebarRail pathname={pathname} ctx={ctx} />
+        </aside>
+      ) : (
+        <aside className="hidden lg:block w-56 shrink-0 border-r border-border-default bg-bg-surface p-4">
+          <div className="text-lg font-semibold mb-6">finance_next</div>
+          <SidebarNav pathname={pathname} ctx={ctx} />
+        </aside>
+      )}
 
       {/* Mobile drawer + backdrop. Rendered always (to allow CSS
-          transitions); pointer-events / opacity gated on `drawerOpen`. */}
+          transitions); pointer-events / opacity gated on `drawerOpen`.
+          Hidden on md+ since tablets get the icon rail and desktops get
+          the full labelled aside — neither needs the drawer overlay. */}
       <div
-        className={`lg:hidden fixed inset-0 z-40 transition-opacity ${
+        className={`md:hidden fixed inset-0 z-40 transition-opacity ${
           drawerOpen
             ? "opacity-100 pointer-events-auto"
             : "opacity-0 pointer-events-none"

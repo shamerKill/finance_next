@@ -2,10 +2,11 @@ import Link from "next/link";
 
 import { ApiErrorView } from "@/components/api-error";
 import { EmptyState } from "@/components/empty-state";
-import { IngestButton } from "@/components/ingest-button";
 import { PageHeader } from "@/components/page-header";
 import { listPredictionMarkets } from "@/data/api-client";
 import { TypePredictionMarket } from "@/data/type";
+
+import { IngestWithVerify } from "./ingest-with-verify";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export default async function PredictionMarketsPage({
       <PageHeader
         title="预测市场"
         subtitle="Polymarket 条件目录。点击市场查看订单簿和下单表单。"
-        action={<IngestButton path="v1/admin/ingest/prediction" />}
+        action={<IngestWithVerify />}
       />
 
       <div className="mb-4">

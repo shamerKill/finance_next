@@ -17,9 +17,27 @@ export interface IngestButtonProps {
   body?: Record<string, unknown>;
   /** Button label. */
   label?: string;
-  /** Re-fetch the current route after a successful trigger (5s delay). */
-  refresh?: boolean;
+  /**
+   * Callback returning the **current** observable row count for the
+   * page this button lives on. When supplied, the button polls this
+   * function for up to ~60s after a successful XADD; the first time
+   * the count goes up it calls router.refresh() to repaint the SSR
+   * page with the new data and surfaces "新增 N 条". If the count
+   * never changes within the timeout, surfaces "未增量（数据源去重 /
+   * 无新条目）" so the user knows the ingest actually completed
+   * rather than just timed out silently.
+   *
+   * When ``verify`` is omitted, falls back to the legacy behaviour:
+   * 4 evenly-spaced ``router.refresh()`` calls at 5/10/20/30s.
+   */
+  verify?: () => Promise<number>;
 }
+
+type Status =
+  | { kind: "idle" }
+  | { kind: "busy" }
+  | { kind: "ok"; message: string }
+  | { kind: "err"; message: string };
 
 // Shared button for the various admin-key-gated ingest endpoints. Reads
 // the admin key from localStorage; if absent, the button is rendered
@@ -28,20 +46,29 @@ export function IngestButton({
   path,
   body,
   label = "立即抓取数据",
-  refresh = true,
+  verify,
 }: IngestButtonProps) {
   const router = useRouter();
   const adminKey = useAdminKey();
-  const [status, setStatus] = useState<
-    | { kind: "idle" }
-    | { kind: "busy" }
-    | { kind: "ok"; message: string }
-    | { kind: "err"; message: string }
-  >({ kind: "idle" });
+  const [status, setStatus] = useState<Status>({ kind: "idle" });
 
   const onClick = async () => {
     if (!adminKey) return;
     setStatus({ kind: "busy" });
+
+    // Snapshot the initial count BEFORE the trigger so the verify
+    // polling has something to compare against. If the user has a
+    // stale page that already shows N rows and the consumer adds 0
+    // new ones, count stays at N and we report "未增量".
+    let initialCount: number | null = null;
+    if (verify) {
+      try {
+        initialCount = await verify();
+      } catch {
+        // ignore — we'll skip the verify polling if we can't get a baseline
+      }
+    }
+
     try {
       const url = baseUrl + `/${path}`.replace("//", "/");
       const res = await fetch(url, {
@@ -56,17 +83,6 @@ export function IngestButton({
         const text = await res.text();
         throw new ApiError(res.status, text || `HTTP ${res.status}`, text);
       }
-      setStatus({ kind: "ok", message: "已触发数据采集（异步），等待结果…" });
-      if (refresh) {
-        // 5s was too short for real network ingests (CryptoPanic / RSS /
-        // ccxt all need 10-30s end-to-end). Poll the route 4 times at
-        // increasing intervals so the user sees the new data when it
-        // actually lands, instead of staring at an unchanged page.
-        const delays = [5000, 10000, 20000, 30000];
-        delays.forEach((d) =>
-          setTimeout(() => router.refresh(), d),
-        );
-      }
     } catch (e) {
       const msg =
         e instanceof ApiError
@@ -77,7 +93,55 @@ export function IngestButton({
             ? e.message
             : String(e);
       setStatus({ kind: "err", message: msg });
+      return;
     }
+
+    // The XADD succeeded. Now wait for the consumer to actually land
+    // data. Two paths:
+    //   (a) verify callback supplied → poll it for changes
+    //   (b) no callback → fall back to a fixed schedule of refreshes
+    setStatus({ kind: "ok", message: "已触发，等待数据落库…" });
+
+    if (verify && initialCount !== null) {
+      const startedAt = Date.now();
+      const timeoutMs = 60_000;
+      // First refresh quickly so even cached pages re-paint while
+      // we're still polling — common case is data lands in <5s.
+      const earlyRefresh = setTimeout(() => router.refresh(), 3_000);
+      while (Date.now() - startedAt < timeoutMs) {
+        await sleep(3_000);
+        let current: number | null = null;
+        try {
+          current = await verify();
+        } catch {
+          // transient — keep polling
+        }
+        if (current !== null && current > initialCount) {
+          clearTimeout(earlyRefresh);
+          router.refresh();
+          setStatus({
+            kind: "ok",
+            message: `已抓取（新增 ${current - initialCount} 条）`,
+          });
+          return;
+        }
+      }
+      clearTimeout(earlyRefresh);
+      // Trigger one final refresh anyway in case the count is
+      // computed from a different filter than what we polled.
+      router.refresh();
+      setStatus({
+        kind: "ok",
+        message: "已触发，但 60s 内无增量（去重或源未更新）",
+      });
+      return;
+    }
+
+    // Legacy path: no verify callback. Fan out a few refreshes and call it.
+    [5_000, 10_000, 20_000, 30_000].forEach((d) =>
+      setTimeout(() => router.refresh(), d),
+    );
+    setStatus({ kind: "ok", message: "已触发数据采集（异步）" });
   };
 
   if (!adminKey) {
@@ -110,4 +174,8 @@ export function IngestButton({
       )}
     </div>
   );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }

@@ -3,10 +3,11 @@
 // (the gateway endpoint already accepts ?symbols=).
 
 import { ApiErrorView } from "@/components/api-error";
-import { IngestButton } from "@/components/ingest-button";
 import { PageHeader } from "@/components/page-header";
 import { getNews } from "@/data/api-client";
 import type { TypeNewsItem } from "@/data/type";
+
+import { IngestWithVerify } from "./ingest-with-verify";
 
 export const metadata = { title: "新闻与情绪" };
 
@@ -31,7 +32,7 @@ export default async function NewsPage() {
       <PageHeader
         title="新闻与情绪"
         subtitle={`来自 CryptoPanic / AKShare 财联社 / RSS 的最新 ${items.length} 条。情绪为占位词典打分 — 不构成投资建议。`}
-        action={<IngestButton path="v1/admin/ingest/news" body={{ limit: 100 }} />}
+        action={<IngestWithVerify />}
       />
       <ApiErrorView error={error} />
       <ul className="flex flex-col gap-2">

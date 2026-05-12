@@ -2,6 +2,8 @@
 package http
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -20,6 +22,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/redis/go-redis/v9"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 // Deps bundles the wiring the router needs. Grouping keeps the constructor
@@ -36,6 +39,13 @@ type Deps struct {
 	AuditRepo           *mongostore.AuditRepo
 	UserRepo            *mongostore.UserRepo
 	InvitationRepo      *mongostore.InvitationRepo
+
+	// MongoDB is the raw Database handle used by handlers that need to
+	// run multi-collection operations the per-collection repos don't
+	// expose — currently only the Node 1.A.2 admin claim-legacy
+	// endpoint which UpdateMany's ten collections atomically. Nil =
+	// endpoint returns 503.
+	MongoDB *mongo.Database
 	Crypto              *crypto.Service
 	Envelope            *crypto.EnvelopeService
 
@@ -102,21 +112,29 @@ func NewRouter(d Deps) *echo.Echo {
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestID())
 	e.Use(middleware.Logger())
-	// CORS: dev defaults to "*", production locks down via ALLOWED_ORIGINS.
+	// CORS: dev defaults to localhost:3000, production locks down via
+	// ALLOWED_ORIGINS. AllowCredentials is REQUIRED — the frontend sends
+	// the auth cookie via fetch(..., { credentials: "include" }), and
+	// browsers drop the cookie if the response doesn't echo
+	// `Access-Control-Allow-Credentials: true`. Per CORS spec,
+	// AllowCredentials is mutually exclusive with the "*" wildcard, so we
+	// always materialise an explicit origin list: defaults to
+	// http://localhost:3000 for dev when ALLOWED_ORIGINS is unset.
 	//
-	// "X-Admin-Key" is included so the dashboard layout banner, admin pages,
-	// wallet approve, and strategy live-submit calls can reach the gateway
-	// from the browser — without it the preflight strips the header and
-	// every admin call surfaces as a 401/403 to the user. "X-User-Id" is
+	// "X-Admin-Key" is included so the dashboard layout banner, admin
+	// pages, wallet approve, and strategy live-submit calls can reach the
+	// gateway from the browser — without it the preflight strips the
+	// header and every admin call surfaces as a 401/403. "X-User-Id" is
 	// allowed for the R2 multi-tenant boundary middleware.
 	corsOrigins := d.AllowedOrigins
 	if len(corsOrigins) == 0 {
-		corsOrigins = []string{"*"}
+		corsOrigins = []string{"http://localhost:3000"}
 	}
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: corsOrigins,
-		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders: []string{"Content-Type", "Authorization", "X-Admin-Key", "X-User-Id"},
+		AllowOrigins:     corsOrigins,
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Content-Type", "Authorization", "X-Admin-Key", "X-User-Id"},
+		AllowCredentials: true,
 	}))
 
 	// Phase 7 observability: register every metric the Grafana dashboards
@@ -301,6 +319,13 @@ func NewRouter(d Deps) *echo.Echo {
 	// can call GetAIConfig; nil = 503 with a clear message.
 	handlers.NewAdminHandler(d.SystemRepo, d.AuditRepo, d.Quant, d.AdminKey).Register(v1)
 
+	// Node 1.A.2 admin user-migration endpoint. Mounted unconditionally
+	// — the handler enforces role=admin from the cookie context. When
+	// the deps are nil the endpoint returns 503 (rather than 404 like
+	// the AdminKey-gated endpoints) because this is part of the auth
+	// migration story, not a separate admin surface.
+	handlers.NewAdminUsersHandler(d.UserRepo, d.MongoDB).Register(v1)
+
 	// Phase 8 data-explorer reads (equities/futures OHLCV, macro,
 	// onchain, news) + admin-gated XADD ingest triggers. Each path
 	// degrades to 503 when the Timescale store is nil; admin paths
@@ -334,7 +359,106 @@ func NewRouter(d Deps) *echo.Echo {
 	// Forward orderengine package import to keep build happy when nil.
 	_ = orderengine.CommandSubmitStream
 	hub := ws.NewHubFull(accountHandler.UpstreamFactoryFor(), genericFactory, nil)
-	wsHandler := ws.NewHandler(hub, nil, d.AllowedOrigins)
+
+	// Phase 1.A.4: per-subscription ownership resolvers. Each resolver
+	// is a tiny closure around the existing repo's FindByID; topic
+	// kinds whose repo is nil simply don't get a resolver, in which
+	// case the hub's fail-closed branch rejects every subscribe for
+	// that kind.
+	//
+	// Optimization runs + backtests don't carry userId directly — they
+	// reference a strategyId. We chain through OptionRepo.FindByID to
+	// derive the owning user. The chain returns ("", nil) on missing
+	// strategy so Subscribe rejects with ErrOwnershipDenied (the more
+	// specific OwnershipUnknown is reserved for "no resolver wired").
+	if d.AccountRepo != nil {
+		hub.SetOwnerResolver(ws.TopicAccount, ws.OwnerResolverFunc(func(ctx context.Context, id string) (string, error) {
+			a, err := d.AccountRepo.FindByID(ctx, id)
+			if err != nil || a == nil {
+				return "", err
+			}
+			return a.UserID, nil
+		}))
+	}
+	if d.OptionRepo != nil {
+		hub.SetOwnerResolver(ws.TopicStrategy, ws.OwnerResolverFunc(func(ctx context.Context, id string) (string, error) {
+			o, err := d.OptionRepo.FindByID(ctx, id)
+			if err != nil || o == nil {
+				return "", err
+			}
+			return o.UserID, nil
+		}))
+	}
+	if d.BacktestRepo != nil && d.OptionRepo != nil {
+		hub.SetOwnerResolver(ws.TopicBacktest, ws.OwnerResolverFunc(func(ctx context.Context, id string) (string, error) {
+			doc, err := d.BacktestRepo.FindByID(ctx, id)
+			if err != nil || doc == nil {
+				return "", err
+			}
+			if doc.StrategyID == "" {
+				return "", nil
+			}
+			opt, err := d.OptionRepo.FindByID(ctx, doc.StrategyID)
+			if err != nil || opt == nil {
+				return "", err
+			}
+			return opt.UserID, nil
+		}))
+	}
+	if d.OptimizationRunRepo != nil && d.OptionRepo != nil {
+		hub.SetOwnerResolver(ws.TopicOptimization, ws.OwnerResolverFunc(func(ctx context.Context, id string) (string, error) {
+			doc, err := d.OptimizationRunRepo.FindByID(ctx, id)
+			if err != nil || doc == nil {
+				return "", err
+			}
+			if doc.StrategyID == "" {
+				return "", nil
+			}
+			opt, err := d.OptionRepo.FindByID(ctx, doc.StrategyID)
+			if err != nil || opt == nil {
+				return "", err
+			}
+			return opt.UserID, nil
+		}))
+	}
+	if d.PredictionStrategyRepo != nil {
+		hub.SetOwnerResolver(ws.TopicPredictionStrategy, ws.OwnerResolverFunc(func(ctx context.Context, id string) (string, error) {
+			s, err := d.PredictionStrategyRepo.FindByID(ctx, id)
+			if err != nil || s == nil {
+				return "", err
+			}
+			return s.UserID, nil
+		}))
+	}
+
+	// Phase 1.A.4 WS auth verifier. The closure binds the JWT secret
+	// from cfg and reuses handlers.ParseJWT — same parser the /api/v1
+	// middleware uses, so cookie + token semantics stay in lock-step.
+	// A nil verifier (no secret configured) preserves the legacy dev
+	// path where /ws is open; in that mode the ownership resolvers
+	// above still gate every subscribe (sessUserID == "" never matches
+	// a real owner), so an operator running without a JWT secret only
+	// gets a callable /ws if they also leave the resolvers unwired.
+	var verifier ws.AuthVerifier
+	if d.Config != nil && d.Config.AuthJWTSecret != "" {
+		secret := d.Config.AuthJWTSecret
+		verifier = func(r *http.Request) (string, string, error) {
+			cookie, err := r.Cookie(auditmw.AuthCookieName)
+			if err != nil || cookie == nil || cookie.Value == "" {
+				return "", "", errors.New("ws: missing auth_token cookie")
+			}
+			cl, perr := handlers.ParseJWT(cookie.Value, secret)
+			if perr != nil {
+				return "", "", perr
+			}
+			if cl.UserID == "" {
+				return "", "", errors.New("ws: empty subject claim")
+			}
+			return cl.UserID, cl.Role, nil
+		}
+	}
+
+	wsHandler := ws.NewHandlerWithAuth(hub, nil, d.AllowedOrigins, verifier)
 	e.GET("/ws", wsHandler.Handle)
 
 	e.GET("/healthz", func(c echo.Context) error {

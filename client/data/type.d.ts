@@ -590,3 +590,29 @@ export type TypeStrategyPerformance = {
   recentOrders: TypeStrategyPerformanceOrder[];
   notes?: string[];
 };
+
+// --- Phase 1.A.3 — auth user (cookie / JWT) ---------------------------
+//
+// Mirrors gateway/internal/domain/user.go::User minus the password hash
+// (the gateway strips that with json:"-"). Returned by GET /auth/me and
+// embedded into login/register/accept-invite 200 responses.
+export type TypeUserRole = "admin" | "member";
+
+export type TypeUser = {
+  id: string;
+  email: string;
+  role: TypeUserRole;
+  createdAt: string;
+  updatedAt?: string;
+  lastLoginAt?: string;
+  invitedBy?: string;
+};
+
+// Body of the admin /auth/invite reply. Token is also embedded inside
+// the URL but kept as a separate field for UIs that prefer to render a
+// raw "copy this" string instead of (or alongside) the URL.
+export type TypeInviteResult = {
+  inviteUrl: string;
+  token: string;
+  expiresAt: string;
+};

@@ -11,6 +11,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -139,7 +140,26 @@ func Load() (*Config, error) {
 	if len(cfg.AuthJWTSecret) < 32 {
 		return nil, errors.New("AUTH_JWT_SECRET must be at least 32 chars (use `openssl rand -hex 32`)")
 	}
+	cfg.validateAllowedOriginsForProd()
 	return cfg, nil
+}
+
+// validateAllowedOriginsForProd emits a warning when ALLOWED_ORIGINS
+// contains "*" (incompatible with credentials), or in production-ish
+// contexts (AuthCookieSecure=true) when an entry points at localhost —
+// both are likely misconfigurations. Logging only, never fatal: this is
+// surfaced once at boot so operators can react before traffic hits.
+func (c *Config) validateAllowedOriginsForProd() {
+	for _, o := range c.AllowedOrigins {
+		if o == "*" {
+			slog.Warn("ALLOWED_ORIGINS contains '*' — CORS credentials require explicit origins; the wildcard will not work with cookie auth",
+				"origin", o)
+		}
+		if c.AuthCookieSecure && strings.Contains(o, "localhost") {
+			slog.Warn("ALLOWED_ORIGINS contains a localhost origin in a Secure-cookie deployment — cookies require HTTPS in prod",
+				"origin", o)
+		}
+	}
 }
 
 // AuthJWTTTL returns the JWT lifetime as a time.Duration.

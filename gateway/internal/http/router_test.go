@@ -9,30 +9,48 @@ import (
 	"github.com/finance_next/gateway/internal/observability"
 )
 
-// TestCORS_DefaultAllowsAnyOrigin pins the dev-friendly fallback: when
-// no ALLOWED_ORIGINS allowlist is wired through Deps, the CORS middleware
-// must echo "*" for any inbound Origin so existing dev workflows keep
-// working unchanged.
-func TestCORS_DefaultAllowsAnyOrigin(t *testing.T) {
+// TestCORS_DefaultAllowsLocalhost pins the dev-friendly fallback. When
+// no ALLOWED_ORIGINS allowlist is wired through Deps, the CORS layer
+// MUST default to http://localhost:3000 (the Next.js dev server origin)
+// rather than "*" — Phase 1.A.3 added cookie-based auth, and per the
+// CORS spec `Access-Control-Allow-Credentials: true` is mutually
+// exclusive with the "*" wildcard. We also verify Allow-Credentials is
+// set and that a foreign origin gets no Allow-Origin echo.
+func TestCORS_DefaultAllowsLocalhost(t *testing.T) {
 	e := NewRouter(Deps{})
 
+	// Allowed dev origin → echoed back, credentials true.
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("OPTIONS", "/api/v1/admin/halt", nil)
-	req.Header.Set("Origin", "http://evil.example.com")
+	req.Header.Set("Origin", "http://localhost:3000")
 	req.Header.Set("Access-Control-Request-Method", "POST")
 	req.Header.Set("Access-Control-Request-Headers", "x-admin-key,content-type,x-user-id")
 	e.ServeHTTP(rec, req)
 
-	got := rec.Header().Get("Access-Control-Allow-Origin")
-	if got != "*" {
-		t.Errorf("expected Access-Control-Allow-Origin=*, got %q", got)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:3000" {
+		t.Errorf("expected Access-Control-Allow-Origin=http://localhost:3000, got %q", got)
 	}
-	// Headers required for the dashboard banner + admin pages to round-trip.
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Errorf("expected Access-Control-Allow-Credentials=true, got %q", got)
+	}
 	allowHdrs := strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers"))
 	for _, want := range []string{"x-admin-key", "x-user-id", "content-type"} {
 		if !strings.Contains(allowHdrs, want) {
 			t.Errorf("expected %q in Access-Control-Allow-Headers, got %q", want, allowHdrs)
 		}
+	}
+
+	// Foreign origin (no ALLOWED_ORIGINS configured but still not on the
+	// implicit dev allowlist) → no echo.
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest("OPTIONS", "/api/v1/admin/halt", nil)
+	req2.Header.Set("Origin", "http://evil.example.com")
+	req2.Header.Set("Access-Control-Request-Method", "POST")
+	req2.Header.Set("Access-Control-Request-Headers", "x-admin-key")
+	e.ServeHTTP(rec2, req2)
+	got := rec2.Header().Get("Access-Control-Allow-Origin")
+	if got == "*" || got == "http://evil.example.com" {
+		t.Errorf("foreign origin must not be authorized; got Access-Control-Allow-Origin=%q", got)
 	}
 }
 

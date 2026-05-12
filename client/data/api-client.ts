@@ -51,16 +51,22 @@ function userIdHeader(): Record<string, string> {
 }
 
 // apiFetch is the project-wide fetch wrapper. It merges in the X-User-Id
-// header (when localStorage has one) and preserves all other init fields.
-// Existing call sites use vanilla fetch — we leave those as-is rather than
-// rewriting every line; only the wrapper version is added so callers that
-// opt in can pick it up. Server-side rendered code paths (no window) get
-// the same fetch with no extra headers, matching the dev fallback.
+// header (when localStorage has one), preserves all other init fields,
+// and crucially sets `credentials: "include"` so the cookie-based JWT
+// (`auth_token`) is sent on every cross-origin request to the gateway.
+// Without `include`, browsers omit cookies on cross-origin fetches even
+// when the cookie's SameSite=Lax — which would silently break the entire
+// auth flow.
+//
+// Server-side rendered code paths (no window) inherit `credentials:
+// "include"` too; Node's fetch reads no cookie jar there, so it's a
+// harmless no-op on the server.
 export async function apiFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},
 ): Promise<Response> {
   const merged: RequestInit = {
+    credentials: "include",
     ...init,
     headers: {
       ...userIdHeader(),
@@ -86,8 +92,34 @@ export class ApiError extends Error {
   }
 }
 
+// AuthUnauthorizedEvent is the name of the CustomEvent dispatched on
+// `window` whenever a gateway call returns 401 or 403. The dashboard
+// layout listens for it and redirects to /login, avoiding a hard
+// `location.href=` reload that would tear down in-flight React state.
+//
+// Server components / Node call sites never see this event because there
+// is no `window` to dispatch on; their 401 paths surface as ApiError and
+// are handled by the calling page (typically `redirect("/login")`).
+export const AuthUnauthorizedEvent = "auth:unauthorized";
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
+    // Auth failures (cookie missing / expired / blacklisted): emit a
+    // browser event so the layout can route the user back to /login
+    // without a hard reload. We still throw ApiError so individual
+    // callers can also choose to render an inline error.
+    if ((res.status === 401 || res.status === 403) && typeof window !== "undefined") {
+      try {
+        window.dispatchEvent(
+          new CustomEvent(AuthUnauthorizedEvent, {
+            detail: { status: res.status, url: res.url },
+          }),
+        );
+      } catch {
+        // Some embedded webviews lack CustomEvent; fall through to
+        // ApiError without breaking the call chain.
+      }
+    }
     const text = await res.text();
     let message = text;
     try {

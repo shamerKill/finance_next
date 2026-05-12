@@ -1,14 +1,14 @@
 """CryptoPanic wrapper (Phase 8).
 
-Endpoint: ``https://cryptopanic.com/api/v1/posts/``. The free tier
-allows public-token-less reads, but signed reads (with ``?auth_token=``)
-get higher rate limits.
+CryptoPanic retired the unauthenticated ``/api/v1/posts/?public=true``
+endpoint sometime around 2025; it now returns 404. Without a token
+we have no working public endpoint, so the client short-circuits to
+empty + a one-time warning. When ``CRYPTOPANIC_TOKEN`` is set, we use
+the developer v2 endpoint (``/api/developer/v2/posts/?auth_token=…``).
 
-Env: ``CRYPTOPANIC_TOKEN`` (optional). When unset we still call the
-endpoint without it; if the upstream returns 401/429 the call returns
-an empty list with a warning rather than raising.
+Env: ``CRYPTOPANIC_TOKEN`` — required for any results.
 
-Rate limit: 1 req/sec / token (free tier informally).
+Rate limit: ~1 req/sec / token (free dev tier).
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import httpx
 log = logging.getLogger(__name__)
 
 
-CRYPTOPANIC_URL = "https://cryptopanic.com/api/v1/posts/"
+CRYPTOPANIC_URL = "https://cryptopanic.com/api/developer/v2/posts/"
 
 
 @dataclass(slots=True)
@@ -68,9 +68,13 @@ class CryptoPanicClient:
         ``since`` is best-effort — the API doesn't accept a timestamp
         cursor, so we filter client-side after the call.
         """
-        params: dict[str, Any] = {"public": "true"}
-        if self._token:
-            params["auth_token"] = self._token
+        if not self._token:
+            # v1 public endpoint is retired (404). No-token = no data.
+            log.info(
+                "cryptopanic: CRYPTOPANIC_TOKEN not set, skipping (v2 requires auth)"
+            )
+            return []
+        params: dict[str, Any] = {"auth_token": self._token}
         if currencies:
             params["currencies"] = ",".join(currencies)
         try:

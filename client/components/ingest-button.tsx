@@ -56,9 +56,16 @@ export function IngestButton({
         const text = await res.text();
         throw new ApiError(res.status, text || `HTTP ${res.status}`, text);
       }
-      setStatus({ kind: "ok", message: "已触发数据采集（异步）" });
+      setStatus({ kind: "ok", message: "已触发数据采集（异步），等待结果…" });
       if (refresh) {
-        setTimeout(() => router.refresh(), 5000);
+        // 5s was too short for real network ingests (CryptoPanic / RSS /
+        // ccxt all need 10-30s end-to-end). Poll the route 4 times at
+        // increasing intervals so the user sees the new data when it
+        // actually lands, instead of staring at an unchanged page.
+        const delays = [5000, 10000, 20000, 30000];
+        delays.forEach((d) =>
+          setTimeout(() => router.refresh(), d),
+        );
       }
     } catch (e) {
       const msg =

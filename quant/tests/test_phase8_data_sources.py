@@ -296,7 +296,9 @@ def test_glassnode_and_nansen_stubs_fail_closed(monkeypatch) -> None:
 
 @respx.mock
 async def test_cryptopanic_fetch_filters_since() -> None:
-    respx.get("https://cryptopanic.com/api/v1/posts/").mock(
+    # CryptoPanic retired v1 public-token-less API in 2025; v2 requires
+    # auth. We mock the developer/v2 endpoint and pass a token explicitly.
+    respx.get("https://cryptopanic.com/api/developer/v2/posts/").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -320,7 +322,7 @@ async def test_cryptopanic_fetch_filters_since() -> None:
         )
     )
     async with httpx.AsyncClient() as http:
-        c = CryptoPanicClient(token="", http_client=http)
+        c = CryptoPanicClient(token="test-token", http_client=http)
         items = await c.fetch(
             currencies=["BTC"], since=datetime(2024, 1, 3, tzinfo=UTC)
         )
@@ -328,6 +330,15 @@ async def test_cryptopanic_fetch_filters_since() -> None:
     assert len(items) == 1
     assert items[0].title == "ETH down"
     assert "ETH" in items[0].symbols
+
+
+async def test_cryptopanic_fetch_skips_without_token() -> None:
+    """v1 public endpoint is gone; with no token the client returns []
+    rather than hitting a known-404 URL and logging a confusing failure."""
+    async with httpx.AsyncClient() as http:
+        c = CryptoPanicClient(token="", http_client=http)
+        items = await c.fetch()
+    assert items == []
 
 
 async def test_akshare_cls_news_decodes() -> None:

@@ -120,12 +120,15 @@ async def test_run_macro_ingest_skips_fred_when_unset(
 
 async def test_run_news_ingest_scores_sentiment(monkeypatch, captured_repo) -> None:
     # Stub each upstream to a small async function via direct monkey-patches
-    # at the source-class level.
+    # at the source-class level. CryptoPanic now mocks the developer/v2
+    # endpoint and we pre-set the token env so the client doesn't short-
+    # circuit on token-absent skip.
     import httpx
     import respx
 
+    monkeypatch.setenv("CRYPTOPANIC_TOKEN", "test-token")
     with respx.mock:
-        respx.get("https://cryptopanic.com/api/v1/posts/").mock(
+        respx.get("https://cryptopanic.com/api/developer/v2/posts/").mock(
             return_value=httpx.Response(
                 200,
                 json={

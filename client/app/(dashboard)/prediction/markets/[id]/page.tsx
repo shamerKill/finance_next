@@ -1,11 +1,18 @@
 "use client";
 
+import { Button } from "@heroui/react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 import { ApiErrorView } from "@/components/api-error";
+import { Callout } from "@/components/callout";
+import { DataTable } from "@/components/data-table";
+import { OrderBook, OrderBookLevel } from "@/components/order-book";
 import { PageHeader } from "@/components/page-header";
+import { Section } from "@/components/section";
+import { Stat } from "@/components/stat";
+import { StatusBadge } from "@/components/status-badge";
 import {
   getPredictionMarket,
   getPredictionQuotes,
@@ -16,6 +23,15 @@ import {
   TypePredictionQuote,
   TypePredictionTrade,
 } from "@/data/type";
+
+// Node 2.C.5.e — adopt OrderBook + DataTable + Stat + PageHeader.
+// Polymarket's catalogue endpoint exposes a single bid/ask/mid quote (no
+// full ladder), so the orderbook visual renders one level per side. When
+// the quote stream eventually carries depth, this component will scale up
+// without further changes.
+
+const OUTCOME_BAR_GREEN = "bg-accent-up";
+const OUTCOME_BAR_RED = "bg-accent-down";
 
 export default function PredictionMarketDetailPage() {
   const params = useParams<{ id: string }>();
@@ -33,8 +49,6 @@ export default function PredictionMarketDetailPage() {
         if (!cancel) setMarket(m);
         const t = await getPredictionTrades(id, 50).catch(() => []);
         if (!cancel) setTrades(t);
-        // Quotes are keyed by token_id; use the market id as a placeholder
-        // until the metadata row carries token_ids.
         const q = await getPredictionQuotes(id).catch(() => []);
         if (!cancel) setQuotes(q);
       } catch (e) {
@@ -46,6 +60,28 @@ export default function PredictionMarketDetailPage() {
     };
   }, [id]);
 
+  const latestQuote = quotes.length > 0 ? quotes[quotes.length - 1] : null;
+  const yesMid = latestQuote?.mid ?? null;
+  const noMid = yesMid != null ? 1 - yesMid : null;
+
+  const { bids, asks } = useMemo(() => {
+    if (!latestQuote)
+      return { bids: [] as OrderBookLevel[], asks: [] as OrderBookLevel[] };
+    const bidPx = latestQuote.bid;
+    const askPx = latestQuote.ask;
+    const vol = latestQuote.volume24h ?? 1;
+    return {
+      bids:
+        bidPx != null
+          ? [{ price: bidPx, size: vol }]
+          : ([] as OrderBookLevel[]),
+      asks:
+        askPx != null
+          ? [{ price: askPx, size: vol }]
+          : ([] as OrderBookLevel[]),
+    };
+  }, [latestQuote]);
+
   const breadcrumb = (
     <span className="flex items-center gap-2 flex-wrap">
       <Link href="/prediction/markets" className="hover:underline">
@@ -53,7 +89,7 @@ export default function PredictionMarketDetailPage() {
       </Link>
       {market?.question && (
         <>
-          <span className="text-default-300">/</span>
+          <span className="text-text-tertiary">/</span>
           <span className="line-clamp-1 max-w-[60ch]">{market.question}</span>
         </>
       )}
@@ -82,78 +118,207 @@ export default function PredictionMarketDetailPage() {
         breadcrumb={breadcrumb}
         title={market.question}
         subtitle={
-          <>
-            {market.category} · 结束{" "}
-            {market.endDate
-              ? new Date(market.endDate).toLocaleString()
-              : "无结束日期"}
-          </>
+          <span className="flex flex-wrap items-center gap-2">
+            {market.category && (
+              <StatusBadge tone="default" variant="flat" size="sm">
+                {market.category}
+              </StatusBadge>
+            )}
+            <span>
+              结束：
+              {market.endDate
+                ? new Date(market.endDate).toLocaleString()
+                : "无结束日期"}
+            </span>
+          </span>
         }
         action={
-          <Link
+          <Button
+            as={Link}
             href={`/prediction/strategies/new?marketId=${encodeURIComponent(market.marketId)}`}
-            className="rounded bg-primary px-3 py-2 text-sm text-white hover:bg-primary-600"
+            color="primary"
+            size="sm"
           >
             为此市场创建策略 →
-          </Link>
+          </Button>
         }
       />
 
-      <section className="border border-default-200 rounded p-4">
-        <h2 className="font-semibold mb-2">最新报价</h2>
-        {quotes.length === 0 ? (
-          <div className="text-sm text-default-500">无报价历史。</div>
-        ) : (
-          <div className="grid gap-1 text-sm font-mono">
-            {quotes.slice(-10).map((q, i) => (
-              <div key={i} className="flex justify-between gap-2">
-                <span className="truncate">{new Date(q.ts).toISOString()}</span>
-                <span>中间价={(q.mid ?? 0).toFixed(4)}</span>
-              </div>
-            ))}
+      {yesMid != null && noMid != null && (
+        <Section title="结果概率">
+          <div className="space-y-3">
+            <OutcomeBar label="YES" prob={yesMid} color={OUTCOME_BAR_GREEN} />
+            <OutcomeBar label="NO" prob={noMid} color={OUTCOME_BAR_RED} />
           </div>
-        )}
-      </section>
+        </Section>
+      )}
 
-      <section className="border border-default-200 rounded p-4">
-        <h2 className="font-semibold mb-2">最近成交</h2>
-        {trades.length === 0 ? (
-          <div className="text-sm text-default-500">无成交历史。</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-xs text-default-500">
-                <tr>
-                  <th className="text-left">时间</th>
-                  <th className="text-left">方向</th>
-                  <th className="text-right">价格</th>
-                  <th className="text-right">数量</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trades.map((t) => (
-                  <tr key={t.txHash || `${t.ts}-${t.price}`}>
-                    <td className="font-mono text-xs">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <Stat
+          label="最新中间价"
+          value={
+            yesMid != null ? (
+              <span className="font-mono tnum">{yesMid.toFixed(4)}</span>
+            ) : (
+              "—"
+            )
+          }
+          hint="YES outcome"
+        />
+        <Stat
+          label="最新 last"
+          value={
+            latestQuote?.last != null ? (
+              <span className="font-mono tnum">
+                {latestQuote.last.toFixed(4)}
+              </span>
+            ) : (
+              "—"
+            )
+          }
+        />
+        <Stat
+          label="24h 成交量"
+          value={
+            latestQuote?.volume24h != null ? (
+              <span className="font-mono tnum">
+                {latestQuote.volume24h.toLocaleString()}
+              </span>
+            ) : (
+              "—"
+            )
+          }
+        />
+        <Stat
+          label="报价时间"
+          value={
+            latestQuote ? (
+              <span className="font-mono text-mono-sm tnum">
+                {new Date(latestQuote.ts).toLocaleTimeString()}
+              </span>
+            ) : (
+              "—"
+            )
+          }
+          hint={quotes.length === 0 ? "无报价历史" : `${quotes.length} 条记录`}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Section title="订单簿（YES）">
+          {bids.length === 0 && asks.length === 0 ? (
+            <div className="text-sm text-text-tertiary">
+              暂无报价。Polymarket 报价流抓取完成后会自动出现。
+            </div>
+          ) : (
+            <OrderBook
+              bids={bids}
+              asks={asks}
+              maxRows={10}
+              mid={
+                yesMid != null ? (
+                  <span className="font-mono tnum">
+                    mid {yesMid.toFixed(4)}
+                  </span>
+                ) : null
+              }
+            />
+          )}
+        </Section>
+
+        <Section title="最近成交">
+          {trades.length === 0 ? (
+            <div className="text-sm text-text-tertiary">无成交历史。</div>
+          ) : (
+            <DataTable<TypePredictionTrade>
+              ariaLabel="最近成交"
+              mobileLayout="scroll"
+              rows={trades}
+              getRowKey={(t) => t.txHash || `${t.ts}-${t.price}-${t.size}`}
+              columns={[
+                {
+                  key: "ts",
+                  label: "时间",
+                  render: (t) => (
+                    <span className="font-mono text-mono-sm tnum">
                       {new Date(t.ts).toLocaleTimeString()}
-                    </td>
-                    <td>{t.side}</td>
-                    <td className="text-right">{t.price.toFixed(4)}</td>
-                    <td className="text-right">{t.size.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                    </span>
+                  ),
+                },
+                {
+                  key: "side",
+                  label: "方向",
+                  render: (t) => (
+                    <StatusBadge
+                      tone={
+                        t.side.toUpperCase() === "BUY" ? "success" : "danger"
+                      }
+                      variant="dot"
+                      size="sm"
+                    >
+                      {t.side}
+                    </StatusBadge>
+                  ),
+                },
+                {
+                  key: "price",
+                  label: "价格",
+                  align: "end",
+                  render: (t) => (
+                    <span className="font-mono tnum">
+                      {t.price.toFixed(4)}
+                    </span>
+                  ),
+                },
+                {
+                  key: "size",
+                  label: "数量",
+                  align: "end",
+                  render: (t) => (
+                    <span className="font-mono tnum">
+                      {t.size.toFixed(2)}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          )}
+        </Section>
+      </div>
 
-      <section className="border border-default-200 rounded p-4 bg-warning/5">
-        <h2 className="font-semibold mb-2">下单</h2>
-        <div className="text-xs text-default-500">
-          下单通过预测策略完成 — 点击右上角{" "}
-          <em>“为此市场创建策略”</em> 预填此市场 ID，关联钱包后启用实盘。
-        </div>
-      </section>
+      <Callout variant="info" title="下单流程">
+        下单通过预测策略完成 — 点击右上角 <em>“为此市场创建策略”</em>{" "}
+        预填此市场 ID，关联钱包后启用实盘。Polymarket 没有测试网，启用实盘
+        需通过三道闸。
+      </Callout>
+    </div>
+  );
+}
+
+function OutcomeBar({
+  label,
+  prob,
+  color,
+}: {
+  label: string;
+  prob: number;
+  color: string;
+}) {
+  const pct = Math.max(0, Math.min(100, prob * 100));
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-text-secondary">{label}</span>
+        <span className="font-mono tnum text-text-primary">
+          {pct.toFixed(1)}%
+        </span>
+      </div>
+      <div className="h-2 w-full rounded-full bg-bg-surface-2 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-[width] duration-300 ${color}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
     </div>
   );
 }

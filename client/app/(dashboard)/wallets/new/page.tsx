@@ -1,31 +1,52 @@
 "use client";
 
 import { Button, Checkbox, Input } from "@heroui/react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
 import { ApiErrorView } from "@/components/api-error";
 import { Callout } from "@/components/callout";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { FormField } from "@/components/form-field";
+import { PageHeader } from "@/components/page-header";
+import { Section } from "@/components/section";
 import { createWallet } from "@/data/api-client";
 
-// F2.2 — HeroUI conversion. The 危险 warning block is now rendered
-// via the shared <Callout variant="danger"> primitive; bullet list and
-// content preserved verbatim.
+// Node 2.C.5.e — adopt FormField + ConfirmDialog. The danger callout
+// stays verbatim per spec §G5; private-key visibility toggle and
+// two-step confirm preserve the safety story.
+
 export default function NewWalletPage() {
   const router = useRouter();
   const [label, setLabel] = useState("");
   const [privateKey, setPrivateKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
   const [expectedAddress, setExpectedAddress] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const submit = async (e: FormEvent) => {
+  const validate = (): string | null => {
+    if (!label.trim()) return "请填写标签";
+    if (!privateKey.trim()) return "请填写私钥";
+    if (!acknowledged) return "继续之前必须确认安全警告";
+    return null;
+  };
+
+  const openConfirm = (e: FormEvent) => {
     e.preventDefault();
-    if (!acknowledged) {
-      setError(new Error("继续之前必须确认安全警告。"));
+    setError(null);
+    const v = validate();
+    if (v) {
+      setError(new Error(v));
       return;
     }
+    setConfirmOpen(true);
+  };
+
+  const submit = async () => {
     setSubmitting(true);
     setError(null);
     try {
@@ -38,12 +59,21 @@ export default function NewWalletPage() {
     } catch (err) {
       setError(err);
       setSubmitting(false);
+      // Re-throw so ConfirmDialog keeps itself open on failure.
+      throw err;
     }
   };
 
   return (
     <div className="max-w-xl">
-      <h1 className="text-2xl font-semibold mb-4">添加 Polygon 钱包</h1>
+      <PageHeader
+        breadcrumb={
+          <Link href="/wallets" className="hover:underline">
+            ← 钱包
+          </Link>
+        }
+        title="添加 Polygon 钱包"
+      />
 
       <div className="mb-6">
         <Callout variant="danger" title="危险 — 请仔细阅读">
@@ -77,49 +107,96 @@ export default function NewWalletPage() {
         </Callout>
       </div>
 
-      <form className="flex flex-col gap-4" onSubmit={submit}>
-        <Input
-          label="标签"
-          placeholder="primary-trading"
-          isRequired
-          value={label}
-          onValueChange={setLabel}
-        />
-        <Input
-          label="私钥（64 位十六进制）"
-          type="password"
-          placeholder="0x..."
-          isRequired
-          value={privateKey}
-          onValueChange={setPrivateKey}
-          className="font-mono"
-        />
-        <Input
-          label="预期地址（可选）"
-          placeholder="0x..."
-          value={expectedAddress}
-          onValueChange={setExpectedAddress}
-          className="font-mono"
-        />
+      <Section title="钱包信息">
+        <form className="flex flex-col gap-4" onSubmit={openConfirm}>
+          <FormField label="标签" required htmlFor="wallet-label">
+            <Input
+              id="wallet-label"
+              placeholder="primary-trading"
+              value={label}
+              onValueChange={setLabel}
+            />
+          </FormField>
 
-        <Checkbox
-          isSelected={acknowledged}
-          onValueChange={setAcknowledged}
-        >
-          我已了解上述风险，并已离线备份此私钥。
-        </Checkbox>
+          <FormField
+            label="私钥（64 位十六进制）"
+            required
+            htmlFor="wallet-pk"
+            hint="提交后由 gateway 加密入库；私钥永不离开后端。"
+          >
+            <Input
+              id="wallet-pk"
+              type={showKey ? "text" : "password"}
+              placeholder="0x..."
+              value={privateKey}
+              onValueChange={setPrivateKey}
+              className="font-mono"
+              endContent={
+                <button
+                  type="button"
+                  onClick={() => setShowKey((v) => !v)}
+                  className="text-xs text-text-tertiary hover:text-text-primary px-1"
+                  aria-label={showKey ? "隐藏私钥" : "显示私钥"}
+                >
+                  {showKey ? "隐藏" : "显示"}
+                </button>
+              }
+            />
+          </FormField>
 
-        <ApiErrorView error={error} />
+          <FormField
+            label="预期地址"
+            htmlFor="wallet-addr"
+            hint="可选 — 若填写，gateway 将校验派生地址与之匹配。"
+          >
+            <Input
+              id="wallet-addr"
+              placeholder="0x..."
+              value={expectedAddress}
+              onValueChange={setExpectedAddress}
+              className="font-mono"
+            />
+          </FormField>
 
-        <Button
-          type="submit"
-          color="primary"
-          isLoading={submitting}
-          isDisabled={!acknowledged}
-        >
-          创建钱包
-        </Button>
-      </form>
+          <Checkbox
+            isSelected={acknowledged}
+            onValueChange={setAcknowledged}
+          >
+            我已了解上述风险，并已离线备份此私钥。
+          </Checkbox>
+
+          <ApiErrorView error={error} />
+
+          <Button
+            type="submit"
+            color="primary"
+            isDisabled={!acknowledged || submitting}
+          >
+            创建钱包
+          </Button>
+        </form>
+      </Section>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="确认创建钱包？"
+        message={
+          <div className="space-y-2">
+            <div>
+              即将以标签 <strong>{label}</strong> 创建一个 Polygon 钱包。
+              私钥将在 gateway 端使用 AES-256-GCM 信封加密后入库，
+              <strong>永不离开后端</strong>。
+            </div>
+            <div className="text-xs text-text-tertiary">
+              确认前请再次核对您已离线备份私钥。
+            </div>
+          </div>
+        }
+        confirmLabel={submitting ? "创建中…" : "确认创建"}
+        confirmColor="danger"
+        onConfirm={submit}
+      />
     </div>
   );
 }

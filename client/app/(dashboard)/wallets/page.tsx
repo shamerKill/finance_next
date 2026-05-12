@@ -1,10 +1,16 @@
 import Link from "next/link";
 
 import { Callout } from "@/components/callout";
+import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { StatusBadge } from "@/components/status-badge";
 import { listWallets } from "@/data/api-client";
 import { TypeWallet } from "@/data/type";
+
+// Node 2.C.5.e — adopt design system primitives (DataTable + StatusBadge +
+// PageHeader). The danger banner from §G5 stays — private-key safety
+// model is a security contract surface we always reiterate to the user.
 
 export const dynamic = "force-dynamic";
 
@@ -19,19 +25,18 @@ export default async function WalletsPage() {
     error = e instanceof Error ? e.message : String(e);
   }
 
+  const action = (
+    <Link
+      href="/wallets/new"
+      className="inline-flex items-center rounded-md bg-brand-primary px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+    >
+      + 添加钱包
+    </Link>
+  );
+
   return (
     <div>
-      <PageHeader
-        title="Polygon 钱包"
-        action={
-          <Link
-            href="/wallets/new"
-            className="px-3 py-2 rounded bg-primary text-white text-sm"
-          >
-            + 添加钱包
-          </Link>
-        }
-      />
+      <PageHeader title="Polygon 钱包" action={action} />
 
       <div className="mb-4">
         <Callout variant="warning" title="Polymarket 安全模型">
@@ -44,46 +49,90 @@ export default async function WalletsPage() {
       </div>
 
       {error && (
-        <div className="rounded border border-danger p-3 text-sm text-danger mb-4">
-          加载钱包失败：{error}
+        <div className="mb-4">
+          <Callout variant="danger" title="加载钱包失败">
+            {error}
+          </Callout>
         </div>
       )}
 
-      {wallets.length === 0 && !error && (
+      {wallets.length === 0 && !error ? (
         <EmptyState
           title="暂无钱包"
           description="添加一个 Polygon 钱包（私钥）以开始 Polymarket 交易。"
-          action={
-            <Link
-              href="/wallets/new"
-              className="px-3 py-2 rounded bg-primary text-white text-sm"
-            >
-              + 添加钱包
-            </Link>
-          }
+          action={action}
+        />
+      ) : (
+        <DataTable<TypeWallet>
+          ariaLabel="Polygon 钱包列表"
+          rows={wallets}
+          getRowKey={(w) => w.id}
+          emptyState="暂无钱包"
+          columns={[
+            {
+              key: "label",
+              label: "标签",
+              render: (w) => (
+                <Link
+                  href={`/wallets/${w.id}`}
+                  className="font-medium text-brand-primary hover:underline"
+                >
+                  {w.label}
+                </Link>
+              ),
+            },
+            {
+              key: "address",
+              label: "地址",
+              render: (w) => (
+                <span className="font-mono text-mono-sm break-all">
+                  {w.address}
+                </span>
+              ),
+            },
+            {
+              key: "balance",
+              label: "USDC 缓存余额",
+              align: "end",
+              render: (w) =>
+                w.usdcBalanceCached != null ? (
+                  <span className="font-mono tnum">
+                    ${w.usdcBalanceCached.toFixed(2)}
+                  </span>
+                ) : (
+                  <span className="text-text-tertiary">—</span>
+                ),
+            },
+            {
+              key: "allowance",
+              label: "授权额度",
+              align: "end",
+              render: (w) =>
+                w.usdcAllowanceCached != null ? (
+                  <span className="font-mono tnum">
+                    ${w.usdcAllowanceCached.toFixed(2)}
+                  </span>
+                ) : (
+                  <span className="text-text-tertiary">—</span>
+                ),
+            },
+            {
+              key: "status",
+              label: "状态",
+              render: (w) =>
+                w.usdcAllowanceCached != null && w.usdcAllowanceCached > 0 ? (
+                  <StatusBadge tone="success" variant="dot">
+                    已授权
+                  </StatusBadge>
+                ) : (
+                  <StatusBadge tone="default" variant="dot">
+                    未授权
+                  </StatusBadge>
+                ),
+            },
+          ]}
         />
       )}
-
-      <div className="grid gap-3">
-        {wallets.map((w) => (
-          <Link
-            key={w.id}
-            href={`/wallets/${w.id}`}
-            className="border border-default-200 rounded p-4 hover:border-primary"
-          >
-            <div className="font-medium">{w.label}</div>
-            <div className="text-xs text-default-500 mt-1 font-mono">
-              {w.address}
-            </div>
-            {w.usdcBalanceCached != null && (
-              <div className="text-xs text-default-500 mt-1">
-                USDC 缓存余额：{w.usdcBalanceCached.toFixed(2)} · 授权额度：{" "}
-                {(w.usdcAllowanceCached ?? 0).toFixed(2)}
-              </div>
-            )}
-          </Link>
-        ))}
-      </div>
     </div>
   );
 }

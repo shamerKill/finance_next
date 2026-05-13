@@ -912,11 +912,19 @@ func buildAITestRequest(
 		endpoint = base + "/responses"
 		headers = map[string]string{
 			"Authorization": "Bearer " + apiKey,
+			"Accept":        "text/event-stream",
 		}
+		// stream:true is required by some Responses-API proxies (e.g.
+		// aiapi.lib.show codex). Real OpenAI accepts both; setting it
+		// uniformly keeps the test endpoint compatible with proxies
+		// without per-provider branching. The HTTP status code alone
+		// tells us auth/model/route are fine — we don't need to parse
+		// the SSE body.
 		payload, err = json.Marshal(map[string]any{
 			"model":             model,
 			"input":             []map[string]string{{"role": "user", "content": "hi"}},
 			"max_output_tokens": 16,
+			"stream":            true,
 		})
 	case "deepseek":
 		// DeepSeek exposes the OpenAI Chat Completions shape, NOT the

@@ -223,6 +223,13 @@ export function AIConfigClient() {
             <Row label="每 study 预算">${config.budgetUsdPerStudy.toFixed(2)}</Row>
             <Row label="每日预算">${config.budgetUsdPerDay.toFixed(2)}</Row>
             <Row label="查找窗口">{config.lookbackDays} 天</Row>
+            <Row label="流式响应">
+              {(config.streamingEnabled ?? true) ? (
+                <span className="text-success-700">开启</span>
+              ) : (
+                <span className="text-default-500">关闭</span>
+              )}
+            </Row>
             <Row label="上次更新">
               {config.updatedAt
                 ? new Date(config.updatedAt).toLocaleString()

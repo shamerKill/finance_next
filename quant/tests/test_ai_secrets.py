@@ -234,6 +234,55 @@ async def test_load_ai_secrets_handles_db_without_collection():
     assert secrets.family == "claude"
 
 
+# ---------------------------------------------------------------------------
+# streamingEnabled toggle (Node 3.E.6) — operator-level flag persisted in
+# Mongo as a JSON ``boolean``. Missing / true ⇒ True; explicit false ⇒ False.
+# The gateway uses ``*bool`` to round-trip the absent vs explicit-false
+# distinction; the quant side only cares about the resolved boolean.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_streaming_enabled_defaults_true_when_absent():
+    """No Mongo doc and no ``streamingEnabled`` field ⇒ default True."""
+    secrets = await ai_secrets.load_ai_secrets(_FakeDB(None))
+    assert secrets.streaming_enabled is True
+
+    secrets2 = await ai_secrets.load_ai_secrets(_FakeDB({"_id": "global", "aiConfig": {}}))
+    assert secrets2.streaming_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_streaming_enabled_explicit_true_round_trip():
+    """An explicit ``streamingEnabled=True`` survives the load."""
+    doc = {"_id": "global", "aiConfig": {"streamingEnabled": True}}
+    secrets = await ai_secrets.load_ai_secrets(_FakeDB(doc))
+    assert secrets.streaming_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_streaming_enabled_explicit_false_persists():
+    """``streamingEnabled=False`` resolves to False (the only way to disable streaming)."""
+    doc = {"_id": "global", "aiConfig": {"streamingEnabled": False}}
+    secrets = await ai_secrets.load_ai_secrets(_FakeDB(doc))
+    assert secrets.streaming_enabled is False
+
+
+@pytest.mark.asyncio
+async def test_streaming_enabled_truthy_misencoding_defaults_to_true():
+    """Defensive: a misencoded non-bool value falls back to True.
+
+    The gateway only writes True/False/absent, but the quant decoder
+    should never silently disable streaming based on a string or int.
+    """
+    for raw in (0, 1, "false", None):
+        ai_secrets.invalidate_cache()
+        doc = {"_id": "global", "aiConfig": {"streamingEnabled": raw}}
+        secrets = await ai_secrets.load_ai_secrets(_FakeDB(doc))
+        # Only the literal ``False`` should resolve to False.
+        assert secrets.streaming_enabled is True, f"raw={raw!r} should not disable"
+
+
 # Run-only sanity for the async fixture wiring (some pytest-asyncio
 # versions need the explicit event loop to surface failure modes early).
 def test_event_loop_runs():

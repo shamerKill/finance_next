@@ -668,6 +668,7 @@ def _build_ai_client_with_secrets(
             api_key=api_key,
             base_url=secrets.openai_base_url or cfg.openai_base_url or None,
             endpoint=ENDPOINT_RESPONSES,
+            stream=secrets.streaming_enabled,
         )
         client.primary_model = (
             secrets.openai_primary_model or cfg.openai_primary_model
@@ -693,6 +694,7 @@ def _build_ai_client_with_secrets(
             api_key=api_key,
             base_url=secrets.deepseek_base_url or "https://api.deepseek.com",
             endpoint=ENDPOINT_CHAT_COMPLETIONS,
+            stream=secrets.streaming_enabled,
         )
         client.primary_model = secrets.deepseek_primary_model or "deepseek-chat"
         client.refine_model = secrets.deepseek_refine_model or "deepseek-chat"
@@ -706,7 +708,7 @@ def _build_ai_client_with_secrets(
             "optimization with default search space (no Claude calls)"
         )
         return None
-    client = ClaudeClient(api_key=api_key)
+    client = ClaudeClient(api_key=api_key, stream=secrets.streaming_enabled)
     client.primary_model = (
         secrets.anthropic_primary_model or cfg.anthropic_primary_model
     )

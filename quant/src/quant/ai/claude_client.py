@@ -144,12 +144,21 @@ class ClaudeClient:
         max_tokens_define: int = 2048,
         max_tokens_rationale: int = 1024,
         max_tokens_refine: int = 1024,
+        stream: bool = False,
     ) -> None:
         self._api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         self._client = client  # may be set by tests
         self.max_tokens_define = max_tokens_define
         self.max_tokens_rationale = max_tokens_rationale
         self.max_tokens_refine = max_tokens_refine
+        # Streaming toggle — when True, swaps the one-shot Messages
+        # call to ``messages.create(stream=True)`` and accumulates the
+        # delta events. Default is False to preserve Phase 6 behaviour
+        # (every prior call site was implicitly one-shot). The
+        # ``/settings/ai`` operator toggle threads through
+        # ``_build_ai_client_with_secrets``, which passes
+        # ``stream=secrets.streaming_enabled`` explicitly.
+        self.stream = stream
 
     # ----- internal --------------------------------------------------
 
@@ -220,6 +229,87 @@ class ClaudeClient:
             },
         ]
 
+    async def _dispatch(
+        self,
+        *,
+        model: str,
+        max_tokens: int,
+        system: list[dict[str, Any]],
+        user_prompt: str,
+    ) -> tuple[str, ClaudeUsage]:
+        """Issue one Messages API call and return (text, usage).
+
+        ``self.stream`` picks the SDK transport:
+            * False — ``messages.create(...)`` returns a complete Message
+              object in one HTTP round-trip. This is what every prior
+              Phase 6 call site did implicitly.
+            * True — ``messages.create(stream=True)`` returns an async
+              event stream we accumulate. Tested on
+              anthropic>=0.42 (current pin). The terminal
+              ``message_stop`` / ``message_delta`` events carry the
+              cumulative usage block.
+
+        Both paths return the same ``(text, ClaudeUsage)`` tuple, so the
+        optimizer / cost ledger don't branch on dispatch mode.
+        """
+        client = await self._ensure_client()
+        if not self.stream:
+            response = await client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+            return self._extract_text(response), self._extract_usage(response)
+
+        # Streaming variant — iterate events, concatenate text deltas,
+        # snapshot final usage. We tolerate both stream-event shapes
+        # (event.type=="content_block_delta" with delta.text, and
+        # event.type=="message_delta"/"message_stop" with usage updates).
+        stream = await client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user_prompt}],
+            stream=True,
+        )
+        parts: list[str] = []
+        usage = ClaudeUsage()
+        async for event in stream:
+            etype = getattr(event, "type", "") or ""
+            if etype == "content_block_delta":
+                delta = getattr(event, "delta", None)
+                if delta is not None:
+                    text = getattr(delta, "text", None) or ""
+                    if text:
+                        parts.append(text)
+            elif etype in ("message_start", "message_delta", "message_stop"):
+                # ``message_start`` carries the message with initial
+                # usage; ``message_delta`` updates output_tokens as the
+                # stream progresses. Take the latest values.
+                msg = getattr(event, "message", None)
+                if msg is not None:
+                    u = self._extract_usage(msg)
+                    if u.input_tokens or u.output_tokens or u.cache_read_input_tokens or u.cache_creation_input_tokens:
+                        usage = u
+                u2 = getattr(event, "usage", None)
+                if u2 is not None:
+                    # ``message_delta`` events expose usage at the top
+                    # level; merge in the running output count.
+                    usage = ClaudeUsage(
+                        input_tokens=int(getattr(u2, "input_tokens", usage.input_tokens) or usage.input_tokens),
+                        output_tokens=int(getattr(u2, "output_tokens", usage.output_tokens) or usage.output_tokens),
+                        cache_read_input_tokens=int(
+                            getattr(u2, "cache_read_input_tokens", usage.cache_read_input_tokens)
+                            or usage.cache_read_input_tokens
+                        ),
+                        cache_creation_input_tokens=int(
+                            getattr(u2, "cache_creation_input_tokens", usage.cache_creation_input_tokens)
+                            or usage.cache_creation_input_tokens
+                        ),
+                    )
+        return "".join(parts), usage
+
     # ----- public API ------------------------------------------------
 
     async def define_search_space(
@@ -232,16 +322,14 @@ class ClaudeClient:
 
         Returns ``(parsed_dict, usage)``. Parse errors raise
         ``ValueError`` — the optimizer falls back to a default space.
+        Dispatch picks streaming vs one-shot per ``self.stream``.
         """
-        client = await self._ensure_client()
-        response = await client.messages.create(
+        text, usage = await self._dispatch(
             model=SONNET_MODEL,
             max_tokens=self.max_tokens_define,
             system=self._build_system(DEFINE_SEARCH_SPACE_SYSTEM, study_context),
-            messages=[{"role": "user", "content": user_prompt}],
+            user_prompt=user_prompt,
         )
-        text = self._extract_text(response)
-        usage = self._extract_usage(response)
         if not text.strip():
             raise ValueError("Claude returned empty define_search_space response")
         parsed = _parse_search_space_json(text)
@@ -254,15 +342,12 @@ class ClaudeClient:
         user_prompt: str,
     ) -> tuple[dict[str, Any], ClaudeUsage]:
         """Ask Haiku 4.5 to tighten the space mid-study."""
-        client = await self._ensure_client()
-        response = await client.messages.create(
+        text, usage = await self._dispatch(
             model=HAIKU_MODEL,
             max_tokens=self.max_tokens_refine,
             system=self._build_system(REFINE_SEARCH_SPACE_SYSTEM, study_context),
-            messages=[{"role": "user", "content": user_prompt}],
+            user_prompt=user_prompt,
         )
-        text = self._extract_text(response)
-        usage = self._extract_usage(response)
         if not text.strip():
             raise ValueError("Claude returned empty refine_search_space response")
         parsed = _parse_search_space_json(text)
@@ -275,15 +360,12 @@ class ClaudeClient:
         user_prompt: str,
     ) -> tuple[str, ClaudeUsage]:
         """Ask Sonnet 4.6 for the prose recommendation rationale."""
-        client = await self._ensure_client()
-        response = await client.messages.create(
+        text, usage = await self._dispatch(
             model=SONNET_MODEL,
             max_tokens=self.max_tokens_rationale,
             system=self._build_system(FINAL_RATIONALE_SYSTEM, study_context),
-            messages=[{"role": "user", "content": user_prompt}],
+            user_prompt=user_prompt,
         )
-        text = self._extract_text(response)
-        usage = self._extract_usage(response)
         if not text.strip():
             raise ValueError("Claude returned empty rationale response")
         return text.strip(), usage

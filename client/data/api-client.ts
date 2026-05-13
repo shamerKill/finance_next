@@ -661,6 +661,12 @@ export type TypeAIConfig = {
   budgetUsdPerStudy: number;
   budgetUsdPerDay: number;
   lookbackDays: number;
+  // Node 3.E.6 — operator-level streaming dispatch toggle. The gateway
+  // ALWAYS surfaces this resolved to a boolean (true when the persisted
+  // *bool field is nil or true; false only when explicitly set false).
+  // GETs from older gateways may omit the field — UI treats undefined
+  // as the same default (true).
+  streamingEnabled: boolean;
   updatedAt: string;
   // Legacy presence flags (env-only signal pre-migration). Kept for
   // backwards compat — newer UI prefers the *ApiKeyConfigured trio.
@@ -711,6 +717,32 @@ export const updateAdminAIConfig = async (
     body: JSON.stringify(patch),
   });
   return jsonOrThrow<TypeAIConfig>(res);
+};
+
+// Node 3.E.6 — per-provider test-connection result. The gateway hits the
+// provider's minimal validation endpoint with the persisted (decrypted)
+// key and returns latency + (optional) error. The result NEVER contains
+// the plaintext / ciphertext key — only the public baseUrl + model and
+// whatever error string the upstream provider returned (already scrubbed
+// for the key value as defence-in-depth on the server side).
+export type TypeAITestResult = {
+  ok: boolean;
+  family: string;
+  modelTested: string;
+  baseUrl: string;
+  latencyMs: number;
+  error?: string;
+};
+
+export const testAIConnection = async (body: {
+  family: "anthropic" | "openai" | "deepseek";
+}): Promise<TypeAITestResult> => {
+  const res = await apiFetch(parseUrl("v1/admin/ai/test"), {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<TypeAITestResult>(res);
 };
 
 export const getAdminAIPrompts = async (): Promise<TypeAIPrompts> => {

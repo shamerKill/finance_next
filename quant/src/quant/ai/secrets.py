@@ -59,6 +59,12 @@ class AISecrets:
     budget_usd_per_study: float | None
     budget_usd_per_day: float | None
     lookback_days: int | None
+    # Streaming dispatch toggle. ``True`` (default) keeps every client
+    # on streaming transports; ``False`` flips to one-shot non-stream
+    # calls. The mongo overlay stores this as ``streamingEnabled``;
+    # missing / None / true → True, explicit false → False. The
+    # operator-facing toggle is in ``/settings/ai`` (Node 3.E.6).
+    streaming_enabled: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +225,13 @@ async def load_ai_secrets(
     if family not in ("claude", "openai", "deepseek"):
         family = "claude"
 
+    # streamingEnabled: explicit False = honor; None / missing / True = True.
+    # The pointer-type on the gateway side becomes JSON ``true``/``false``
+    # /absent; we only read False as "off" so a truthy mis-encoding never
+    # silently disables streaming.
+    streaming_raw = cfg.get("streamingEnabled")
+    streaming_enabled = streaming_raw is not False
+
     secrets = AISecrets(
         family=family,
         anthropic_api_key=_decrypt_field(
@@ -256,6 +269,7 @@ async def load_ai_secrets(
         budget_usd_per_study=_float_or_none("budgetUsdPerStudy"),
         budget_usd_per_day=_float_or_none("budgetUsdPerDay"),
         lookback_days=_int_or_none("lookbackDays"),
+        streaming_enabled=streaming_enabled,
     )
     _cache["default"] = (now + _CACHE_TTL, secrets)
     return secrets

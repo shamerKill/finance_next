@@ -154,6 +154,7 @@ class GPTClient:
         max_tokens_define: int = 2048,
         max_tokens_rationale: int = 1024,
         max_tokens_refine: int = 1024,
+        stream: bool = True,
     ) -> None:
         # Prefer dedicated OPENAI_* envs; fall back to ANTHROPIC_* because
         # the proxy serves both endpoints from the same credential.
@@ -186,6 +187,13 @@ class GPTClient:
         self.max_tokens_define = max_tokens_define
         self.max_tokens_rationale = max_tokens_rationale
         self.max_tokens_refine = max_tokens_refine
+        # Streaming toggle — honored by ``_dispatch`` to pick between
+        # the streaming and one-shot variants of the underlying SDK
+        # call. The default ``True`` preserves the pre-Node-3.E.6
+        # behaviour. The optimizer reads
+        # ``ai_secrets.AISecrets.streaming_enabled`` and threads the
+        # value through ``_build_ai_client_with_secrets``.
+        self.stream = stream
 
     # ----- internal --------------------------------------------------
 
@@ -325,6 +333,102 @@ class GPTClient:
         text = final_text if final_text is not None else "".join(text_parts)
         return text, usage
 
+    async def _oneshot_chat_completions(
+        self,
+        *,
+        model: str,
+        system_text: str,
+        user_text: str,
+        max_output_tokens: int,
+    ) -> tuple[str, GPTUsage]:
+        """Non-streaming chat.completions call — returns the full response.
+
+        The SDK ``stream=False`` path is a regular HTTP request that
+        resolves to a single response object. We pull the assistant
+        text from ``choices[0].message.content`` and the usage from
+        the top-level ``usage`` block. Cached-token accounting matches
+        the streaming variant so the cost ledger stays consistent
+        regardless of dispatch mode.
+        """
+        client = await self._ensure_client()
+        messages = [
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": user_text},
+        ]
+        response = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=max_output_tokens,
+            stream=False,
+        )
+        text = ""
+        choices = getattr(response, "choices", None) or []
+        if choices:
+            message = getattr(choices[0], "message", None)
+            if message is not None:
+                content = getattr(message, "content", None)
+                if content:
+                    text = content
+        usage = GPTUsage()
+        ch_usage = getattr(response, "usage", None)
+        if ch_usage is not None:
+            prompt_tokens = int(getattr(ch_usage, "prompt_tokens", 0) or 0)
+            completion_tokens = int(getattr(ch_usage, "completion_tokens", 0) or 0)
+            cached = 0
+            details = getattr(ch_usage, "prompt_tokens_details", None)
+            if details is not None:
+                cached = int(getattr(details, "cached_tokens", 0) or 0)
+            fresh_input = max(prompt_tokens - cached, 0)
+            usage = GPTUsage(
+                input_tokens=fresh_input,
+                output_tokens=completion_tokens,
+                cache_read_input_tokens=cached,
+                cache_creation_input_tokens=0,
+            )
+        return text, usage
+
+    async def _oneshot_responses(
+        self,
+        *,
+        model: str,
+        system_text: str,
+        user_text: str,
+        max_output_tokens: int,
+    ) -> tuple[str, GPTUsage]:
+        """Non-streaming Responses API call.
+
+        ``stream=False`` resolves to a single ``Response`` object with
+        ``output_text`` (convenience accumulator on the SDK) or the
+        full ``output[]`` array. We try ``output_text`` first; if the
+        SDK version doesn't surface it, fall back to walking ``output``.
+        """
+        client = await self._ensure_client()
+        input_payload = [
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": user_text},
+        ]
+        response = await client.responses.create(
+            model=model,
+            input=input_payload,
+            max_output_tokens=max_output_tokens,
+            stream=False,
+        )
+        # SDK convenience: response.output_text concatenates every text
+        # block in the response. If the version on PYTHONPATH doesn't
+        # have it, walk output[] manually.
+        text = getattr(response, "output_text", None) or ""
+        if not text:
+            output = getattr(response, "output", None) or []
+            parts: list[str] = []
+            for item in output:
+                content = getattr(item, "content", None) or []
+                for block in content:
+                    if getattr(block, "type", None) == "output_text":
+                        parts.append(getattr(block, "text", "") or "")
+            text = "".join(parts)
+        usage = _extract_usage(response)
+        return text, usage
+
     async def _dispatch(
         self,
         *,
@@ -333,20 +437,37 @@ class GPTClient:
         user_text: str,
         max_output_tokens: int,
     ) -> tuple[str, GPTUsage]:
-        """Pick the streaming flavour based on ``self.endpoint``.
+        """Route to streaming or one-shot per ``self.stream`` + ``self.endpoint``.
 
         Keeps the per-method bodies readable and locks the routing in
         one place — when we add per-provider quirks (extra headers,
         tool-calling, etc.) they only need to be plumbed here.
+        ``stream=False`` swaps to the non-streaming variant of the same
+        underlying SDK call so token counts + text accumulator stay on
+        the same code path.
         """
         if self.endpoint == ENDPOINT_CHAT_COMPLETIONS:
-            return await self._stream_chat_completions(
+            if self.stream:
+                return await self._stream_chat_completions(
+                    model=model,
+                    system_text=system_text,
+                    user_text=user_text,
+                    max_output_tokens=max_output_tokens,
+                )
+            return await self._oneshot_chat_completions(
                 model=model,
                 system_text=system_text,
                 user_text=user_text,
                 max_output_tokens=max_output_tokens,
             )
-        return await self._stream_responses(
+        if self.stream:
+            return await self._stream_responses(
+                model=model,
+                system_text=system_text,
+                user_text=user_text,
+                max_output_tokens=max_output_tokens,
+            )
+        return await self._oneshot_responses(
             model=model,
             system_text=system_text,
             user_text=user_text,

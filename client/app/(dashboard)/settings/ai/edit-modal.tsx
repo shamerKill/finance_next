@@ -19,13 +19,19 @@ import {
   NumberInput,
   Radio,
   RadioGroup,
+  Switch,
   useDisclosure,
 } from "@heroui/react";
 import { useState } from "react";
 
 import { ApiErrorView } from "@/components/api-error";
 import { PasswordInput } from "@/components/password-field";
-import { TypeAIConfig, updateAdminAIConfig } from "@/data/api-client";
+import {
+  TypeAIConfig,
+  TypeAITestResult,
+  testAIConnection,
+  updateAdminAIConfig,
+} from "@/data/api-client";
 
 interface Props {
   config: TypeAIConfig;
@@ -90,6 +96,57 @@ function EditModal({
   const [budgetPerDay, setBudgetPerDay] = useState(config.budgetUsdPerDay);
   const [lookbackDays, setLookbackDays] = useState(config.lookbackDays);
 
+  // Streaming dispatch toggle. Defaults to `true` when the gateway
+  // hasn't surfaced the field yet (older deploys); Boolean() coerces
+  // `undefined` to `false` so we OR with explicit `true` for that case.
+  const [streamingEnabled, setStreamingEnabled] = useState<boolean>(
+    config.streamingEnabled ?? true,
+  );
+
+  // Per-family test-connection state. Each family records {status,
+  // result}; "idle" means no test run yet, "running" while in-flight,
+  // "done" once a result is in. The result mirrors the gateway shape;
+  // a non-empty `error` means ok=false (treated as failure).
+  type TestState =
+    | { status: "idle" }
+    | { status: "running" }
+    | { status: "done"; result: TypeAITestResult };
+  const [testStates, setTestStates] = useState<{
+    anthropic: TestState;
+    openai: TestState;
+    deepseek: TestState;
+  }>({
+    anthropic: { status: "idle" },
+    openai: { status: "idle" },
+    deepseek: { status: "idle" },
+  });
+
+  const runTest = async (family: "anthropic" | "openai" | "deepseek") => {
+    setTestStates((s) => ({ ...s, [family]: { status: "running" } }));
+    try {
+      const result = await testAIConnection({ family });
+      setTestStates((s) => ({ ...s, [family]: { status: "done", result } }));
+    } catch (e) {
+      // Render the network / 4xx failure into the same shape so the
+      // inline UI doesn't branch.
+      const msg = e instanceof Error ? e.message : String(e);
+      setTestStates((s) => ({
+        ...s,
+        [family]: {
+          status: "done",
+          result: {
+            ok: false,
+            family,
+            modelTested: "",
+            baseUrl: "",
+            latencyMs: 0,
+            error: msg,
+          },
+        },
+      }));
+    }
+  };
+
   // Plaintext API keys. We deliberately do NOT seed these from `config`
   // — the gateway never echoes the key back, and the input being empty
   // means "leave the persisted ciphertext untouched" on save. Setting a
@@ -149,6 +206,7 @@ function EditModal({
         budgetUsdPerStudy: budgetPerStudy,
         budgetUsdPerDay: budgetPerDay,
         lookbackDays,
+        streamingEnabled,
         // Plaintext keys — only sent when non-empty. Empty string would
         // be ignored server-side but we strip them client-side too so
         // the request body stays minimal.
@@ -284,6 +342,10 @@ function EditModal({
                     onValueChange={setAnthropicBaseURL}
                     placeholder="https://api.anthropic.com"
                   />
+                  <TestConnectionRow
+                    state={testStates.anthropic}
+                    onTest={() => runTest("anthropic")}
+                  />
                 </div>
 
                 <div className="rounded border border-default-200 p-3 space-y-3">
@@ -316,6 +378,10 @@ function EditModal({
                     value={openaiBaseURL}
                     onValueChange={setOpenaiBaseURL}
                     placeholder="https://api.openai.com/v1"
+                  />
+                  <TestConnectionRow
+                    state={testStates.openai}
+                    onTest={() => runTest("openai")}
                   />
                 </div>
 
@@ -352,6 +418,10 @@ function EditModal({
                     value={deepseekBaseURL}
                     onValueChange={setDeepseekBaseURL}
                     placeholder="https://api.deepseek.com"
+                  />
+                  <TestConnectionRow
+                    state={testStates.deepseek}
+                    onTest={() => runTest("deepseek")}
                   />
                 </div>
 
@@ -393,6 +463,21 @@ function EditModal({
                   }
                 />
 
+                <div className="rounded border border-default-200 p-3">
+                  <Switch
+                    size="sm"
+                    isSelected={streamingEnabled}
+                    onValueChange={setStreamingEnabled}
+                  >
+                    启用流式响应
+                  </Switch>
+                  <p className="mt-2 text-xs text-default-500">
+                    开启 = AI 调用走流式响应（SSE/chunk），延迟低、可中途观察。
+                    关闭 = 一次性返回完整结果，适合调试或避免反代/防火墙中断长连接。
+                    默认开启。
+                  </p>
+                </div>
+
                 <div className="text-xs text-default-500">
                   环境变量 <code>ANTHROPIC_API_KEY</code> /{" "}
                   <code>OPENAI_API_KEY</code> / <code>DEEPSEEK_API_KEY</code>{" "}
@@ -418,5 +503,74 @@ function EditModal({
         )}
       </ModalContent>
     </Modal>
+  );
+}
+
+// TestConnectionRow renders the "测试连接" button + inline result for one
+// provider. The button calls `onTest`, which hits POST /admin/ai/test
+// with the persisted (already-saved) config. Results render inline below
+// the button so the operator sees latency / error without leaving the
+// modal. The hint reminds the operator that newly-typed-but-unsaved
+// values aren't part of the test — only persisted state is.
+function TestConnectionRow({
+  state,
+  onTest,
+}: {
+  state:
+    | { status: "idle" }
+    | { status: "running" }
+    | { status: "done"; result: TypeAITestResult };
+  onTest: () => void;
+}) {
+  return (
+    <div className="rounded bg-default-50/60 p-2 space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-default-500">
+          测试当前已保存的 key/baseURL/主模型组合（不测本框内未保存的修改）
+        </span>
+        <Button
+          size="sm"
+          variant="flat"
+          isLoading={state.status === "running"}
+          onPress={onTest}
+        >
+          测试连接
+        </Button>
+      </div>
+      {state.status === "done" && <TestResultBadge result={state.result} />}
+    </div>
+  );
+}
+
+function TestResultBadge({ result }: { result: TypeAITestResult }) {
+  if (result.ok) {
+    return (
+      <div className="text-xs text-success-700">
+        <span className="inline-block h-2 w-2 rounded-full bg-success align-middle" />{" "}
+        <span className="font-medium">连接正常</span>{" "}
+        <span className="text-default-500">
+          ({result.modelTested} · {result.latencyMs}ms)
+        </span>
+        {result.baseUrl ? (
+          <span className="ml-1 font-mono text-default-400">
+            {result.baseUrl}
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+  return (
+    <div className="text-xs text-danger-700">
+      <span className="inline-block h-2 w-2 rounded-full bg-danger align-middle" />{" "}
+      <span className="font-medium">连接失败</span>{" "}
+      {result.latencyMs ? (
+        <span className="text-default-500">({result.latencyMs}ms)</span>
+      ) : null}
+      {result.error ? (
+        <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-[10px] text-default-600">
+          {result.error}
+        </pre>
+      ) : null}
+    </div>
   );
 }

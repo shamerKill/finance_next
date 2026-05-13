@@ -265,7 +265,9 @@ func TestEffectiveAIConfig_SourceLabel(t *testing.T) {
 		t.Fatalf("partial persisted: want source=mixed, got %s", got.Source)
 	}
 	// fully populated → mongo. Field count must match the counter in
-	// effectiveAIConfig (currently 13 — every tunable knob).
+	// effectiveAIConfig (currently 14 — every tunable knob including
+	// the Node 3.E.6 streamingEnabled flag).
+	tr := true
 	full := &domain.AIConfig{
 		ModelFamily:           "openai",
 		AnthropicPrimaryModel: "claude-x",
@@ -280,6 +282,7 @@ func TestEffectiveAIConfig_SourceLabel(t *testing.T) {
 		BudgetUsdPerStudy:     2,
 		BudgetUsdPerDay:       10,
 		LookbackDays:          30,
+		StreamingEnabled:      &tr,
 	}
 	if got := effectiveAIConfig(full); got.Source != "mongo" {
 		t.Fatalf("full persisted: want source=mongo, got %s", got.Source)
@@ -425,6 +428,168 @@ func TestAdminAI_PUTResponse_NeverContainsKeys(t *testing.T) {
 	for _, leak := range []string{"iv.tag.ct1", "iv.tag.ct2", "iv.tag.ct3"} {
 		if strings.Contains(string(effOut), leak) {
 			t.Fatalf("effective config leaked ciphertext %q: %s", leak, string(effOut))
+		}
+	}
+}
+
+// ---- streaming toggle ----------------------------------------------------
+
+// TestAIConfig_StreamingDefault — when the persisted doc has no
+// streamingEnabled field, the effective response surfaces `true`.
+// This is the migration contract: existing operators don't see a
+// behaviour change until they explicitly toggle the switch off.
+func TestAIConfig_StreamingDefault(t *testing.T) {
+	if got := effectiveAIConfig(nil); !got.StreamingEnabled {
+		t.Fatalf("nil persisted: want streamingEnabled=true (default), got %v", got.StreamingEnabled)
+	}
+	persisted := &domain.AIConfig{ModelFamily: "claude"}
+	if got := effectiveAIConfig(persisted); !got.StreamingEnabled {
+		t.Fatalf("persisted w/o streamingEnabled: want true, got %v", got.StreamingEnabled)
+	}
+}
+
+// TestAIConfig_StreamingExplicitFalse — when the operator sets
+// streamingEnabled=false the effective config faithfully reports false
+// and the merge path round-trips false through mergeAIConfig.
+func TestAIConfig_StreamingExplicitFalse(t *testing.T) {
+	f := false
+	persisted := &domain.AIConfig{StreamingEnabled: &f}
+	got := effectiveAIConfig(persisted)
+	if got.StreamingEnabled {
+		t.Fatalf("explicit false: want streamingEnabled=false, got %v", got.StreamingEnabled)
+	}
+	merged := mergeAIConfig(nil, &domain.AIConfig{StreamingEnabled: &f})
+	if merged.StreamingEnabled == nil || *merged.StreamingEnabled {
+		t.Fatalf("merge with explicit false: want *bool→false, got %v", merged.StreamingEnabled)
+	}
+	preserved := mergeAIConfig(merged, &domain.AIConfig{})
+	if preserved.StreamingEnabled == nil || *preserved.StreamingEnabled {
+		t.Fatalf("nil body should not overwrite existing: want false, got %v", preserved.StreamingEnabled)
+	}
+	tr := true
+	flipped := mergeAIConfig(merged, &domain.AIConfig{StreamingEnabled: &tr})
+	if flipped.StreamingEnabled == nil || !*flipped.StreamingEnabled {
+		t.Fatalf("explicit true should overwrite false: got %v", flipped.StreamingEnabled)
+	}
+}
+
+// ---- /admin/ai/test ------------------------------------------------------
+
+// TestTestAIConnection_AdminRequired — without admin cookie or
+// matching X-Admin-Key the endpoint must 403, never 200 with ok:false.
+func TestTestAIConnection_AdminRequired(t *testing.T) {
+	e := echo.New()
+	g := e.Group("/api/v1")
+	NewAdminHandler(nil, nil, nil, "secret").Register(g)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/ai/test",
+		strings.NewReader(`{"family":"anthropic"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without admin auth, got %d", rec.Code)
+	}
+}
+
+// TestTestAIConnection_FamilyNotSupported — repo-nil short-circuit
+// proves the dependency-check ordering: repo wired first, body parsed
+// after. The 503 path here documents the contract for the
+// /admin/ai/test route since unit tests don't stand up Mongo.
+func TestTestAIConnection_FamilyNotSupported(t *testing.T) {
+	e := echo.New()
+	g := e.Group("/api/v1")
+	svc, err := crypto.New("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	if err != nil {
+		t.Fatalf("crypto.New: %v", err)
+	}
+	NewAdminHandler(nil, nil, nil, "secret").WithCrypto(svc).Register(g)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/ai/test",
+		strings.NewReader(`{"family":"bogus"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Admin-Key", "secret")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("nil repo: expected 503, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+// TestTestAIConnection_MissingKey — exercises buildAITestRequest
+// directly. Validates unknown-family rejection + that no path leaks
+// the API key into URL or body.
+func TestTestAIConnection_MissingKey(t *testing.T) {
+	_, _, _, err := buildAITestRequest("bogus", "", "https://api.example.com", "model-x", "sk-key")
+	if err == nil {
+		t.Fatal("expected unsupported family error")
+	}
+	if !strings.Contains(err.Error(), "bogus") {
+		t.Fatalf("expected error to mention family, got %v", err)
+	}
+	for _, fam := range []string{"anthropic", "openai", "deepseek"} {
+		ep, hdrs, body, err := buildAITestRequest(fam, "", "https://api.example.com", "model-x", "sk-key-secret-xyz")
+		if err != nil {
+			t.Fatalf("%s: %v", fam, err)
+		}
+		if strings.Contains(ep, "sk-key-secret-xyz") {
+			t.Fatalf("%s: endpoint leaks key: %s", fam, ep)
+		}
+		if strings.Contains(string(body), "sk-key-secret-xyz") {
+			t.Fatalf("%s: body leaks key: %s", fam, body)
+		}
+		var found bool
+		for _, v := range hdrs {
+			if strings.Contains(v, "sk-key-secret-xyz") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("%s: auth header missing the key", fam)
+		}
+	}
+}
+
+// TestTestAIConnection_RedactKey — defence-in-depth check that error
+// strings carrying the API key get scrubbed before we surface them.
+func TestTestAIConnection_RedactKey(t *testing.T) {
+	in := "upstream error: bad token sk-key-secret-xyz returned"
+	out := redactKey(in, "sk-key-secret-xyz")
+	if strings.Contains(out, "sk-key-secret-xyz") {
+		t.Fatalf("redactKey left the key in: %q", out)
+	}
+	if !strings.Contains(out, "[redacted]") {
+		t.Fatalf("redactKey didn't substitute the marker: %q", out)
+	}
+	if redactKey("hello", "") != "hello" {
+		t.Fatal("empty key should be a no-op")
+	}
+}
+
+// TestAITestResult_NoKeyEcho — the wire shape itself must not contain
+// any field where an API key could legally appear.
+func TestAITestResult_NoKeyEcho(t *testing.T) {
+	r := AITestResult{
+		OK:          false,
+		Family:      "anthropic",
+		ModelTested: "claude-sonnet-4-6",
+		BaseURL:     "https://api.anthropic.com",
+		LatencyMs:   123,
+		Error:       "HTTP 401: invalid x-api-key",
+	}
+	out, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, field := range []string{"ok", "family", "modelTested", "baseUrl", "latencyMs"} {
+		if !strings.Contains(string(out), field) {
+			t.Fatalf("missing field %q in serialised result: %s", field, out)
+		}
+	}
+	for _, leak := range []string{"apiKey", "api_key", "Authorization", "Bearer"} {
+		if strings.Contains(string(out), leak) {
+			t.Fatalf("result body leaked %q: %s", leak, out)
 		}
 	}
 }

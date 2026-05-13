@@ -7,8 +7,12 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -75,6 +79,7 @@ func (h *AdminHandler) Register(g *echo.Group) {
 	g.GET("/admin/ai/config", h.getAIConfig)
 	g.PUT("/admin/ai/config", h.putAIConfig)
 	g.GET("/admin/ai/prompts", h.getAIPrompts)
+	g.POST("/admin/ai/test", h.testAIConnection)
 }
 
 func (h *AdminHandler) auth(c echo.Context) error {
@@ -246,6 +251,7 @@ type AIConfigEffective struct {
 	BudgetUsdPerStudy     float64   `json:"budgetUsdPerStudy"`
 	BudgetUsdPerDay       float64   `json:"budgetUsdPerDay"`
 	LookbackDays          int       `json:"lookbackDays"`
+	StreamingEnabled      bool      `json:"streamingEnabled"`
 	UpdatedAt             time.Time `json:"updatedAt,omitempty"`
 
 	AnthropicConfigured bool `json:"anthropicConfigured"`
@@ -278,9 +284,14 @@ func effectiveAIConfig(persisted *domain.AIConfig) AIConfigEffective {
 		BudgetUsdPerStudy:     envOrFloat("AI_MAX_USD_PER_STUDY", 5.0),
 		BudgetUsdPerDay:       envOrFloat("AI_MAX_USD_PER_DAY", 50.0),
 		LookbackDays:          envOrInt("AI_OPTIMIZATION_LOOKBACK_DAYS", 90),
-		AnthropicConfigured:   os.Getenv("ANTHROPIC_API_KEY") != "",
-		OpenAIConfigured:      os.Getenv("OPENAI_API_KEY") != "",
-		Source:                "env",
+		// Streaming defaults to true — preserves the existing dispatch
+		// path (every Phase 6 client was wired stream=True). An operator
+		// who saves the toggle off in /settings/ai writes
+		// AIConfig.StreamingEnabled = &false, which we surface here.
+		StreamingEnabled:    true,
+		AnthropicConfigured: os.Getenv("ANTHROPIC_API_KEY") != "",
+		OpenAIConfigured:    os.Getenv("OPENAI_API_KEY") != "",
+		Source:              "env",
 	}
 	if persisted == nil {
 		// API-key-configured flags fall back to env presence when no
@@ -345,6 +356,12 @@ func effectiveAIConfig(persisted *domain.AIConfig) AIConfigEffective {
 		out.LookbackDays = persisted.LookbackDays
 		mongoFields++
 	}
+	// StreamingEnabled is *bool — non-nil means the operator explicitly
+	// set it (true OR false). Nil = inherit the env-default (true).
+	if persisted.StreamingEnabled != nil {
+		out.StreamingEnabled = *persisted.StreamingEnabled
+		mongoFields++
+	}
 	if !persisted.UpdatedAt.IsZero() {
 		out.UpdatedAt = persisted.UpdatedAt
 	}
@@ -355,13 +372,13 @@ func effectiveAIConfig(persisted *domain.AIConfig) AIConfigEffective {
 	out.OpenAIAPIKeyConfigured = persisted.OpenAIAPIKeyCiphertext != "" || os.Getenv("OPENAI_API_KEY") != ""
 	out.DeepseekAPIKeyConfigured = persisted.DeepseekAPIKeyCiphertext != "" || os.Getenv("DEEPSEEK_API_KEY") != ""
 
-	// Total tunable knobs (count of fields we count above) = 13. If
-	// every one came from Mongo, "mongo"; otherwise "mixed" if any did,
-	// else "env".
+	// Total tunable knobs (count of fields we count above) = 14
+	// (Node 3.E.6 added streamingEnabled). If every one came from Mongo,
+	// "mongo"; otherwise "mixed" if any did, else "env".
 	switch {
 	case mongoFields == 0:
 		out.Source = "env"
-	case mongoFields == 13:
+	case mongoFields == 14:
 		out.Source = "mongo"
 	default:
 		out.Source = "mixed"
@@ -621,6 +638,14 @@ func mergeAIConfig(existing, body *domain.AIConfig) *domain.AIConfig {
 	if body.LookbackDays > 0 {
 		out.LookbackDays = body.LookbackDays
 	}
+	// StreamingEnabled: *bool semantics — nil in body = no-op (preserve
+	// whatever existing has); non-nil = overwrite (true OR false both
+	// land verbatim). This is the *only* tunable field where "false" is
+	// a meaningful explicit value, hence the pointer.
+	if body.StreamingEnabled != nil {
+		v := *body.StreamingEnabled
+		out.StreamingEnabled = &v
+	}
 	return out
 }
 
@@ -654,6 +679,259 @@ func (h *AdminHandler) getAIPrompts(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadGateway, err.Error())
 	}
 	return c.JSON(http.StatusOK, resp)
+}
+
+// ---- /admin/ai/test ------------------------------------------------------
+
+// aiTestRequest is the POST body for /admin/ai/test.
+type aiTestRequest struct {
+	Family string `json:"family"`
+}
+
+// AITestResult is the response body for /admin/ai/test. The shape is
+// stable — UI displays modelTested + baseUrl + latencyMs verbatim and
+// toasts on `ok`.
+//
+// `Error` carries the upstream provider's error body (truncated to 200
+// chars) when ok=false. We *never* include the API key in the error
+// string; the request path here is purely "build → call → snapshot",
+// and provider error bodies historically don't echo headers back. As a
+// defence-in-depth measure we scan the error string for the literal
+// key prefix and replace it with `[redacted]` (see redactKey below)
+// before serialising.
+type AITestResult struct {
+	OK          bool   `json:"ok"`
+	Family      string `json:"family"`
+	ModelTested string `json:"modelTested"`
+	BaseURL     string `json:"baseUrl"`
+	LatencyMs   int64  `json:"latencyMs"`
+	Error       string `json:"error,omitempty"`
+}
+
+// POST /api/v1/admin/ai/test — verify provider connection.
+//
+// Body: `{"family":"anthropic"|"openai"|"deepseek"}`.
+//
+// Looks up the *persisted* config (Mongo aiConfig overlay + env
+// fallback), decrypts the relevant API key, and issues a minimal
+// `max_tokens=1, messages=[{role:user,content:"hi"}]` request to the
+// provider with a 15s timeout. Returns latency + a sanitised error
+// message. Caller-visible response NEVER contains the plaintext key —
+// only the configured baseUrl + model + latency.
+//
+// We return HTTP 200 with `ok:false` for the "user-visible failure"
+// cases (key not configured, provider 4xx/5xx, timeout). 4xx HTTP is
+// reserved for malformed-input / not-an-admin cases.
+func (h *AdminHandler) testAIConnection(c echo.Context) error {
+	if err := h.auth(c); err != nil {
+		return err
+	}
+	if h.system == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "system repo not configured")
+	}
+	if h.crypto == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "crypto service not configured")
+	}
+
+	var body aiTestRequest
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	family := strings.ToLower(strings.TrimSpace(body.Family))
+	if family != "anthropic" && family != "openai" && family != "deepseek" {
+		return echo.NewHTTPError(http.StatusBadRequest,
+			"family must be 'anthropic', 'openai', or 'deepseek'")
+	}
+
+	persisted, err := h.system.GetAIConfig(c.Request().Context())
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	eff := effectiveAIConfig(persisted)
+
+	// Resolve key (Mongo ciphertext > env fallback). Decryption errors
+	// fall through to "not configured" — the audit log already records
+	// the test attempt; rotating the key is the operator's next move.
+	key, baseURL, model, suggestedDefault := h.resolveProviderConfig(family, persisted, eff)
+	result := AITestResult{
+		Family:      family,
+		ModelTested: model,
+		BaseURL:     strings.TrimRight(baseURL, "/"),
+	}
+	if key == "" {
+		result.Error = "未配置 API key"
+		return c.JSON(http.StatusOK, result)
+	}
+
+	// Build request. Each family has its own envelope.
+	endpoint, hdrs, payload, err := buildAITestRequest(family, baseURL, suggestedDefault, model, key)
+	if err != nil {
+		result.Error = redactKey(err.Error(), key)
+		return c.JSON(http.StatusOK, result)
+	}
+	// Pin the baseURL we actually used, trimmed (handy when family
+	// defaults to https://api.* and the persisted field is empty).
+	if u, perr := url.Parse(endpoint); perr == nil {
+		result.BaseURL = strings.TrimRight(u.Scheme+"://"+u.Host, "/")
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 15*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		result.Error = redactKey(err.Error(), key)
+		result.LatencyMs = time.Since(start).Milliseconds()
+		return c.JSON(http.StatusOK, result)
+	}
+	for k, v := range hdrs {
+		req.Header.Set(k, v)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	latency := time.Since(start).Milliseconds()
+	result.LatencyMs = latency
+	if err != nil {
+		result.Error = redactKey(err.Error(), key)
+		return c.JSON(http.StatusOK, result)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		result.OK = true
+		return c.JSON(http.StatusOK, result)
+	}
+	// Truncate at 200 chars for UI compactness; redact any literal key
+	// that might appear (defensive — providers don't typically echo).
+	msg := strings.TrimSpace(string(respBody))
+	if len(msg) > 200 {
+		msg = msg[:200] + "…"
+	}
+	if msg == "" {
+		msg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	} else {
+		msg = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, msg)
+	}
+	result.Error = redactKey(msg, key)
+	return c.JSON(http.StatusOK, result)
+}
+
+// resolveProviderConfig returns (apiKey, baseURL, model, defaultBaseURL)
+// for the requested provider. apiKey is decrypted plaintext or empty
+// when no key resolves. baseURL is the operator-configured value
+// (possibly empty); defaultBaseURL is the family's hard-coded fallback
+// used by buildAITestRequest when baseURL is empty.
+func (h *AdminHandler) resolveProviderConfig(
+	family string,
+	persisted *domain.AIConfig,
+	eff AIConfigEffective,
+) (apiKey, baseURL, model, defaultBaseURL string) {
+	switch family {
+	case "anthropic":
+		defaultBaseURL = "https://api.anthropic.com"
+		baseURL = eff.AnthropicBaseURL
+		model = eff.AnthropicPrimaryModel
+		if persisted != nil && persisted.AnthropicAPIKeyCiphertext != "" {
+			if pt, err := h.crypto.Decrypt(persisted.AnthropicAPIKeyCiphertext); err == nil {
+				apiKey = pt
+			}
+		}
+		if apiKey == "" {
+			apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		}
+	case "openai":
+		defaultBaseURL = "https://api.openai.com/v1"
+		baseURL = eff.OpenAIBaseURL
+		model = eff.OpenAIPrimaryModel
+		if persisted != nil && persisted.OpenAIAPIKeyCiphertext != "" {
+			if pt, err := h.crypto.Decrypt(persisted.OpenAIAPIKeyCiphertext); err == nil {
+				apiKey = pt
+			}
+		}
+		if apiKey == "" {
+			apiKey = os.Getenv("OPENAI_API_KEY")
+		}
+	case "deepseek":
+		defaultBaseURL = "https://api.deepseek.com"
+		baseURL = eff.DeepseekBaseURL
+		model = eff.DeepseekPrimaryModel
+		if persisted != nil && persisted.DeepseekAPIKeyCiphertext != "" {
+			if pt, err := h.crypto.Decrypt(persisted.DeepseekAPIKeyCiphertext); err == nil {
+				apiKey = pt
+			}
+		}
+		if apiKey == "" {
+			apiKey = os.Getenv("DEEPSEEK_API_KEY")
+		}
+	}
+	return apiKey, baseURL, model, defaultBaseURL
+}
+
+// buildAITestRequest renders the minimal validation request per family.
+//
+// Anthropic: POST /v1/messages with `x-api-key` + `anthropic-version`.
+// OpenAI:    POST /chat/completions with `Authorization: Bearer ...`.
+// DeepSeek:  POST /v1/chat/completions (OpenAI-compatible surface).
+//
+// All three use max_tokens=1 + a one-token user message so the call is
+// the cheapest valid round-trip that exercises auth + model lookup
+// without burning any meaningful budget.
+func buildAITestRequest(
+	family, baseURL, defaultBaseURL, model, apiKey string,
+) (endpoint string, headers map[string]string, payload []byte, err error) {
+	resolvedBase := strings.TrimRight(baseURL, "/")
+	if resolvedBase == "" {
+		resolvedBase = strings.TrimRight(defaultBaseURL, "/")
+	}
+	switch family {
+	case "anthropic":
+		endpoint = resolvedBase + "/v1/messages"
+		headers = map[string]string{
+			"x-api-key":         apiKey,
+			"anthropic-version": "2023-06-01",
+		}
+		payload, err = json.Marshal(map[string]any{
+			"model":      model,
+			"max_tokens": 1,
+			"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+		})
+	case "openai", "deepseek":
+		// Both expose the OpenAI chat.completions shape. If the operator
+		// gave a bare host (no /v1 suffix) we append it so the call
+		// resolves to /v1/chat/completions rather than /chat/completions
+		// (the latter 404s on most proxies). For DeepSeek the canonical
+		// URL is api.deepseek.com so /v1 path is expected.
+		base := resolvedBase
+		if !strings.HasSuffix(base, "/v1") && !strings.Contains(base, "/v1/") {
+			base = base + "/v1"
+		}
+		endpoint = base + "/chat/completions"
+		headers = map[string]string{
+			"Authorization": "Bearer " + apiKey,
+		}
+		payload, err = json.Marshal(map[string]any{
+			"model":      model,
+			"max_tokens": 1,
+			"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+		})
+	default:
+		err = fmt.Errorf("unsupported family %q", family)
+	}
+	return endpoint, headers, payload, err
+}
+
+// redactKey returns msg with every occurrence of `key` replaced by
+// `[redacted]`. Empty key short-circuits. We don't try to be clever
+// about partial matches — providers never echo the key, this is purely
+// belt-and-braces in case a future provider error string surprises us.
+func redactKey(msg, key string) string {
+	if key == "" {
+		return msg
+	}
+	return strings.ReplaceAll(msg, key, "[redacted]")
 }
 
 // ---- tiny env helpers ---------------------------------------------------

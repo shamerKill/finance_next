@@ -60,6 +60,14 @@ type AIConfig struct {
 	AnthropicAPIKeyCiphertext string `bson:"anthropicApiKeyCiphertext,omitempty" json:"-"`
 	OpenAIAPIKeyCiphertext    string `bson:"openaiApiKeyCiphertext,omitempty"    json:"-"`
 	DeepseekAPIKeyCiphertext  string `bson:"deepseekApiKeyCiphertext,omitempty"  json:"-"`
+
+	// StreamingEnabled toggles whether AI dispatch uses streaming
+	// transports (OpenAI/DeepSeek stream=True, Anthropic messages.create
+	// stream=True). Pointer type so the zero value distinguishes
+	// "absent (= use default true)" from "explicitly set false". The
+	// quant worker reads cfg.get("streamingEnabled") with the same
+	// "None → True" coercion in ``ai/secrets.py::load_ai_secrets``.
+	StreamingEnabled *bool `bson:"streamingEnabled,omitempty" json:"streamingEnabled,omitempty"`
 }
 
 // RecommendationPeriod is the OOS-window metadata attached to each

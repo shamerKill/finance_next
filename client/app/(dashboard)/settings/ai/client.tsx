@@ -156,8 +156,17 @@ export function AIConfigClient() {
             ← 系统设置
           </Link>
         }
-        subtitle="模型、预算、查找窗口、prompts 等 AI 相关配置。API 密钥不在 UI 中暴露，仍通过环境变量配置。"
+        subtitle="模型、预算、查找窗口、prompts 等 AI 相关配置。"
       />
+
+      <Callout variant="info" title="API Key 存储策略">
+        密钥在本页输入后以 AES-256-GCM 加密存入 Mongo；UI 永远不回显原值，只显示&ldquo;已配置 / 未配置&rdquo;徽章。
+        环境变量{" "}
+        <code className="px-1 bg-default-100 rounded text-xs">ANTHROPIC_API_KEY</code> /{" "}
+        <code className="px-1 bg-default-100 rounded text-xs">OPENAI_API_KEY</code> /{" "}
+        <code className="px-1 bg-default-100 rounded text-xs">DEEPSEEK_API_KEY</code> 仍作为一次性迁移期回退；
+        保存表单后 Mongo 中的密文优先生效，env 仅在密文缺失时使用。建议从此页输入后清除 env。
+      </Callout>
 
       {configError != null && !configAuthFailed ? (
         <ApiErrorView error={configError} />

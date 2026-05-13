@@ -1,14 +1,16 @@
 import Link from "next/link";
 
 import { Callout } from "@/components/callout";
-import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
-import { StatusBadge } from "@/components/status-badge";
 import { listPredictionStrategies } from "@/data/api-client";
 import { TypePredictionStrategy } from "@/data/type";
 
-// Node 2.C.5.e — DataTable + StatusBadge.
+import StrategiesTable from "./strategies-table";
+
+// Node 2.C.5.e — DataTable + StatusBadge. Column `render` callbacks
+// live in <StrategiesTable> (client) so functions don't cross the RSC
+// → client boundary.
 
 export const dynamic = "force-dynamic";
 
@@ -51,70 +53,7 @@ export default async function PredictionStrategiesPage() {
           action={action}
         />
       ) : (
-        <DataTable<TypePredictionStrategy>
-          ariaLabel="预测策略列表"
-          mobileLayout="card"
-          rows={strategies}
-          getRowKey={(s) => s.id}
-          columns={[
-            {
-              key: "name",
-              label: "名称",
-              render: (s) => (
-                <Link
-                  href={`/prediction/strategies/${s.id}`}
-                  className="font-medium text-brand-primary hover:underline"
-                >
-                  {s.name}
-                </Link>
-              ),
-            },
-            {
-              key: "marketId",
-              label: "市场",
-              render: (s) => (
-                <span className="font-mono text-mono-sm break-all">
-                  {s.marketId}
-                </span>
-              ),
-            },
-            {
-              key: "outcome",
-              label: "结果",
-              render: (s) => (
-                <StatusBadge
-                  tone={s.outcome === "YES" ? "success" : "danger"}
-                  variant="flat"
-                  size="sm"
-                >
-                  {s.outcome}
-                </StatusBadge>
-              ),
-            },
-            {
-              key: "version",
-              label: "版本",
-              align: "end",
-              render: (s) => (
-                <span className="font-mono tnum">v{s.currentVersion}</span>
-              ),
-            },
-            {
-              key: "status",
-              label: "状态",
-              render: (s) =>
-                s.live.enabled ? (
-                  <StatusBadge tone="success" variant="dot">
-                    实盘 · {s.live.mode ?? "mainnet"}
-                  </StatusBadge>
-                ) : (
-                  <StatusBadge tone="default" variant="dot">
-                    未启用
-                  </StatusBadge>
-                ),
-            },
-          ]}
-        />
+        <StrategiesTable rows={strategies} />
       )}
     </div>
   );

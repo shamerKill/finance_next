@@ -3,10 +3,11 @@
 //
 // Node 2.C.5.d — replaced bespoke table with DataTable; added a
 // ChartShell line view for the same series. Business logic untouched.
+// Column `render` callbacks live in <MacroTable> (client) to keep
+// functions on the client side of the RSC boundary.
 
 import { ApiErrorView } from "@/components/api-error";
 import { ChartShell, type ChartBar } from "@/components/chart-shell";
-import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { IngestButton } from "@/components/ingest-button";
 import { PageHeader } from "@/components/page-header";
@@ -14,35 +15,14 @@ import { Section } from "@/components/section";
 import { getMacroIndicators } from "@/data/api-client";
 import type { TypeMacroPoint } from "@/data/type";
 
+import MacroTable from "./macro-table";
+
 export const dynamic = "force-dynamic";
 
 export const metadata = { title: "宏观指标" };
 
 const DEFAULT_SOURCE = "fred";
 const DEFAULT_CODE = "CPIAUCSL";
-
-const COLUMNS: DataTableColumn<TypeMacroPoint>[] = [
-  {
-    key: "ts",
-    label: "时间",
-    render: (r) => (
-      <span className="font-mono text-text-secondary">{r.ts}</span>
-    ),
-  },
-  {
-    key: "value",
-    label: "数值",
-    align: "end",
-    render: (r) => (
-      <span className="font-mono tnum text-text-primary">{r.value}</span>
-    ),
-  },
-  {
-    key: "unit",
-    label: "单位",
-    render: (r) => r.unit,
-  },
-];
 
 function toChartBars(points: TypeMacroPoint[]): ChartBar[] {
   return points.map((p) => ({ time: p.ts, value: p.value }));
@@ -83,19 +63,7 @@ export default async function MacroPage() {
         )}
       </Section>
       <Section title="最近观测">
-        <DataTable
-          ariaLabel="macro indicators"
-          mobileLayout="card"
-          columns={COLUMNS}
-          rows={rows}
-          getRowKey={(r) => r.ts}
-          emptyState={
-            <EmptyState
-              title="暂无数据"
-              description="尚未抓取或时间窗口内无观测。"
-            />
-          }
-        />
+        <MacroTable rows={rows} />
       </Section>
     </div>
   );

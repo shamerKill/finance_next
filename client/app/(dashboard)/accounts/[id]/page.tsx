@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { ApiErrorView } from "@/components/api-error";
-import { DataTable, DataTableColumn } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { RecentTracker } from "@/components/recent-tracker";
@@ -22,6 +21,8 @@ import {
 } from "@/data/type";
 
 import AccountStreamPanel from "./stream-panel";
+import BalancesTable from "./balances-table";
+import PositionsTable from "./positions-table";
 import RefreshButton from "./refresh-button";
 
 export const dynamic = "force-dynamic";
@@ -115,75 +116,6 @@ export default async function AccountDetailPage({ params }: PageProps) {
   const linkedStrategies = strategies.filter(
     (s) => s.id && s.live?.accountId && s.live.accountId === account.id,
   );
-
-  const balanceColumns: DataTableColumn<TypeBalance>[] = [
-    { key: "asset", label: "资产", render: (b) => <span>{b.asset}</span> },
-    {
-      key: "free",
-      label: "可用",
-      align: "end",
-      render: (b) => <span className="font-mono tnum">{b.free}</span>,
-    },
-    {
-      key: "locked",
-      label: "冻结",
-      align: "end",
-      render: (b) => <span className="font-mono tnum">{b.locked}</span>,
-    },
-    {
-      key: "wallet",
-      label: "钱包",
-      render: (b) => <span className="text-text-tertiary">{b.wallet}</span>,
-    },
-  ];
-
-  const positionColumns: DataTableColumn<TypePosition>[] = [
-    { key: "symbol", label: "交易对" },
-    { key: "positionSide", label: "方向" },
-    {
-      key: "positionAmt",
-      label: "数量",
-      align: "end",
-      render: (p) => <span className="font-mono tnum">{p.positionAmt}</span>,
-    },
-    {
-      key: "entryPrice",
-      label: "开仓价",
-      align: "end",
-      render: (p) => <span className="font-mono tnum">{p.entryPrice}</span>,
-    },
-    {
-      key: "markPrice",
-      label: "标记价",
-      align: "end",
-      render: (p) => <span className="font-mono tnum">{p.markPrice}</span>,
-    },
-    {
-      key: "unrealizedProfit",
-      label: "盈亏",
-      align: "end",
-      render: (p) => {
-        const v = Number(p.unrealizedProfit);
-        const cls =
-          Number.isFinite(v) && v > 0
-            ? "text-accent-up"
-            : Number.isFinite(v) && v < 0
-              ? "text-accent-down"
-              : "text-text-secondary";
-        return (
-          <span className={`font-mono tnum ${cls}`}>{p.unrealizedProfit}</span>
-        );
-      },
-    },
-    {
-      key: "leverage",
-      label: "杠杆",
-      align: "end",
-      render: (p) => (
-        <span className="font-mono tnum">{p.leverage}x</span>
-      ),
-    },
-  ];
 
   const overviewPanel = (
     <div className="space-y-4">
@@ -285,13 +217,7 @@ export default async function AccountDetailPage({ params }: PageProps) {
           description="账户连接成功，当前现货 + 期货均无可用资金。零余额资产已被过滤。"
         />
       ) : (
-        <DataTable<TypeBalance>
-          ariaLabel="账户余额"
-          mobileLayout="card"
-          columns={balanceColumns}
-          rows={balancesResult.data}
-          getRowKey={(b) => `${b.wallet}-${b.asset}`}
-        />
+        <BalancesTable rows={balancesResult.data} />
       )}
     </Section>
   );
@@ -313,13 +239,7 @@ export default async function AccountDetailPage({ params }: PageProps) {
           description="USDM 期货当前无开放持仓。仅显示 positionAmt ≠ 0 的合约。"
         />
       ) : (
-        <DataTable<TypePosition>
-          ariaLabel="账户持仓"
-          mobileLayout="card"
-          columns={positionColumns}
-          rows={positionsResult.data}
-          getRowKey={(p) => `${p.symbol}-${p.positionSide}`}
-        />
+        <PositionsTable rows={positionsResult.data} />
       )}
     </Section>
   );

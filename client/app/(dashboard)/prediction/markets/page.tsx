@@ -1,16 +1,15 @@
-import Link from "next/link";
-
 import { ApiErrorView } from "@/components/api-error";
-import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
-import { StatusBadge } from "@/components/status-badge";
 import { listPredictionMarkets } from "@/data/api-client";
 import { TypePredictionMarket } from "@/data/type";
 
 import { IngestWithVerify } from "./ingest-with-verify";
+import MarketsTable from "./markets-table";
 
 // Node 2.C.5.e — DataTable + StatusBadge for tags; PageHeader stays.
+// Column `render` callbacks live in <MarketsTable> (client) so the
+// functions don't cross the RSC → client boundary.
 
 export const dynamic = "force-dynamic";
 
@@ -52,69 +51,7 @@ export default async function PredictionMarketsPage({
           description="点击右上角“立即抓取数据”触发一次初始化。"
         />
       ) : (
-        <DataTable<TypePredictionMarket>
-          ariaLabel="预测市场列表"
-          mobileLayout="card"
-          rows={markets}
-          getRowKey={(m) => m.marketId}
-          columns={[
-            {
-              key: "question",
-              label: "市场",
-              render: (m) => (
-                <Link
-                  href={`/prediction/markets/${encodeURIComponent(m.marketId)}`}
-                  className="font-medium text-brand-primary hover:underline"
-                >
-                  {m.question}
-                </Link>
-              ),
-            },
-            {
-              key: "category",
-              label: "分类",
-              render: (m) =>
-                m.category ? (
-                  <StatusBadge tone="default" variant="flat" size="sm">
-                    {m.category}
-                  </StatusBadge>
-                ) : (
-                  <span className="text-text-tertiary">—</span>
-                ),
-            },
-            {
-              key: "endDate",
-              label: "结束时间",
-              render: (m) =>
-                m.endDate ? (
-                  <span className="font-mono text-mono-sm tnum">
-                    {new Date(m.endDate).toLocaleDateString()}
-                  </span>
-                ) : (
-                  <span className="text-text-tertiary">—</span>
-                ),
-            },
-            {
-              key: "tags",
-              label: "标签",
-              hideOnCard: true,
-              render: (m) => (
-                <div className="flex flex-wrap gap-1">
-                  {(m.tags ?? []).map((t) => (
-                    <StatusBadge
-                      key={t}
-                      tone="default"
-                      variant="flat"
-                      size="sm"
-                    >
-                      {t}
-                    </StatusBadge>
-                  ))}
-                </div>
-              ),
-            },
-          ]}
-        />
+        <MarketsTable rows={markets} />
       )}
     </div>
   );

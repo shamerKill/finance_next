@@ -6,48 +6,24 @@
 //
 // 2.C.5.b refactor — design system: PageHeader / StatusBadge /
 // EmptyState / Callout + DataTable; mobile-safe card layout via
-// DataTable's built-in card mode.
+// DataTable's built-in card mode. Column `render` callbacks live in
+// <StrategiesTable> (client) so functions don't cross the RSC → client
+// boundary.
 
 import Link from "next/link";
 import { FC } from "react";
 
 import { Callout } from "@/components/callout";
-import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
-import { StatusBadge } from "@/components/status-badge";
 import { getStrategies } from "@/data/api-client";
 import { TypeOption } from "@/data/type";
+
+import StrategiesTable from "./strategies-table";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = { title: "策略" };
-
-// Live + mode rendered as a single badge — keeps the table cell narrow
-// and reads at a glance.
-function LiveBadge({ s }: { s: TypeOption }) {
-  if (!s.live?.enabled) {
-    return <StatusBadge tone="default">关闭</StatusBadge>;
-  }
-  if (s.live.mode === "mainnet") {
-    return <StatusBadge tone="danger">主网</StatusBadge>;
-  }
-  return <StatusBadge tone="success">测试网</StatusBadge>;
-}
-
-function RiskCell({ s }: { s: TypeOption }) {
-  if (!s.risk) {
-    return (
-      <span className="text-xs text-text-tertiary">—（订单将被拒绝）</span>
-    );
-  }
-  return (
-    <span className="font-mono tnum text-xs text-text-secondary">
-      仓位 ${s.risk.maxPositionUsd} · 杠杆 {s.risk.maxLeverage}× · 日亏 $
-      {s.risk.dailyLossCapUsd}
-    </span>
-  );
-}
 
 const PageStrategies: FC = async () => {
   let strategies: TypeOption[] = [];
@@ -67,41 +43,6 @@ const PageStrategies: FC = async () => {
     </Link>
   );
 
-  const columns: DataTableColumn<TypeOption>[] = [
-    {
-      key: "name",
-      label: "名称",
-      render: (s) =>
-        s.id ? (
-          <Link
-            className="font-medium text-brand-primary hover:underline"
-            href={`/strategies/${s.id}`}
-          >
-            {s.name}
-          </Link>
-        ) : (
-          <span className="font-medium">{s.name}</span>
-        ),
-    },
-    {
-      key: "execSymbol",
-      label: "交易对",
-      render: (s) => (
-        <span className="font-mono tnum text-sm">{s.execSymbol}</span>
-      ),
-    },
-    {
-      key: "live",
-      label: "实盘",
-      render: (s) => <LiveBadge s={s} />,
-    },
-    {
-      key: "risk",
-      label: "风控",
-      render: (s) => <RiskCell s={s} />,
-    },
-  ];
-
   return (
     <div className="space-y-4">
       <PageHeader title="策略" action={newAction} />
@@ -119,15 +60,7 @@ const PageStrategies: FC = async () => {
           action={newAction}
         />
       ) : (
-        !error && (
-          <DataTable
-            ariaLabel="strategies"
-            mobileLayout="card"
-            columns={columns}
-            rows={strategies}
-            getRowKey={(s) => s.id ?? s.name}
-          />
-        )
+        !error && <StrategiesTable rows={strategies} />
       )}
     </div>
   );

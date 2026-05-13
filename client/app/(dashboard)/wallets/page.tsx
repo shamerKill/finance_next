@@ -1,16 +1,18 @@
 import Link from "next/link";
 
 import { Callout } from "@/components/callout";
-import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
-import { StatusBadge } from "@/components/status-badge";
 import { listWallets } from "@/data/api-client";
 import { TypeWallet } from "@/data/type";
+
+import WalletsTable from "./wallets-table";
 
 // Node 2.C.5.e — adopt design system primitives (DataTable + StatusBadge +
 // PageHeader). The danger banner from §G5 stays — private-key safety
 // model is a security contract surface we always reiterate to the user.
+// Column `render` callbacks live in <WalletsTable> (client) so functions
+// don't cross the RSC → client boundary.
 
 export const dynamic = "force-dynamic";
 
@@ -63,76 +65,7 @@ export default async function WalletsPage() {
           action={action}
         />
       ) : (
-        <DataTable<TypeWallet>
-          ariaLabel="Polygon 钱包列表"
-          mobileLayout="card"
-          rows={wallets}
-          getRowKey={(w) => w.id}
-          emptyState="暂无钱包"
-          columns={[
-            {
-              key: "label",
-              label: "标签",
-              render: (w) => (
-                <Link
-                  href={`/wallets/${w.id}`}
-                  className="font-medium text-brand-primary hover:underline"
-                >
-                  {w.label}
-                </Link>
-              ),
-            },
-            {
-              key: "address",
-              label: "地址",
-              render: (w) => (
-                <span className="font-mono text-mono-sm break-all">
-                  {w.address}
-                </span>
-              ),
-            },
-            {
-              key: "balance",
-              label: "USDC 缓存余额",
-              align: "end",
-              render: (w) =>
-                w.usdcBalanceCached != null ? (
-                  <span className="font-mono tnum">
-                    ${w.usdcBalanceCached.toFixed(2)}
-                  </span>
-                ) : (
-                  <span className="text-text-tertiary">—</span>
-                ),
-            },
-            {
-              key: "allowance",
-              label: "授权额度",
-              align: "end",
-              render: (w) =>
-                w.usdcAllowanceCached != null ? (
-                  <span className="font-mono tnum">
-                    ${w.usdcAllowanceCached.toFixed(2)}
-                  </span>
-                ) : (
-                  <span className="text-text-tertiary">—</span>
-                ),
-            },
-            {
-              key: "status",
-              label: "状态",
-              render: (w) =>
-                w.usdcAllowanceCached != null && w.usdcAllowanceCached > 0 ? (
-                  <StatusBadge tone="success" variant="dot">
-                    已授权
-                  </StatusBadge>
-                ) : (
-                  <StatusBadge tone="default" variant="dot">
-                    未授权
-                  </StatusBadge>
-                ),
-            },
-          ]}
-        />
+        <WalletsTable rows={wallets} />
       )}
     </div>
   );

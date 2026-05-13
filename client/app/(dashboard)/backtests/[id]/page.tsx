@@ -17,7 +17,6 @@
 import Link from "next/link";
 
 import { Callout } from "@/components/callout";
-import { DataTable } from "@/components/data-table";
 import { PageHeader } from "@/components/page-header";
 import { RecentTracker } from "@/components/recent-tracker";
 import { Section } from "@/components/section";
@@ -39,6 +38,7 @@ import type {
 import { DetailTabs } from "./detail-tabs";
 import { EquityChart } from "./equity-chart";
 import { LiveProgress } from "./live-progress";
+import TradesTable from "./trades-table";
 
 export const dynamic = "force-dynamic";
 
@@ -136,75 +136,7 @@ export default async function BacktestDetailPage({ params }: Params) {
 
   const tradesPanel = (
     <Section title="交易">
-      <DataTable<TypeBacktestTrade>
-        ariaLabel="backtest trades"
-        mobileLayout="card"
-        rows={trades.slice(0, 200)}
-        getRowKey={(t) => `${t.entryTs}-${t.exitTs}-${t.entryPrice}`}
-        emptyState="暂无交易记录。"
-        columns={[
-          {
-            key: "entryTs",
-            label: "入场时间",
-            render: (t) => new Date(t.entryTs).toLocaleString(),
-          },
-          {
-            key: "exitTs",
-            label: "出场时间",
-            render: (t) => new Date(t.exitTs).toLocaleString(),
-          },
-          {
-            key: "entryPrice",
-            label: "入场均价",
-            align: "end",
-            render: (t) => fmtNum(t.entryPrice, 4),
-          },
-          {
-            key: "exitPrice",
-            label: "出场价格",
-            align: "end",
-            render: (t) => fmtNum(t.exitPrice, 4),
-          },
-          {
-            key: "size",
-            label: "数量",
-            align: "end",
-            render: (t) => fmtNum(t.size, 2),
-          },
-          {
-            key: "pnl",
-            label: "盈亏",
-            align: "end",
-            render: (t) => (
-              <span
-                className={
-                  t.pnl >= 0 ? "text-accent-up" : "text-accent-down"
-                }
-              >
-                {fmtNum(t.pnl, 2)}
-              </span>
-            ),
-          },
-          {
-            key: "returnPct",
-            label: "收益率",
-            align: "end",
-            render: (t) => fmtPct(t.returnPct),
-          },
-          {
-            key: "nAdds",
-            label: "加仓次数",
-            align: "end",
-            render: (t) => t.nAdds,
-            hideOnCard: true,
-          },
-          {
-            key: "exitReason",
-            label: "原因",
-            render: (t) => t.exitReason,
-          },
-        ]}
-      />
+      <TradesTable rows={trades} />
       {trades.length > 200 ? (
         <div className="mt-2 text-xs text-text-tertiary">
           显示 {trades.length} 条中的 200 条。

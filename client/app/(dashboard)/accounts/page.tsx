@@ -1,12 +1,12 @@
 import Link from "next/link";
 
 import { ApiErrorView } from "@/components/api-error";
-import { DataTable, DataTableColumn } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
-import { StatusBadge } from "@/components/status-badge";
 import { listAccounts } from "@/data/api-client";
 import { TypeAccount } from "@/data/type";
+
+import AccountsTable from "./accounts-table";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +20,8 @@ export const metadata = { title: "账户" };
 // Node 2.C.5.a — list rows now render through <DataTable> (auto card
 // layout on mobile per spec §G5); palette migrated to semantic tokens;
 // errors flow through <ApiErrorView>. Business logic / fetch unchanged.
+// Column `render` callbacks live in <AccountsTable> (client) to avoid
+// passing functions through the RSC → client boundary.
 export default async function AccountsPage({
   searchParams,
 }: {
@@ -41,59 +43,6 @@ export default async function AccountsPage({
         (a) => a.exchange?.toLowerCase() === exchangeFilter.toLowerCase(),
       )
     : accounts;
-
-  const columns: DataTableColumn<TypeAccount>[] = [
-    {
-      key: "label",
-      label: "标签",
-      render: (a) => (
-        <Link
-          href={`/accounts/${a.id}`}
-          className="font-medium text-text-primary hover:text-brand-primary hover:underline"
-        >
-          {a.label}
-        </Link>
-      ),
-    },
-    {
-      key: "exchange",
-      label: "交易所",
-      render: (a) => (
-        <span className="capitalize text-text-secondary">{a.exchange}</span>
-      ),
-    },
-    {
-      key: "email",
-      label: "邮箱",
-      render: (a) => (
-        <span className="text-text-secondary truncate">{a.email}</span>
-      ),
-    },
-    {
-      key: "permissions",
-      label: "权限",
-      align: "end",
-      render: (a) => (
-        <div className="flex gap-1 justify-end flex-wrap">
-          {a.permissions.canTrade && (
-            <StatusBadge tone="success" variant="flat" size="sm">
-              交易
-            </StatusBadge>
-          )}
-          {a.permissions.canWithdraw && (
-            <StatusBadge tone="danger" variant="flat" size="sm">
-              提现
-            </StatusBadge>
-          )}
-          {!a.permissions.canTrade && !a.permissions.canWithdraw && (
-            <StatusBadge tone="default" variant="flat" size="sm">
-              只读
-            </StatusBadge>
-          )}
-        </div>
-      ),
-    },
-  ];
 
   return (
     <div className="space-y-6">
@@ -145,13 +94,7 @@ export default async function AccountsPage({
           }
         />
       ) : error == null ? (
-        <DataTable<TypeAccount>
-          ariaLabel="账户列表"
-          mobileLayout="card"
-          columns={columns}
-          rows={filtered}
-          getRowKey={(a) => a.id}
-        />
+        <AccountsTable rows={filtered} />
       ) : null}
     </div>
   );

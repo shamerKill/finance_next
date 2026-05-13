@@ -39,6 +39,7 @@ import { AIConfigEditButton } from "./edit-modal";
 const FAMILY_LABELS: Record<TypeAIConfig["modelFamily"], string> = {
   claude: "claude",
   openai: "openai",
+  deepseek: "deepseek",
 };
 
 const SOURCE_LABELS: Record<TypeAIConfig["source"], string> = {
@@ -125,7 +126,7 @@ export function AIConfigClient() {
               ← 系统设置
             </Link>
           }
-          subtitle="模型、预算、查找窗口、prompts 等 AI 相关配置。API 密钥不在 UI 中暴露，仍通过环境变量配置。"
+          subtitle="模型、预算、查找窗口、prompts 等 AI 相关配置。API 密钥支持在表单中输入（加密存储），env 变量为一次性迁移期回退。"
         />
         <EmptyState
           title="无权访问"
@@ -184,18 +185,25 @@ export function AIConfigClient() {
             <Row label="主模型">
               {config.modelFamily === "claude"
                 ? config.anthropicPrimaryModel
-                : config.openaiPrimaryModel}
+                : config.modelFamily === "openai"
+                  ? config.openaiPrimaryModel
+                  : config.deepseekPrimaryModel}
             </Row>
             <Row label="refine 模型">
               {config.modelFamily === "claude"
                 ? config.anthropicRefineModel
-                : config.openaiRefineModel}
+                : config.modelFamily === "openai"
+                  ? config.openaiRefineModel
+                  : config.deepseekRefineModel}
             </Row>
-            <Row label="Anthropic">
-              <ConfiguredBadge ok={config.anthropicConfigured} />
+            <Row label="Anthropic API key">
+              <ConfiguredBadge ok={config.anthropicApiKeyConfigured} />
             </Row>
-            <Row label="OpenAI">
-              <ConfiguredBadge ok={config.openaiConfigured} />
+            <Row label="OpenAI API key">
+              <ConfiguredBadge ok={config.openaiApiKeyConfigured} />
+            </Row>
+            <Row label="DeepSeek API key">
+              <ConfiguredBadge ok={config.deepseekApiKeyConfigured} />
             </Row>
             <Row label="Anthropic base URL">
               {config.anthropicBaseURL || (
@@ -204,6 +212,11 @@ export function AIConfigClient() {
             </Row>
             <Row label="OpenAI base URL">
               {config.openaiBaseURL || (
+                <span className="text-default-400">(默认)</span>
+              )}
+            </Row>
+            <Row label="DeepSeek base URL">
+              {config.deepseekBaseURL || (
                 <span className="text-default-400">(默认)</span>
               )}
             </Row>

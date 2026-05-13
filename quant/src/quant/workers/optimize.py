@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from quant.ai import config as ai_config
+from quant.ai import secrets as ai_secrets
 from quant.ai._protocol import AIClient
 from quant.ai.claude_client import ClaudeClient, MissingAPIKeyError
 from quant.ai.cost_ledger import BudgetGate
@@ -440,7 +441,8 @@ async def optimize_task(
 
     sid = study_id or new_study_id()
     cfg = await ai_config.load_effective_config(mongo_db)
-    claude_client = _build_default_ai_client(cfg)
+    secrets = await ai_secrets.load_ai_secrets(mongo_db)
+    claude_client = _build_ai_client_with_secrets(cfg, secrets)
     result = await run_optimization_for_strategy(
         study_id=sid,
         strategy_id=strategy_id,
@@ -502,7 +504,8 @@ async def daily_optimize_cron(ctx: dict[str, Any]) -> dict[str, Any]:
                     return await timescale.fetch_ohlcv(**kwargs)
 
                 cfg = await ai_config.load_effective_config(mongo_db)
-                claude_client = _build_default_ai_client(cfg)
+                secrets = await ai_secrets.load_ai_secrets(mongo_db)
+                claude_client = _build_ai_client_with_secrets(cfg, secrets)
                 await run_optimization_for_strategy(
                     study_id=new_study_id(),
                     strategy_id=sid,
@@ -615,3 +618,99 @@ def _build_default_ai_client(
 
 # Backwards-compatible alias — existing imports keep working.
 _build_default_claude_client = _build_default_ai_client
+
+
+def _build_ai_client_with_secrets(
+    cfg: ai_config.EffectiveAIConfig,
+    secrets: ai_secrets.AISecrets,
+) -> AIClient | None:
+    """Build an AI client using Mongo-persisted secrets + effective config.
+
+    Routing:
+        * ``cfg.model_family == "openai"`` — GPTClient on the Responses API
+          (gpt-5.x via Anthropic-style proxy). API key prefers
+          ``secrets.openai_api_key`` (decrypted Mongo ciphertext) then
+          ``OPENAI_API_KEY`` env then ``ANTHROPIC_API_KEY`` env (proxy
+          fallback). Returns ``None`` when no key resolves so the
+          optimizer falls back to its default search space.
+        * ``cfg.model_family == "deepseek"`` — GPTClient on the
+          chat.completions endpoint (DeepSeek + most OpenAI-compat
+          proxies). API key from ``secrets.deepseek_api_key``. Default
+          base URL ``https://api.deepseek.com`` is applied by
+          ``load_ai_secrets``. Returns ``None`` if no key.
+        * default (Claude) — ClaudeClient. API key from
+          ``secrets.anthropic_api_key``.
+
+    The function is sync (Mongo I/O has already happened upstream in
+    ``load_ai_secrets``). Callers pass through both ``cfg`` and
+    ``secrets`` so the cost-ledger / audit trail can report the
+    resolved family + model strings even when one provider's key
+    resolves to None.
+    """
+    family = (cfg.model_family or secrets.family or "claude").lower()
+
+    if family == "openai":
+        from quant.ai.gpt_client import ENDPOINT_RESPONSES, GPTClient
+
+        api_key = (
+            secrets.openai_api_key
+            or os.getenv("OPENAI_API_KEY")
+            or secrets.anthropic_api_key
+            or os.getenv("ANTHROPIC_API_KEY")
+        )
+        if not api_key:
+            log.info(
+                "model_family=openai but no OPENAI_API_KEY / Mongo key present; "
+                "running optimization with default search space (no AI calls)"
+            )
+            return None
+        client = GPTClient(
+            api_key=api_key,
+            base_url=secrets.openai_base_url or cfg.openai_base_url or None,
+            endpoint=ENDPOINT_RESPONSES,
+        )
+        client.primary_model = (
+            secrets.openai_primary_model or cfg.openai_primary_model
+        )
+        client.refine_model = (
+            secrets.openai_refine_model or cfg.openai_refine_model
+        )
+        return client
+
+    if family == "deepseek":
+        from quant.ai.gpt_client import ENDPOINT_CHAT_COMPLETIONS, GPTClient
+
+        api_key = secrets.deepseek_api_key or os.getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            log.info(
+                "model_family=deepseek but no DEEPSEEK_API_KEY present; "
+                "running optimization with default search space (no AI calls)"
+            )
+            return None
+        # DeepSeek uses OpenAI-compatible chat.completions surface, so
+        # we reuse GPTClient with the chat_completions endpoint flavour.
+        client = GPTClient(
+            api_key=api_key,
+            base_url=secrets.deepseek_base_url or "https://api.deepseek.com",
+            endpoint=ENDPOINT_CHAT_COMPLETIONS,
+        )
+        client.primary_model = secrets.deepseek_primary_model or "deepseek-chat"
+        client.refine_model = secrets.deepseek_refine_model or "deepseek-chat"
+        return client
+
+    # Default: Anthropic Claude path.
+    api_key = secrets.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        log.info(
+            "No ANTHROPIC_API_KEY (env or Mongo) configured; running "
+            "optimization with default search space (no Claude calls)"
+        )
+        return None
+    client = ClaudeClient(api_key=api_key)
+    client.primary_model = (
+        secrets.anthropic_primary_model or cfg.anthropic_primary_model
+    )
+    client.refine_model = (
+        secrets.anthropic_refine_model or cfg.anthropic_refine_model
+    )
+    return client

@@ -42,6 +42,24 @@ type AIConfig struct {
 	BudgetUsdPerDay       float64   `bson:"budgetUsdPerDay,omitempty"       json:"budgetUsdPerDay,omitempty"`
 	LookbackDays          int       `bson:"lookbackDays,omitempty"          json:"lookbackDays,omitempty"`
 	UpdatedAt             time.Time `bson:"updatedAt,omitempty"             json:"updatedAt,omitempty"`
+
+	// DeepSeek family — OpenAI-compatible API (chat completions). Default
+	// base URL is https://api.deepseek.com when unset. Model strings
+	// default to "deepseek-chat" inside the quant client when empty.
+	DeepseekBaseURL      string `bson:"deepseekBaseURL,omitempty"      json:"deepseekBaseURL,omitempty"`
+	DeepseekPrimaryModel string `bson:"deepseekPrimaryModel,omitempty" json:"deepseekPrimaryModel,omitempty"`
+	DeepseekRefineModel  string `bson:"deepseekRefineModel,omitempty"  json:"deepseekRefineModel,omitempty"`
+
+	// API key ciphertexts — AES-256-GCM with master KEK, format same as
+	// exchange envelope (base64(iv).base64(tag).base64(ciphertext)). PUT
+	// bodies accept plaintext under the *non*-Ciphertext keys
+	// (anthropicApiKey / openaiApiKey / deepseekApiKey); handler encrypts
+	// before persist. GET never returns ciphertext or plaintext —
+	// surfacing is exclusively via the *Configured boolean fields on
+	// AIConfigEffective. The `json:"-"` tag is the hard wire-level guard.
+	AnthropicAPIKeyCiphertext string `bson:"anthropicApiKeyCiphertext,omitempty" json:"-"`
+	OpenAIAPIKeyCiphertext    string `bson:"openaiApiKeyCiphertext,omitempty"    json:"-"`
+	DeepseekAPIKeyCiphertext  string `bson:"deepseekApiKeyCiphertext,omitempty"  json:"-"`
 }
 
 // RecommendationPeriod is the OOS-window metadata attached to each

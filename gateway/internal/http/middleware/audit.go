@@ -39,6 +39,13 @@ var scrubKeys = []string{
 	"privatekey",
 	"mnemonic",
 	"seed",
+	// Node 3.E.4 — AI provider keys persisted via PUT /admin/ai/config.
+	// `apikey` above already substring-matches anthropicApiKey /
+	// openaiApiKey / deepseekApiKey, but explicit entries make intent
+	// loud at the call site and survive future refactors of `apikey`.
+	"anthropicapikey",
+	"openaiapikey",
+	"deepseekapikey",
 }
 
 // SkipPaths is the set of path prefixes that bypass auditing entirely.

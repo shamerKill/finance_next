@@ -24,6 +24,7 @@ import {
 import { useState } from "react";
 
 import { ApiErrorView } from "@/components/api-error";
+import { PasswordInput } from "@/components/password-field";
 import { TypeAIConfig, updateAdminAIConfig } from "@/data/api-client";
 
 interface Props {
@@ -76,9 +77,26 @@ function EditModal({
     config.anthropicBaseURL,
   );
   const [openaiBaseURL, setOpenaiBaseURL] = useState(config.openaiBaseURL);
+  const [deepseekBaseURL, setDeepseekBaseURL] = useState(
+    config.deepseekBaseURL,
+  );
+  const [deepseekPrimary, setDeepseekPrimary] = useState(
+    config.deepseekPrimaryModel,
+  );
+  const [deepseekRefine, setDeepseekRefine] = useState(
+    config.deepseekRefineModel,
+  );
   const [budgetPerStudy, setBudgetPerStudy] = useState(config.budgetUsdPerStudy);
   const [budgetPerDay, setBudgetPerDay] = useState(config.budgetUsdPerDay);
   const [lookbackDays, setLookbackDays] = useState(config.lookbackDays);
+
+  // Plaintext API keys. We deliberately do NOT seed these from `config`
+  // — the gateway never echoes the key back, and the input being empty
+  // means "leave the persisted ciphertext untouched" on save. Setting a
+  // non-empty value triggers an encrypt+persist on the server side.
+  const [anthropicApiKey, setAnthropicApiKey] = useState("");
+  const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [deepseekApiKey, setDeepseekApiKey] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -98,9 +116,12 @@ function EditModal({
     if (modelFamily === "claude") {
       if (!anthropicPrimary.trim()) return "Anthropic 主模型不能为空";
       if (!anthropicRefine.trim()) return "Anthropic refine 模型不能为空";
-    } else {
+    } else if (modelFamily === "openai") {
       if (!openaiPrimary.trim()) return "OpenAI 主模型不能为空";
       if (!openaiRefine.trim()) return "OpenAI refine 模型不能为空";
+    } else {
+      if (!deepseekPrimary.trim()) return "DeepSeek 主模型不能为空";
+      if (!deepseekRefine.trim()) return "DeepSeek refine 模型不能为空";
     }
     return null;
   };
@@ -120,12 +141,26 @@ function EditModal({
         anthropicRefineModel: anthropicRefine,
         openaiPrimaryModel: openaiPrimary,
         openaiRefineModel: openaiRefine,
+        deepseekPrimaryModel: deepseekPrimary,
+        deepseekRefineModel: deepseekRefine,
         anthropicBaseURL,
         openaiBaseURL,
+        deepseekBaseURL,
         budgetUsdPerStudy: budgetPerStudy,
         budgetUsdPerDay: budgetPerDay,
         lookbackDays,
+        // Plaintext keys — only sent when non-empty. Empty string would
+        // be ignored server-side but we strip them client-side too so
+        // the request body stays minimal.
+        ...(anthropicApiKey ? { anthropicApiKey } : {}),
+        ...(openaiApiKey ? { openaiApiKey } : {}),
+        ...(deepseekApiKey ? { deepseekApiKey } : {}),
       });
+      // Wipe in-memory plaintext on success so a stale modal can't leak
+      // it via React Devtools / hot-reload.
+      setAnthropicApiKey("");
+      setOpenaiApiKey("");
+      setDeepseekApiKey("");
       onSaved(next);
       onClose();
     } catch (e) {
@@ -156,7 +191,67 @@ function EditModal({
                 >
                   <Radio value="claude">claude</Radio>
                   <Radio value="openai">openai</Radio>
+                  <Radio value="deepseek">deepseek</Radio>
                 </RadioGroup>
+
+                <div className="rounded border border-default-200 p-3 space-y-3">
+                  <div className="text-xs font-semibold text-default-700">
+                    API Keys
+                  </div>
+                  <p className="text-xs text-default-500">
+                    密钥在服务端 AES-256-GCM 加密后保存到 Mongo。留空 = 保持
+                    当前已存的密文不变；输入新值 = 覆盖。响应永远不会回显密钥
+                    （明文/密文都不会）。
+                  </p>
+                  <PasswordInput
+                    size="sm"
+                    label="Anthropic API key"
+                    description={
+                      config.anthropicApiKeyConfigured
+                        ? "已配置；留空保持当前值"
+                        : "未配置；输入并保存以启用"
+                    }
+                    placeholder={
+                      config.anthropicApiKeyConfigured
+                        ? "••••••••（保持当前值）"
+                        : "sk-ant-..."
+                    }
+                    value={anthropicApiKey}
+                    onValueChange={setAnthropicApiKey}
+                  />
+                  <PasswordInput
+                    size="sm"
+                    label="OpenAI API key"
+                    description={
+                      config.openaiApiKeyConfigured
+                        ? "已配置；留空保持当前值"
+                        : "未配置；输入并保存以启用"
+                    }
+                    placeholder={
+                      config.openaiApiKeyConfigured
+                        ? "••••••••（保持当前值）"
+                        : "sk-..."
+                    }
+                    value={openaiApiKey}
+                    onValueChange={setOpenaiApiKey}
+                  />
+                  <PasswordInput
+                    size="sm"
+                    label="DeepSeek API key"
+                    description={
+                      config.deepseekApiKeyConfigured
+                        ? "已配置；留空保持当前值"
+                        : "未配置；输入并保存以启用"
+                    }
+                    placeholder={
+                      config.deepseekApiKeyConfigured
+                        ? "••••••••（保持当前值）"
+                        : "sk-..."
+                    }
+                    value={deepseekApiKey}
+                    onValueChange={setDeepseekApiKey}
+                  />
+                </div>
 
                 <div className="rounded border border-default-200 p-3 space-y-3">
                   <div className="text-xs font-semibold text-default-700">
@@ -224,6 +319,42 @@ function EditModal({
                   />
                 </div>
 
+                <div className="rounded border border-default-200 p-3 space-y-3">
+                  <div className="text-xs font-semibold text-default-700">
+                    DeepSeek
+                    {modelFamily === "deepseek" && (
+                      <span className="ml-2 text-success-600">(当前激活)</span>
+                    )}
+                    <span className="ml-2 text-default-500 font-normal">
+                      OpenAI 兼容；走 chat.completions 接口
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      size="sm"
+                      label="主模型"
+                      value={deepseekPrimary}
+                      onValueChange={setDeepseekPrimary}
+                      placeholder="deepseek-chat"
+                    />
+                    <Input
+                      size="sm"
+                      label="refine 模型"
+                      value={deepseekRefine}
+                      onValueChange={setDeepseekRefine}
+                      placeholder="deepseek-chat"
+                    />
+                  </div>
+                  <Input
+                    size="sm"
+                    label="DeepSeek base URL"
+                    description="第三方中转/自建 OpenAI 兼容代理；留空 = api.deepseek.com"
+                    value={deepseekBaseURL}
+                    onValueChange={setDeepseekBaseURL}
+                    placeholder="https://api.deepseek.com"
+                  />
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <NumberInput
                     size="sm"
@@ -263,10 +394,10 @@ function EditModal({
                 />
 
                 <div className="text-xs text-default-500">
-                  API 密钥不通过此表单管理。请在部署环境的{" "}
-                  <code>ANTHROPIC_API_KEY</code> / <code>OPENAI_API_KEY</code>{" "}
-                  环境变量中配置，已配置/未配置状态会回显到本页 (Anthropic /
-                  OpenAI 行)。
+                  环境变量 <code>ANTHROPIC_API_KEY</code> /{" "}
+                  <code>OPENAI_API_KEY</code> / <code>DEEPSEEK_API_KEY</code>{" "}
+                  仍作为一次性迁移期回退；保存表单后 Mongo 中的密文优先生效，
+                  env 仅在密文缺失时使用。建议从此页输入后清除 env。
                 </div>
               </div>
             </ModalBody>

@@ -292,3 +292,57 @@ func TestAudit_NonJSONBodyRedacted(t *testing.T) {
 		t.Errorf("non-sensitive field stripped: %v", m)
 	}
 }
+
+// TestAudit_ScrubsAIProviderKeys verifies the Node 3.E.4 additions to
+// scrubKeys cover all three AI provider plaintext API key fields. The
+// existing `apikey` substring would already catch them; this test pins
+// the contract so a future refactor can't silently regress.
+func TestAudit_ScrubsAIProviderKeys(t *testing.T) {
+	w := &fakeWriter{}
+	mw, err := New(Config{Writer: w, BufferSize: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go mw.Start(ctx)
+
+	e := echo.New()
+	e.Use(mw.Middleware())
+	e.PUT("/api/v1/admin/ai/config", func(c echo.Context) error {
+		return c.JSON(200, map[string]string{"ok": "yes"})
+	})
+
+	body := `{"modelFamily":"deepseek","anthropicApiKey":"sk-anthropic-leak","openaiApiKey":"sk-openai-leak","deepseekApiKey":"sk-deepseek-leak"}`
+	req := httptest.NewRequest("PUT", "/api/v1/admin/ai/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if len(w.all()) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	entries := w.all()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	got := string(entries[0].Payload)
+	for _, leaked := range []string{"sk-anthropic-leak", "sk-openai-leak", "sk-deepseek-leak"} {
+		if strings.Contains(got, leaked) {
+			t.Errorf("payload leaked AI key %q; got %s", leaked, got)
+		}
+	}
+	for _, want := range []string{
+		`"anthropicApiKey":"[redacted]"`,
+		`"openaiApiKey":"[redacted]"`,
+		`"deepseekApiKey":"[redacted]"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %s in scrubbed payload; got %s", want, got)
+		}
+	}
+}

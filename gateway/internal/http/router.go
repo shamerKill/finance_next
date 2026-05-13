@@ -323,7 +323,7 @@ func NewRouter(d Deps) *echo.Echo {
 	// viewer + /admin/ai/{config,prompts}. Hidden when AdminKey is
 	// unset (404). The quant client is forwarded so /admin/ai/prompts
 	// can call GetAIConfig; nil = 503 with a clear message.
-	handlers.NewAdminHandler(d.SystemRepo, d.AuditRepo, d.Quant, d.AdminKey).Register(v1)
+	handlers.NewAdminHandler(d.SystemRepo, d.AuditRepo, d.Quant, d.AdminKey).WithCrypto(d.Crypto).Register(v1)
 
 	// Node 3.E.2 deployment snapshot. Admin-only; non-admins see 403.
 	// Every dep is optional inside the handler — missing deps surface

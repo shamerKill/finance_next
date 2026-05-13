@@ -112,15 +112,18 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _normalise_family(value: str) -> str:
-    """Collapse ``gpt`` to ``openai``; keep ``claude`` as-is.
+    """Collapse ``gpt`` to ``openai``; keep ``claude`` / ``deepseek`` as-is.
 
     Mirrors :func:`quant.workers.optimize._build_default_ai_client`'s
     family normalisation so the UI doesn't have to know about the
-    alias.
+    alias. Unknown values fall through to ``claude`` (the historical
+    default) — strict validation lives in the gateway handler.
     """
     v = (value or "").strip().lower()
     if v in ("openai", "gpt"):
         return "openai"
+    if v == "deepseek":
+        return "deepseek"
     return "claude"
 
 

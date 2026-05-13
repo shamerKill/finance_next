@@ -72,6 +72,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Node 3.E.4: AI provider keys are now stored encrypted in Mongo
+	// (system_state.aiConfig.*ApiKeyCiphertext) and editable from the
+	// /settings/ai UI. Env vars remain as a legacy fallback for one
+	// release — log a one-liner so operators know to migrate. Quant
+	// worker prefers the Mongo doc; env fires only when the persisted
+	// ciphertext is absent.
+	for _, env := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"} {
+		if os.Getenv(env) != "" {
+			logger.Warn("legacy AI API key detected in env — these are now stored in /settings/ai (encrypted); env is legacy fallback for one release. Consider migrating: open /settings/ai → paste keys → save.",
+				"var", env)
+		}
+	}
+
 	rootCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

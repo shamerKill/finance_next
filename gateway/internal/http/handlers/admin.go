@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/finance_next/gateway/internal/crypto"
 	"github.com/finance_next/gateway/internal/domain"
 	gwmw "github.com/finance_next/gateway/internal/http/middleware"
 	"github.com/finance_next/gateway/internal/quantclient"
@@ -32,10 +33,15 @@ type AdminHandler struct {
 	audit    *mongostore.AuditRepo
 	quant    quantclient.Client
 	adminKey string
+	crypto   *crypto.Service
 }
 
 // NewAdminHandler builds the handler. system / audit / quant may all be
-// nil — in that case the relevant subset of routes returns 503.
+// nil — in that case the relevant subset of routes returns 503. The
+// crypto service is used to encrypt API keys submitted via
+// PUT /admin/ai/config; when nil, the handler rejects PUT bodies that
+// include plaintext keys with 503 (the persisted ciphertext fields are
+// untouched, so the family/budget/model knobs still update normally).
 func NewAdminHandler(
 	system *mongostore.SystemRepo,
 	audit *mongostore.AuditRepo,
@@ -43,6 +49,15 @@ func NewAdminHandler(
 	adminKey string,
 ) *AdminHandler {
 	return &AdminHandler{system: system, audit: audit, quant: quant, adminKey: adminKey}
+}
+
+// WithCrypto returns h with the AES-256-GCM service wired so PUT
+// /admin/ai/config can encrypt incoming plaintext API keys. Kept as a
+// setter (rather than a new constructor arg) so the existing call sites
+// in tests don't have to change.
+func (h *AdminHandler) WithCrypto(svc *crypto.Service) *AdminHandler {
+	h.crypto = svc
+	return h
 }
 
 // Register binds the admin routes onto the v1 group.
@@ -225,14 +240,24 @@ type AIConfigEffective struct {
 	OpenAIRefineModel     string    `json:"openaiRefineModel"`
 	AnthropicBaseURL      string    `json:"anthropicBaseURL"`
 	OpenAIBaseURL         string    `json:"openaiBaseURL"`
+	DeepseekBaseURL       string    `json:"deepseekBaseURL"`
+	DeepseekPrimaryModel  string    `json:"deepseekPrimaryModel"`
+	DeepseekRefineModel   string    `json:"deepseekRefineModel"`
 	BudgetUsdPerStudy     float64   `json:"budgetUsdPerStudy"`
 	BudgetUsdPerDay       float64   `json:"budgetUsdPerDay"`
 	LookbackDays          int       `json:"lookbackDays"`
 	UpdatedAt             time.Time `json:"updatedAt,omitempty"`
 
-	AnthropicConfigured bool   `json:"anthropicConfigured"`
-	OpenAIConfigured    bool   `json:"openaiConfigured"`
-	Source              string `json:"source"`
+	AnthropicConfigured bool `json:"anthropicConfigured"`
+	OpenAIConfigured    bool `json:"openaiConfigured"`
+	// *APIKeyConfigured flags reflect whether a ciphertext for that
+	// provider is persisted in Mongo. UI uses these to render a
+	// "已配置 / 未配置" badge without ever seeing the key value itself.
+	AnthropicAPIKeyConfigured bool `json:"anthropicApiKeyConfigured"`
+	OpenAIAPIKeyConfigured    bool `json:"openaiApiKeyConfigured"`
+	DeepseekAPIKeyConfigured  bool `json:"deepseekApiKeyConfigured"`
+
+	Source string `json:"source"`
 }
 
 // effectiveAIConfig merges the persisted overlay (may be nil) with the
@@ -247,6 +272,9 @@ func effectiveAIConfig(persisted *domain.AIConfig) AIConfigEffective {
 		OpenAIRefineModel:     envOrDefault("OPENAI_REFINE_MODEL", "gpt-5.4"),
 		AnthropicBaseURL:      os.Getenv("ANTHROPIC_BASE_URL"),
 		OpenAIBaseURL:         os.Getenv("OPENAI_BASE_URL"),
+		DeepseekBaseURL:       envOrDefault("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+		DeepseekPrimaryModel:  envOrDefault("DEEPSEEK_PRIMARY_MODEL", "deepseek-chat"),
+		DeepseekRefineModel:   envOrDefault("DEEPSEEK_REFINE_MODEL", "deepseek-chat"),
 		BudgetUsdPerStudy:     envOrFloat("AI_MAX_USD_PER_STUDY", 5.0),
 		BudgetUsdPerDay:       envOrFloat("AI_MAX_USD_PER_DAY", 50.0),
 		LookbackDays:          envOrInt("AI_OPTIMIZATION_LOOKBACK_DAYS", 90),
@@ -255,6 +283,13 @@ func effectiveAIConfig(persisted *domain.AIConfig) AIConfigEffective {
 		Source:                "env",
 	}
 	if persisted == nil {
+		// API-key-configured flags fall back to env presence when no
+		// persisted ciphertext exists (legacy one-release migration
+		// path). Once an operator saves a key via the UI, the persisted
+		// ciphertext takes precedence.
+		out.AnthropicAPIKeyConfigured = out.AnthropicConfigured
+		out.OpenAIAPIKeyConfigured = out.OpenAIConfigured
+		out.DeepseekAPIKeyConfigured = os.Getenv("DEEPSEEK_API_KEY") != ""
 		return out
 	}
 	mongoFields := 0
@@ -286,6 +321,18 @@ func effectiveAIConfig(persisted *domain.AIConfig) AIConfigEffective {
 		out.OpenAIBaseURL = persisted.OpenAIBaseURL
 		mongoFields++
 	}
+	if persisted.DeepseekBaseURL != "" {
+		out.DeepseekBaseURL = persisted.DeepseekBaseURL
+		mongoFields++
+	}
+	if persisted.DeepseekPrimaryModel != "" {
+		out.DeepseekPrimaryModel = persisted.DeepseekPrimaryModel
+		mongoFields++
+	}
+	if persisted.DeepseekRefineModel != "" {
+		out.DeepseekRefineModel = persisted.DeepseekRefineModel
+		mongoFields++
+	}
 	if persisted.BudgetUsdPerStudy > 0 {
 		out.BudgetUsdPerStudy = persisted.BudgetUsdPerStudy
 		mongoFields++
@@ -301,12 +348,20 @@ func effectiveAIConfig(persisted *domain.AIConfig) AIConfigEffective {
 	if !persisted.UpdatedAt.IsZero() {
 		out.UpdatedAt = persisted.UpdatedAt
 	}
-	// Total tunable fields = 10. If every one came from Mongo, "mongo";
-	// otherwise "mixed" if any did, else "env".
+	// API-key configured flags: prefer persisted ciphertext presence;
+	// fall back to env so an operator that hasn't migrated yet still
+	// sees the legacy env-var-derived "已配置" badge.
+	out.AnthropicAPIKeyConfigured = persisted.AnthropicAPIKeyCiphertext != "" || os.Getenv("ANTHROPIC_API_KEY") != ""
+	out.OpenAIAPIKeyConfigured = persisted.OpenAIAPIKeyCiphertext != "" || os.Getenv("OPENAI_API_KEY") != ""
+	out.DeepseekAPIKeyConfigured = persisted.DeepseekAPIKeyCiphertext != "" || os.Getenv("DEEPSEEK_API_KEY") != ""
+
+	// Total tunable knobs (count of fields we count above) = 13. If
+	// every one came from Mongo, "mongo"; otherwise "mixed" if any did,
+	// else "env".
 	switch {
 	case mongoFields == 0:
 		out.Source = "env"
-	case mongoFields == 10:
+	case mongoFields == 13:
 		out.Source = "mongo"
 	default:
 		out.Source = "mixed"
@@ -329,7 +384,33 @@ func (h *AdminHandler) getAIConfig(c echo.Context) error {
 	return c.JSON(http.StatusOK, effectiveAIConfig(persisted))
 }
 
+// aiConfigPutBody is the wire shape accepted by PUT /admin/ai/config. It
+// extends the persisted AIConfig with three plaintext API-key fields
+// that this handler encrypts before persisting. These plaintext fields
+// are JSON-only and NEVER serialised back: AIConfig.*Ciphertext use
+// json:"-" so even if a future helper marshals AIConfig directly to a
+// response, the plaintext / ciphertext pair stays server-side. The
+// audit middleware additionally scrubs the *apikey/*ciphertext patterns
+// before persisting the request body.
+type aiConfigPutBody struct {
+	domain.AIConfig
+	AnthropicAPIKey string `json:"anthropicApiKey,omitempty"`
+	OpenAIAPIKey    string `json:"openaiApiKey,omitempty"`
+	DeepseekAPIKey  string `json:"deepseekApiKey,omitempty"`
+}
+
 // PUT /api/v1/admin/ai/config — partial update with validation.
+//
+// API keys are accepted as plaintext under `anthropicApiKey` /
+// `openaiApiKey` / `deepseekApiKey`. The handler encrypts each non-empty
+// value with the master KEK (AES-256-GCM, format
+// base64(iv).base64(tag).base64(ciphertext) — byte-identical to the
+// exchange envelope format) and stores it in the corresponding
+// *Ciphertext field. An empty string preserves the persisted
+// ciphertext (no-op); to clear a key, the operator must do a Mongo
+// admin op directly (we do not surface a "delete" verb to avoid
+// accidental wipes via a half-filled form). The response NEVER contains
+// plaintext or ciphertext — only the *APIKeyConfigured booleans.
 func (h *AdminHandler) putAIConfig(c echo.Context) error {
 	if err := h.auth(c); err != nil {
 		return err
@@ -337,13 +418,53 @@ func (h *AdminHandler) putAIConfig(c echo.Context) error {
 	if h.system == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "system repo not configured")
 	}
-	var body domain.AIConfig
+	var body aiConfigPutBody
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	if err := validateAIConfigPartial(&body); err != nil {
+	if err := validateAIConfigPartial(&body.AIConfig); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
+
+	// Encrypt any plaintext API keys before merging. We require the
+	// crypto service to be wired when keys are supplied; without it we
+	// cannot honor the persist semantics, so 503 with a clear message.
+	if body.AnthropicAPIKey != "" || body.OpenAIAPIKey != "" || body.DeepseekAPIKey != "" {
+		if h.crypto == nil {
+			return echo.NewHTTPError(http.StatusServiceUnavailable,
+				"crypto service not configured; cannot persist API keys")
+		}
+		if body.AnthropicAPIKey != "" {
+			ct, err := h.crypto.Encrypt(body.AnthropicAPIKey)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError,
+					"encrypt anthropicApiKey: "+err.Error())
+			}
+			body.AIConfig.AnthropicAPIKeyCiphertext = ct
+		}
+		if body.OpenAIAPIKey != "" {
+			ct, err := h.crypto.Encrypt(body.OpenAIAPIKey)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError,
+					"encrypt openaiApiKey: "+err.Error())
+			}
+			body.AIConfig.OpenAIAPIKeyCiphertext = ct
+		}
+		if body.DeepseekAPIKey != "" {
+			ct, err := h.crypto.Encrypt(body.DeepseekAPIKey)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError,
+					"encrypt deepseekApiKey: "+err.Error())
+			}
+			body.AIConfig.DeepseekAPIKeyCiphertext = ct
+		}
+		// Zero plaintext immediately — defence in depth, in case any
+		// future logging stub captures the struct by value.
+		body.AnthropicAPIKey = ""
+		body.OpenAIAPIKey = ""
+		body.DeepseekAPIKey = ""
+	}
+	_ = body.AnthropicAPIKey // pin escape
 
 	// Merge body onto any existing persisted config so partial PUTs
 	// don't blow away already-tuned fields. We only overwrite fields
@@ -352,7 +473,7 @@ func (h *AdminHandler) putAIConfig(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	merged := mergeAIConfig(existing, &body)
+	merged := mergeAIConfig(existing, &body.AIConfig)
 
 	// Cross-field check after merge — study cap ≤ day cap holds across
 	// the *effective* config, not just the body in isolation.
@@ -377,8 +498,8 @@ func (h *AdminHandler) putAIConfig(c echo.Context) error {
 // validateAIConfigPartial enforces field-level constraints. Fields with
 // zero values are skipped (partial-PUT semantics).
 func validateAIConfigPartial(p *domain.AIConfig) error {
-	if p.ModelFamily != "" && p.ModelFamily != "claude" && p.ModelFamily != "openai" {
-		return errors.New("modelFamily must be 'claude' or 'openai'")
+	if p.ModelFamily != "" && p.ModelFamily != "claude" && p.ModelFamily != "openai" && p.ModelFamily != "deepseek" {
+		return errors.New("modelFamily must be 'claude', 'openai', or 'deepseek'")
 	}
 	if p.BudgetUsdPerStudy < 0 || p.BudgetUsdPerDay < 0 {
 		return errors.New("budgets must be > 0")
@@ -401,6 +522,8 @@ func validateAIConfigPartial(p *domain.AIConfig) error {
 		p.AnthropicRefineModel,
 		p.OpenAIPrimaryModel,
 		p.OpenAIRefineModel,
+		p.DeepseekPrimaryModel,
+		p.DeepseekRefineModel,
 	} {
 		if name != "" && strings.TrimSpace(name) == "" {
 			return errors.New("model name strings must be non-empty when provided")
@@ -414,6 +537,11 @@ func validateAIConfigPartial(p *domain.AIConfig) error {
 	if p.OpenAIBaseURL != "" {
 		if err := validateBaseURL(p.OpenAIBaseURL); err != nil {
 			return errors.New("openaiBaseURL invalid: " + err.Error())
+		}
+	}
+	if p.DeepseekBaseURL != "" {
+		if err := validateBaseURL(p.DeepseekBaseURL); err != nil {
+			return errors.New("deepseekBaseURL invalid: " + err.Error())
 		}
 	}
 	return nil
@@ -462,6 +590,27 @@ func mergeAIConfig(existing, body *domain.AIConfig) *domain.AIConfig {
 	}
 	if body.OpenAIBaseURL != "" {
 		out.OpenAIBaseURL = body.OpenAIBaseURL
+	}
+	if body.DeepseekBaseURL != "" {
+		out.DeepseekBaseURL = body.DeepseekBaseURL
+	}
+	if body.DeepseekPrimaryModel != "" {
+		out.DeepseekPrimaryModel = body.DeepseekPrimaryModel
+	}
+	if body.DeepseekRefineModel != "" {
+		out.DeepseekRefineModel = body.DeepseekRefineModel
+	}
+	// Ciphertexts: an empty body value means "leave persisted untouched";
+	// the actual encryption happens in putAIConfig from plaintext, so by
+	// the time we land here body.*Ciphertext is already set (or empty).
+	if body.AnthropicAPIKeyCiphertext != "" {
+		out.AnthropicAPIKeyCiphertext = body.AnthropicAPIKeyCiphertext
+	}
+	if body.OpenAIAPIKeyCiphertext != "" {
+		out.OpenAIAPIKeyCiphertext = body.OpenAIAPIKeyCiphertext
+	}
+	if body.DeepseekAPIKeyCiphertext != "" {
+		out.DeepseekAPIKeyCiphertext = body.DeepseekAPIKeyCiphertext
 	}
 	if body.BudgetUsdPerStudy > 0 {
 		out.BudgetUsdPerStudy = body.BudgetUsdPerStudy

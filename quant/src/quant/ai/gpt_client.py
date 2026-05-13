@@ -54,9 +54,27 @@ ROLE_RATIONALE = "final_rationale"
 # Setting non-zero costs without a verified rate would corrupt the budget
 # gate; 0 is fail-safe (never trips the cap) for dev. Real rates land in
 # a follow-up commit alongside the next model card update.
+#
+# DeepSeek pricing as of 2026-05-13 (off-peak / standard, USD per 1M
+# tokens). DeepSeek API is OpenAI-compatible (Chat Completions surface)
+# so we reuse this client; only the endpoint flavour differs.
 # ---------------------------------------------------------------------------
-_PRICE_PER_M_INPUT = {OPENAI_MODEL_PRIMARY: 0.0, OPENAI_MODEL_REFINE: 0.0}
-_PRICE_PER_M_OUTPUT = {OPENAI_MODEL_PRIMARY: 0.0, OPENAI_MODEL_REFINE: 0.0}
+_PRICE_PER_M_INPUT = {
+    OPENAI_MODEL_PRIMARY: 0.0,
+    OPENAI_MODEL_REFINE: 0.0,
+    "deepseek-chat": 0.27,
+    "deepseek-reasoner": 0.55,
+}
+_PRICE_PER_M_OUTPUT = {
+    OPENAI_MODEL_PRIMARY: 0.0,
+    OPENAI_MODEL_REFINE: 0.0,
+    "deepseek-chat": 1.10,
+    "deepseek-reasoner": 2.19,
+}
+
+# Endpoint flavour selector for the underlying client surface.
+ENDPOINT_RESPONSES = "responses"  # OpenAI new Responses API (stream)
+ENDPOINT_CHAT_COMPLETIONS = "chat_completions"  # Classic chat.completions; DeepSeek + proxies
 
 
 class MissingAPIKeyError(RuntimeError):
@@ -120,6 +138,11 @@ class GPTClient:
     # cost ledger read these to route auditing on the real model name.
     primary_model: str = OPENAI_MODEL_PRIMARY
     refine_model: str = OPENAI_MODEL_REFINE
+    # ``endpoint`` selects between OpenAI Responses (gpt-5.x via the
+    # vendor proxy) and classic Chat Completions (DeepSeek + most
+    # OpenAI-compat third-party proxies). The optimizer constructor in
+    # ``quant.workers.optimize`` flips this per family.
+    endpoint: str = ENDPOINT_RESPONSES
 
     def __init__(
         self,
@@ -127,6 +150,7 @@ class GPTClient:
         api_key: str | None = None,
         base_url: str | None = None,
         client: Any | None = None,
+        endpoint: str = ENDPOINT_RESPONSES,
         max_tokens_define: int = 2048,
         max_tokens_rationale: int = 1024,
         max_tokens_refine: int = 1024,
@@ -158,6 +182,7 @@ class GPTClient:
         else:
             self._base_url = raw_base
         self._client = client
+        self.endpoint = endpoint
         self.max_tokens_define = max_tokens_define
         self.max_tokens_rationale = max_tokens_rationale
         self.max_tokens_refine = max_tokens_refine
@@ -181,6 +206,72 @@ class GPTClient:
             kwargs["base_url"] = self._base_url
         self._client = AsyncOpenAI(**kwargs)
         return self._client
+
+    async def _stream_chat_completions(
+        self,
+        *,
+        model: str,
+        system_text: str,
+        user_text: str,
+        max_output_tokens: int,
+    ) -> tuple[str, GPTUsage]:
+        """Drive the Chat Completions streaming API and return (text, usage).
+
+        DeepSeek + the broad universe of OpenAI-compatible third-party
+        proxies serve this surface. ``stream=True`` ensures the SDK
+        works against providers that don't implement the non-streaming
+        variant (some proxies). ``stream_options={"include_usage": True}``
+        tells the OpenAI SDK to emit the terminal usage block so we can
+        snapshot token counts; DeepSeek + recent OpenAI honour this.
+        """
+        client = await self._ensure_client()
+        messages = [
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": user_text},
+        ]
+        stream = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=max_output_tokens,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        text_parts: list[str] = []
+        usage = GPTUsage()
+        async for chunk in stream:
+            # The OpenAI SDK exposes choices[].delta.content for stream
+            # chunks. ``usage`` only appears on the terminal chunk when
+            # ``include_usage=True`` is set.
+            choices = getattr(chunk, "choices", None) or []
+            if choices:
+                delta = getattr(choices[0], "delta", None)
+                if delta is not None:
+                    content = getattr(delta, "content", None)
+                    if content:
+                        text_parts.append(content)
+            ch_usage = getattr(chunk, "usage", None)
+            if ch_usage is not None:
+                # Chat Completions usage shape: prompt_tokens /
+                # completion_tokens / total_tokens. Some providers also
+                # surface prompt_tokens_details.cached_tokens.
+                prompt_tokens = int(
+                    getattr(ch_usage, "prompt_tokens", 0) or 0
+                )
+                completion_tokens = int(
+                    getattr(ch_usage, "completion_tokens", 0) or 0
+                )
+                cached = 0
+                details = getattr(ch_usage, "prompt_tokens_details", None)
+                if details is not None:
+                    cached = int(getattr(details, "cached_tokens", 0) or 0)
+                fresh_input = max(prompt_tokens - cached, 0)
+                usage = GPTUsage(
+                    input_tokens=fresh_input,
+                    output_tokens=completion_tokens,
+                    cache_read_input_tokens=cached,
+                    cache_creation_input_tokens=0,
+                )
+        return "".join(text_parts), usage
 
     async def _stream_responses(
         self,
@@ -234,6 +325,34 @@ class GPTClient:
         text = final_text if final_text is not None else "".join(text_parts)
         return text, usage
 
+    async def _dispatch(
+        self,
+        *,
+        model: str,
+        system_text: str,
+        user_text: str,
+        max_output_tokens: int,
+    ) -> tuple[str, GPTUsage]:
+        """Pick the streaming flavour based on ``self.endpoint``.
+
+        Keeps the per-method bodies readable and locks the routing in
+        one place — when we add per-provider quirks (extra headers,
+        tool-calling, etc.) they only need to be plumbed here.
+        """
+        if self.endpoint == ENDPOINT_CHAT_COMPLETIONS:
+            return await self._stream_chat_completions(
+                model=model,
+                system_text=system_text,
+                user_text=user_text,
+                max_output_tokens=max_output_tokens,
+            )
+        return await self._stream_responses(
+            model=model,
+            system_text=system_text,
+            user_text=user_text,
+            max_output_tokens=max_output_tokens,
+        )
+
     # ----- public API ------------------------------------------------
 
     async def define_search_space(
@@ -242,13 +361,20 @@ class GPTClient:
         study_context: str,
         user_prompt: str,
     ) -> tuple[dict[str, Any], GPTUsage]:
-        """Ask the primary GPT model for a parameter space JSON."""
+        """Ask the primary model for a parameter space JSON.
+
+        Uses ``self.primary_model`` (set by the optimizer after building
+        the client from the effective AI config) — NOT the module-level
+        OPENAI_MODEL_PRIMARY constant, which is just the env default.
+        That way DeepSeek + custom proxies route to whatever the admin
+        chose in ``/settings/ai``.
+        """
         # Concatenate the static system prompt + study context — OpenAI
         # Responses API has no separate cache_control hook; we rely on the
         # provider's auto-caching when the prefix is identical run-to-run.
         system_text = DEFINE_SEARCH_SPACE_SYSTEM + "\n\n" + study_context
-        text, usage = await self._stream_responses(
-            model=OPENAI_MODEL_PRIMARY,
+        text, usage = await self._dispatch(
+            model=self.primary_model,
             system_text=system_text,
             user_text=user_prompt,
             max_output_tokens=self.max_tokens_define,
@@ -266,8 +392,8 @@ class GPTClient:
     ) -> tuple[dict[str, Any], GPTUsage]:
         """Mid-study tightening on the lighter refine model."""
         system_text = REFINE_SEARCH_SPACE_SYSTEM + "\n\n" + study_context
-        text, usage = await self._stream_responses(
-            model=OPENAI_MODEL_REFINE,
+        text, usage = await self._dispatch(
+            model=self.refine_model,
             system_text=system_text,
             user_text=user_prompt,
             max_output_tokens=self.max_tokens_refine,
@@ -285,8 +411,8 @@ class GPTClient:
     ) -> tuple[str, GPTUsage]:
         """Prose recommendation rationale on the primary model."""
         system_text = FINAL_RATIONALE_SYSTEM + "\n\n" + study_context
-        text, usage = await self._stream_responses(
-            model=OPENAI_MODEL_PRIMARY,
+        text, usage = await self._dispatch(
+            model=self.primary_model,
             system_text=system_text,
             user_text=user_prompt,
             max_output_tokens=self.max_tokens_rationale,

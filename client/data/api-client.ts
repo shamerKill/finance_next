@@ -648,20 +648,40 @@ export const setPortfolioLimits = async (
 // is a quant gRPC proxy and returns 503 when quant is unreachable —
 // callers must handle that case (we render a warning callout).
 export type TypeAIConfig = {
-  modelFamily: "claude" | "openai";
+  modelFamily: "claude" | "openai" | "deepseek";
   anthropicPrimaryModel: string;
   anthropicRefineModel: string;
   openaiPrimaryModel: string;
   openaiRefineModel: string;
+  deepseekPrimaryModel: string;
+  deepseekRefineModel: string;
   anthropicBaseURL: string;
   openaiBaseURL: string;
+  deepseekBaseURL: string;
   budgetUsdPerStudy: number;
   budgetUsdPerDay: number;
   lookbackDays: number;
   updatedAt: string;
+  // Legacy presence flags (env-only signal pre-migration). Kept for
+  // backwards compat — newer UI prefers the *ApiKeyConfigured trio.
   anthropicConfigured: boolean;
   openaiConfigured: boolean;
+  // Node 3.E.4: API key presence flags. True iff a ciphertext exists in
+  // Mongo OR the legacy env var is set. The plaintext / ciphertext
+  // itself is NEVER part of this response.
+  anthropicApiKeyConfigured: boolean;
+  openaiApiKeyConfigured: boolean;
+  deepseekApiKeyConfigured: boolean;
   source: "mongo" | "env" | "mixed";
+};
+
+// PUT body for /admin/ai/config — extends TypeAIConfig with the three
+// plaintext API key fields. These keys are encrypted server-side before
+// persisting; empty string preserves the persisted ciphertext.
+export type TypeAIConfigPatch = Partial<TypeAIConfig> & {
+  anthropicApiKey?: string;
+  openaiApiKey?: string;
+  deepseekApiKey?: string;
 };
 
 export type TypeAIPrompts = {
@@ -683,7 +703,7 @@ export const getAdminAIConfig = async (): Promise<TypeAIConfig> => {
 };
 
 export const updateAdminAIConfig = async (
-  patch: Partial<TypeAIConfig>,
+  patch: TypeAIConfigPatch,
 ): Promise<TypeAIConfig> => {
   const res = await apiFetch(parseUrl("v1/admin/ai/config"), {
     method: "PUT",

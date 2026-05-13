@@ -48,6 +48,11 @@ dependencies = [
     # iterator API — anyio/httpx-ws would also work but `websockets`
     # ships smaller wheels.
     "websockets>=12",
+    # Node 3.E.4: AES-256-GCM decryption of API-key ciphertexts persisted
+    # by the gateway. Already transitively pulled by openai/anthropic;
+    # declare it explicitly so the import contract in ai/secrets.py is
+    # self-evident and a future SDK trim can't silently break us.
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]

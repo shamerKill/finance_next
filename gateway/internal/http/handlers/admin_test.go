@@ -520,7 +520,7 @@ func TestTestAIConnection_FamilyNotSupported(t *testing.T) {
 // directly. Validates unknown-family rejection + that no path leaks
 // the API key into URL or body.
 func TestTestAIConnection_MissingKey(t *testing.T) {
-	_, _, _, err := buildAITestRequest("bogus", "", "https://api.example.com", "model-x", "sk-key")
+	_, _, _, err := buildAITestRequest("bogus", "", "https://api.example.com", "model-x", "sk-key", true)
 	if err == nil {
 		t.Fatal("expected unsupported family error")
 	}
@@ -528,7 +528,7 @@ func TestTestAIConnection_MissingKey(t *testing.T) {
 		t.Fatalf("expected error to mention family, got %v", err)
 	}
 	for _, fam := range []string{"anthropic", "openai", "deepseek"} {
-		ep, hdrs, body, err := buildAITestRequest(fam, "", "https://api.example.com", "model-x", "sk-key-secret-xyz")
+		ep, hdrs, body, err := buildAITestRequest(fam, "", "https://api.example.com", "model-x", "sk-key-secret-xyz", true)
 		if err != nil {
 			t.Fatalf("%s: %v", fam, err)
 		}

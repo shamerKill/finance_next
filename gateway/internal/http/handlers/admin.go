@@ -763,8 +763,11 @@ func (h *AdminHandler) testAIConnection(c echo.Context) error {
 		return c.JSON(http.StatusOK, result)
 	}
 
-	// Build request. Each family has its own envelope.
-	endpoint, hdrs, payload, err := buildAITestRequest(family, baseURL, suggestedDefault, model, key)
+	// Build request. Each family has its own envelope. Streaming
+	// follows the operator toggle so the test endpoint behaves
+	// identically to production AI calls — toggling off here surfaces
+	// any proxy that requires stream=true (e.g. codex relays).
+	endpoint, hdrs, payload, err := buildAITestRequest(family, baseURL, suggestedDefault, model, key, eff.StreamingEnabled)
 	if err != nil {
 		result.Error = redactKey(err.Error(), key)
 		return c.JSON(http.StatusOK, result)
@@ -881,6 +884,7 @@ func (h *AdminHandler) resolveProviderConfig(
 // without burning any meaningful budget.
 func buildAITestRequest(
 	family, baseURL, defaultBaseURL, model, apiKey string,
+	streaming bool,
 ) (endpoint string, headers map[string]string, payload []byte, err error) {
 	resolvedBase := strings.TrimRight(baseURL, "/")
 	if resolvedBase == "" {
@@ -893,10 +897,14 @@ func buildAITestRequest(
 			"x-api-key":         apiKey,
 			"anthropic-version": "2023-06-01",
 		}
+		if streaming {
+			headers["Accept"] = "text/event-stream"
+		}
 		payload, err = json.Marshal(map[string]any{
 			"model":      model,
 			"max_tokens": 1,
 			"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+			"stream":     streaming,
 		})
 	case "openai":
 		// gpt_client.py runs production traffic against /v1/responses
@@ -912,19 +920,19 @@ func buildAITestRequest(
 		endpoint = base + "/responses"
 		headers = map[string]string{
 			"Authorization": "Bearer " + apiKey,
-			"Accept":        "text/event-stream",
 		}
-		// stream:true is required by some Responses-API proxies (e.g.
-		// aiapi.lib.show codex). Real OpenAI accepts both; setting it
-		// uniformly keeps the test endpoint compatible with proxies
-		// without per-provider branching. The HTTP status code alone
-		// tells us auth/model/route are fine — we don't need to parse
-		// the SSE body.
+		if streaming {
+			headers["Accept"] = "text/event-stream"
+		}
+		// stream flag mirrors AIConfig.streamingEnabled. Some proxies
+		// (e.g. aiapi.lib.show codex) only accept stream:true on /v1/responses;
+		// toggling off lets the operator detect that limitation here
+		// rather than at first AI study.
 		payload, err = json.Marshal(map[string]any{
 			"model":             model,
 			"input":             []map[string]string{{"role": "user", "content": "hi"}},
 			"max_output_tokens": 16,
-			"stream":            true,
+			"stream":            streaming,
 		})
 	case "deepseek":
 		// DeepSeek exposes the OpenAI Chat Completions shape, NOT the
@@ -938,10 +946,14 @@ func buildAITestRequest(
 		headers = map[string]string{
 			"Authorization": "Bearer " + apiKey,
 		}
+		if streaming {
+			headers["Accept"] = "text/event-stream"
+		}
 		payload, err = json.Marshal(map[string]any{
 			"model":      model,
 			"max_tokens": 1,
 			"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+			"stream":     streaming,
 		})
 	default:
 		err = fmt.Errorf("unsupported family %q", family)

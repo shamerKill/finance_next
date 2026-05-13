@@ -898,12 +898,30 @@ func buildAITestRequest(
 			"max_tokens": 1,
 			"messages":   []map[string]string{{"role": "user", "content": "hi"}},
 		})
-	case "openai", "deepseek":
-		// Both expose the OpenAI chat.completions shape. If the operator
-		// gave a bare host (no /v1 suffix) we append it so the call
-		// resolves to /v1/chat/completions rather than /chat/completions
-		// (the latter 404s on most proxies). For DeepSeek the canonical
-		// URL is api.deepseek.com so /v1 path is expected.
+	case "openai":
+		// gpt_client.py runs production traffic against /v1/responses
+		// (OpenAI Responses API, used by gpt-5.x + codex proxies); some
+		// third-party proxies expose only that surface (chat.completions
+		// 404s). Match here so test parity with real workload.
+		// If the operator gave a bare host (no /v1 suffix) we append it
+		// so the call resolves to /v1/responses, not /responses.
+		base := resolvedBase
+		if !strings.HasSuffix(base, "/v1") && !strings.Contains(base, "/v1/") {
+			base = base + "/v1"
+		}
+		endpoint = base + "/responses"
+		headers = map[string]string{
+			"Authorization": "Bearer " + apiKey,
+		}
+		payload, err = json.Marshal(map[string]any{
+			"model":             model,
+			"input":             []map[string]string{{"role": "user", "content": "hi"}},
+			"max_output_tokens": 16,
+		})
+	case "deepseek":
+		// DeepSeek exposes the OpenAI Chat Completions shape, NOT the
+		// Responses API. Canonical URL is api.deepseek.com, /v1 path
+		// expected.
 		base := resolvedBase
 		if !strings.HasSuffix(base, "/v1") && !strings.Contains(base, "/v1/") {
 			base = base + "/v1"

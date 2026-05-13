@@ -56,12 +56,15 @@ status: ## 看各端口占用
 	done
 
 # ---- 单起 ----
-infra-up: ## 起 docker (mongo/redis/timescale)
-	@docker compose -f $(ROOT)/infra/docker-compose.yml up -d mongo redis timescale
+infra-up: _env-check ## 起 docker (mongo/redis/timescale)
+	@docker compose --env-file $(ROOT)/.env -f $(ROOT)/infra/docker-compose.yml up -d mongo redis timescale
 	@echo "✓ docker infra ready"
 
 infra-down: ## 停 docker
-	@docker compose -f $(ROOT)/infra/docker-compose.yml stop mongo redis timescale 2>&1 | tail -3
+	@docker compose --env-file $(ROOT)/.env -f $(ROOT)/infra/docker-compose.yml stop mongo redis timescale 2>&1 | tail -3
+
+_env-check:
+	@test -e $(ROOT)/.env || (echo "× 仓库根缺 .env。运行：ln -s gateway/.env .env  或 cp .env.example .env 并填值"; exit 1)
 
 gateway: ## 前台跑 gateway
 	@cd $(ROOT)/gateway && go run ./cmd/gateway

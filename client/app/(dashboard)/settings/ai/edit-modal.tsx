@@ -32,6 +32,7 @@ import {
   testAIConnection,
   updateAdminAIConfig,
 } from "@/data/api-client";
+import { useActivityCenter } from "@/data/use-activity-center";
 
 interface Props {
   config: TypeAIConfig;
@@ -111,6 +112,7 @@ function EditModal({
     | { status: "idle" }
     | { status: "running" }
     | { status: "done"; result: TypeAITestResult };
+  const activity = useActivityCenter();
   const [testStates, setTestStates] = useState<{
     anthropic: TestState;
     openai: TestState;
@@ -123,9 +125,19 @@ function EditModal({
 
   const runTest = async (family: "anthropic" | "openai" | "deepseek") => {
     setTestStates((s) => ({ ...s, [family]: { status: "running" } }));
+    const activityId = activity.push({
+      kind: "ai-test",
+      label: `AI 连通测试 (${family})`,
+    });
     try {
       const result = await testAIConnection({ family });
       setTestStates((s) => ({ ...s, [family]: { status: "done", result } }));
+      activity.update(activityId, {
+        status: result.ok ? "success" : "failed",
+        detail: result.ok
+          ? `${result.modelTested} · ${result.latencyMs}ms`
+          : result.error || "unknown error",
+      });
     } catch (e) {
       // Render the network / 4xx failure into the same shape so the
       // inline UI doesn't branch.
@@ -144,6 +156,7 @@ function EditModal({
           },
         },
       }));
+      activity.update(activityId, { status: "failed", detail: msg });
     }
   };
 

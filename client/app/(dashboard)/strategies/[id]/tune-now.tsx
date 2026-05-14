@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { startOptimization } from "@/data/api-client";
+import { useActivityCenter } from "@/data/use-activity-center";
 import { useOptimizationStream } from "@/data/ws-client";
 
 interface Props {
@@ -35,9 +36,34 @@ export default function TuneNowButton({ strategyId }: Props) {
   const [studyId, setStudyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const activity = useActivityCenter();
+  const activityIdRef = useRef<string | null>(null);
 
   const { progress, trialsCompleted, trialsTotal, costUsd, state, recommendationId } =
     useOptimizationStream(studyId);
+
+  // Mirror optimization WS terminal states (3=completed, 4=failed,
+  // 5=budget_exceeded) into the activity-center entry.
+  useEffect(() => {
+    if (activityIdRef.current == null) return;
+    if (state == null) return;
+    if (state >= 3) {
+      const label =
+        state === 3 ? "success" : state === 4 ? "failed" : "canceled";
+      const detail =
+        state === 3
+          ? `${trialsCompleted}/${trialsTotal || "?"} 试验 · $${costUsd.toFixed(4)}`
+          : state === 4
+            ? "study failed"
+            : "预算耗尽";
+      activity.update(activityIdRef.current, {
+        status: label as "success" | "failed" | "canceled",
+        detail,
+        href: recommendationId ? `/recommendations/${recommendationId}` : undefined,
+      });
+      activityIdRef.current = null;
+    }
+  }, [state, trialsCompleted, trialsTotal, costUsd, recommendationId, activity]);
 
   const onClick = async () => {
     setBusy(true);
@@ -45,8 +71,20 @@ export default function TuneNowButton({ strategyId }: Props) {
     try {
       const handle = await startOptimization(strategyId);
       setStudyId(handle.studyId);
+      activityIdRef.current = activity.push({
+        kind: "optimization",
+        label: `AI 优化 · ${strategyId.slice(0, 8)}`,
+        detail: `study ${handle.studyId.slice(0, 8)}…`,
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "失败");
+      const msg = e instanceof Error ? e.message : "失败";
+      setError(msg);
+      activity.push({
+        kind: "optimization",
+        label: `AI 优化 · ${strategyId.slice(0, 8)}`,
+        status: "failed",
+        detail: msg,
+      });
     } finally {
       setBusy(false);
     }

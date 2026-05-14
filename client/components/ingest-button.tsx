@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { ApiError, apiFetch } from "@/data/api-client";
+import { useActivityCenter } from "@/data/use-activity-center";
 
 const baseUrl =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
@@ -49,9 +50,15 @@ export function IngestButton({
 }: IngestButtonProps) {
   const router = useRouter();
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const activity = useActivityCenter();
 
   const onClick = async () => {
     setStatus({ kind: "busy" });
+    const activityId = activity.push({
+      kind: "ingest",
+      label: label,
+      detail: path,
+    });
 
     // Snapshot the initial count BEFORE the trigger so the verify
     // polling has something to compare against. If the user has a
@@ -89,6 +96,7 @@ export function IngestButton({
             ? e.message
             : String(e);
       setStatus({ kind: "err", message: msg });
+      activity.update(activityId, { status: "failed", detail: msg });
       return;
     }
 
@@ -115,10 +123,9 @@ export function IngestButton({
         if (current !== null && current > initialCount) {
           clearTimeout(earlyRefresh);
           router.refresh();
-          setStatus({
-            kind: "ok",
-            message: `已抓取（新增 ${current - initialCount} 条）`,
-          });
+          const okMsg = `已抓取（新增 ${current - initialCount} 条）`;
+          setStatus({ kind: "ok", message: okMsg });
+          activity.update(activityId, { status: "success", detail: okMsg });
           return;
         }
       }
@@ -126,10 +133,9 @@ export function IngestButton({
       // Trigger one final refresh anyway in case the count is
       // computed from a different filter than what we polled.
       router.refresh();
-      setStatus({
-        kind: "ok",
-        message: "已触发，但 60s 内无增量（去重或源未更新）",
-      });
+      const noinc = "已触发，但 60s 内无增量（去重或源未更新）";
+      setStatus({ kind: "ok", message: noinc });
+      activity.update(activityId, { status: "success", detail: noinc });
       return;
     }
 
@@ -137,7 +143,9 @@ export function IngestButton({
     [5_000, 10_000, 20_000, 30_000].forEach((d) =>
       setTimeout(() => router.refresh(), d),
     );
-    setStatus({ kind: "ok", message: "已触发数据采集（异步）" });
+    const submitted = "已触发数据采集（异步）";
+    setStatus({ kind: "ok", message: submitted });
+    activity.update(activityId, { status: "success", detail: submitted });
   };
 
   return (

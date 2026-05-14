@@ -4,12 +4,14 @@ import { Kbd } from "@heroui/react";
 import { usePathname } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 
+import { ActivityCenter } from "@/components/activity-center";
 import { BottomNav } from "@/components/bottom-nav";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { MobileHeader, Sidebar } from "@/components/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
 import type { TypeUser } from "@/data/type";
+import { ActivityCenterProvider } from "@/data/use-activity-center";
 import { useMediaQuery } from "@/data/use-media-query";
 import { routeLabel } from "@/data/route-labels";
 
@@ -84,6 +86,7 @@ export function DashboardShell({ me, children }: DashboardShellProps) {
   }, []);
 
   return (
+    <ActivityCenterProvider>
     <div className="flex min-h-screen flex-col">
       {/* Mobile (< md): top hamburger header with a compact UserMenu in
           the trailing slot so logout / theme are still reachable
@@ -126,6 +129,8 @@ export function DashboardShell({ me, children }: DashboardShellProps) {
       </div>
 
       <BottomNav />
+      <ActivityCenter />
     </div>
+    </ActivityCenterProvider>
   );
 }

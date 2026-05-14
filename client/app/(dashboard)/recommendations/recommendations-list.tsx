@@ -23,6 +23,7 @@ import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/components/toast";
 import { rejectRecommendation } from "@/data/api-client";
+import { useActivityCenter } from "@/data/use-activity-center";
 import {
   DEFAULT_RECOMMENDATION_PERIOD,
   deltaToneClass,
@@ -91,6 +92,7 @@ function ClusterRows({
 }) {
   const router = useRouter();
   const toast = useToast();
+  const activity = useActivityCenter();
   const [expanded, setExpanded] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,10 +101,25 @@ function ClusterRows({
     setError(null);
     // Fan-out to the gateway. We don't need fanin ordering — each
     // call independently flips status to rejected. router.refresh()
-    // at the end repaints the server-rendered table.
+    // at the end repaints the server-rendered table. We wrap the whole
+    // fan-out in a single activity entry so the activity center shows
+    // "批量拒绝 N 条" rather than N separate rows.
+    const activityId = activity.push({
+      kind: "optimization",
+      label: `批量拒绝相似推荐 (${cluster.similar.length})`,
+      detail: `study ${cluster.studyId.slice(0, 8)}…`,
+    });
     const results = await Promise.allSettled(
       cluster.similar.map((r) => rejectRecommendation(r.id)),
     );
+    const failedCount = results.filter((r) => r.status === "rejected").length;
+    activity.update(activityId, {
+      status: failedCount === 0 ? "success" : "failed",
+      detail:
+        failedCount === 0
+          ? `${results.length} 条已拒绝`
+          : `${failedCount}/${results.length} 失败`,
+    });
     const failed = results.filter((r) => r.status === "rejected");
     if (failed.length) {
       const msg = `${failed.length} / ${results.length} 个推荐拒绝失败`;

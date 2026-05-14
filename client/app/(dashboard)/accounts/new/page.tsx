@@ -11,6 +11,7 @@ import { PasswordInput } from "@/components/password-field";
 import { useToast } from "@/components/toast";
 import { createAccount } from "@/data/api-client";
 import { TypeExchange } from "@/data/type";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 
 const EXCHANGES: { key: TypeExchange; label: string; supported: boolean }[] = [
   { key: "binance", label: "Binance", supported: true },
@@ -25,6 +26,7 @@ const EXCHANGES: { key: TypeExchange; label: string; supported: boolean }[] = [
 export default function NewAccountPage() {
   const router = useRouter();
   const toast = useToast();
+  const activity = useActivityCenter();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [exchange, setExchange] = useState<TypeExchange>("binance");
@@ -34,17 +36,26 @@ export default function NewAccountPage() {
     setError(null);
     setSubmitting(true);
     const fd = new FormData(e.currentTarget);
+    const label = String(fd.get("label") ?? "");
     try {
-      await createAccount({
-        exchange,
-        label: String(fd.get("label") ?? ""),
-        email: String(fd.get("email") ?? ""),
-        apiKey: String(fd.get("apiKey") ?? ""),
-        secretKey: String(fd.get("secretKey") ?? ""),
-        passphrase: fd.get("passphrase")
-          ? String(fd.get("passphrase"))
-          : undefined,
-      });
+      await withActivity(
+        activity,
+        {
+          kind: "other",
+          label: `添加账户 - ${exchange}${label ? ` · ${label}` : ""}`,
+        },
+        () =>
+          createAccount({
+            exchange,
+            label,
+            email: String(fd.get("email") ?? ""),
+            apiKey: String(fd.get("apiKey") ?? ""),
+            secretKey: String(fd.get("secretKey") ?? ""),
+            passphrase: fd.get("passphrase")
+              ? String(fd.get("passphrase"))
+              : undefined,
+          }),
+      );
       toast.success("账户已创建", {
         description: "已通过权限探测，凭证已加密存储。",
       });

@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/page-header";
 import { RiskMeter } from "@/components/risk-meter";
 import { Section } from "@/components/section";
 import { createPredictionStrategy } from "@/data/api-client";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 
 // Node 2.C.5.e — FormField + RiskMeter visualisation. Backend still owns
 // every validation rule; the meters are purely informational so users see
@@ -31,6 +32,7 @@ const HINT_DAILY_LOSS = 500;
 
 export default function NewPredictionStrategyPage() {
   const router = useRouter();
+  const activity = useActivityCenter();
   const sp = useSearchParams();
   const prefillMarketId = sp?.get("marketId") ?? "";
 
@@ -49,17 +51,26 @@ export default function NewPredictionStrategyPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const s = await createPredictionStrategy({
-        name,
-        marketId,
-        outcome,
-        risk: {
-          maxNotionalUsd,
-          maxOpenMarkets,
-          maxSlippageBps,
-          dailyLossCapUsd,
+      const s = await withActivity(
+        activity,
+        {
+          kind: "other",
+          label: `新建预测策略 - ${name || "未命名"}`,
+          detail: `${outcome} · ${marketId}`,
         },
-      });
+        () =>
+          createPredictionStrategy({
+            name,
+            marketId,
+            outcome,
+            risk: {
+              maxNotionalUsd,
+              maxOpenMarkets,
+              maxSlippageBps,
+              dailyLossCapUsd,
+            },
+          }),
+      );
       router.push(`/prediction/strategies/${s.id}`);
     } catch (err) {
       setError(err);

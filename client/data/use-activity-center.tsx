@@ -226,3 +226,43 @@ export function useActivityCenter(): ActivityCenterValue {
   }
   return ctx;
 }
+
+// withActivity wraps an async API call so its lifecycle (running →
+// success/failed) automatically lands in the Activity Center. The
+// hook must come from a React component context, so this helper takes
+// a pre-bound `activity` instance.
+//
+// Usage:
+//   const activity = useActivityCenter();
+//   await withActivity(activity, { kind: "backtest", label: "..." },
+//     () => createBacktest(payload));
+//
+// On success the result of `fn()` is returned unchanged. On failure
+// the thrown error is re-raised after marking the activity entry
+// failed, so existing try/catch / toast logic at the call site keeps
+// working — withActivity is purely additive.
+export async function withActivity<T>(
+  activity: ActivityCenterValue,
+  desc: {
+    kind: ActivityKind;
+    label: string;
+    detail?: string;
+    href?: string;
+  },
+  fn: () => Promise<T>,
+): Promise<T> {
+  const id = activity.push(desc);
+  try {
+    const result = await fn();
+    activity.update(id, { status: "success" });
+    return result;
+  } catch (e) {
+    const msg =
+      e instanceof Error ? e.message : typeof e === "string" ? e : String(e);
+    activity.update(id, {
+      status: "failed",
+      detail: msg.slice(0, 200),
+    });
+    throw e;
+  }
+}

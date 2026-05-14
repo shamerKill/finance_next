@@ -26,6 +26,7 @@ import {
   TypePredictionStrategy,
   TypeWallet,
 } from "@/data/type";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 
 // Node 2.C.5.e — Tabs (参数 / 风控 / 订单 / 实时) + design-system
 // primitives. The mainnet 3-gate warning + walletId requirement remain.
@@ -50,6 +51,7 @@ function orderStatusTone(status: string): StatusTone {
 export default function PredictionStrategyDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
+  const activity = useActivityCenter();
   const [s, setS] = useState<TypePredictionStrategy | null>(null);
   const [orders, setOrders] = useState<TypePredictionOrder[]>([]);
   const [wallets, setWallets] = useState<TypeWallet[]>([]);
@@ -128,11 +130,20 @@ export default function PredictionStrategyDetailPage() {
   const performToggle = async () => {
     setBusy(true);
     try {
-      const updated = await togglePredictionLive(id, {
-        enabled: pendingEnable,
-        walletId,
-        mode: "mainnet",
-      });
+      const updated = await withActivity(
+        activity,
+        {
+          kind: "other",
+          label: `${pendingEnable ? "启用" : "关闭"}预测实盘 - ${s?.name ?? id}`,
+          detail: walletId ? `wallet ${walletId.slice(0, 8)}…` : undefined,
+        },
+        () =>
+          togglePredictionLive(id, {
+            enabled: pendingEnable,
+            walletId,
+            mode: "mainnet",
+          }),
+      );
       setS(updated);
       setError(null);
     } catch (e) {

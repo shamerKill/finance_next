@@ -1,11 +1,16 @@
 "use client";
 
-import { Button, Input, Radio, RadioGroup } from "@heroui/react";
+import { Button, Input, Radio, RadioGroup, Switch } from "@heroui/react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import {
+  ACTIVITY_CENTER_OPEN_EVENT,
+  ActivityRow,
+} from "@/components/activity-center";
 import { Callout } from "@/components/callout";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { EmptyState } from "@/components/empty-state";
 import { FormField } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { PasswordInput } from "@/components/password-field";
@@ -19,6 +24,7 @@ import {
   invite,
 } from "@/data/auth-client";
 import type { TypeInviteResult, TypeUser, TypeUserRole } from "@/data/type";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 
 // Node 3.E.4 — /settings/account client. Server component hands us the
 // already-authenticated user; everything below is interactive (state +
@@ -77,6 +83,10 @@ export function AccountClient({ me }: { me: TypeUser }) {
         <ChangePasswordForm />
       </Section>
 
+      <Section title="活动中心">
+        <ActivityCenterSection />
+      </Section>
+
       {me.role === "admin" && (
         <Section title="邀请成员">
           <InviteForm />
@@ -94,6 +104,7 @@ export function AccountClient({ me }: { me: TypeUser }) {
 
 function ChangePasswordForm() {
   const toast = useToast();
+  const activity = useActivityCenter();
   const [oldPw, setOldPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
@@ -116,7 +127,11 @@ function ChangePasswordForm() {
   async function onConfirm() {
     setError(null);
     try {
-      await changePassword({ oldPassword: oldPw, newPassword: newPw });
+      await withActivity(
+        activity,
+        { kind: "other", label: "修改密码" },
+        () => changePassword({ oldPassword: oldPw, newPassword: newPw }),
+      );
       toast.success("密码已更新");
       setOldPw("");
       setNewPw("");
@@ -200,6 +215,7 @@ function ChangePasswordForm() {
 
 function InviteForm() {
   const toast = useToast();
+  const activity = useActivityCenter();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<TypeUserRole>("member");
   const [result, setResult] = useState<TypeInviteResult | null>(null);
@@ -220,7 +236,15 @@ function InviteForm() {
   async function onConfirm() {
     setError(null);
     try {
-      const r = await invite({ email: email.trim(), role });
+      const r = await withActivity(
+        activity,
+        {
+          kind: "other",
+          label: `邀请成员 - ${email.trim()}`,
+          detail: role === "admin" ? "管理员" : "成员",
+        },
+        () => invite({ email: email.trim(), role }),
+      );
       setResult(r);
       toast.success("邀请链接已生成");
       setEmail("");
@@ -319,6 +343,7 @@ function InviteForm() {
 function DeleteAccountForm({ me }: { me: TypeUser }) {
   const router = useRouter();
   const toast = useToast();
+  const activity = useActivityCenter();
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -342,7 +367,11 @@ function DeleteAccountForm({ me }: { me: TypeUser }) {
   async function onConfirm() {
     setError(null);
     try {
-      await deleteSelf({ password });
+      await withActivity(
+        activity,
+        { kind: "other", label: `删除账户 - ${me.email}` },
+        () => deleteSelf({ password }),
+      );
       toast.success("账户已删除");
       // Cookie has been cleared by the gateway. Hard nav to /login so
       // the page tree re-renders without any cached auth state.
@@ -394,5 +423,92 @@ function DeleteAccountForm({ me }: { me: TypeUser }) {
         onConfirm={onConfirm}
       />
     </form>
+  );
+}
+
+// ---------- Activity Center section ----------
+//
+// Inline preview of the global Activity Center so users can find the
+// toggle + recent entries without hunting for the floating pill. State
+// is shared via the ActivityCenterProvider (mounted in dashboard-shell)
+// so toggling here flips the floating widget too — and vice versa. The
+// "打开活动面板" button dispatches a window CustomEvent the
+// <ActivityCenter> listens for, opening the popover without reaching
+// into its internals.
+
+const ACTIVITY_PREVIEW_LIMIT = 5;
+
+function ActivityCenterSection() {
+  const { enabled, setEnabled, items } = useActivityCenter();
+  const recent = items.slice(0, ACTIVITY_PREVIEW_LIMIT);
+
+  // Tick once a second so the relative timestamps in the preview list
+  // stay fresh while the user lingers on the settings page. Stops when
+  // there's nothing to show so we don't burn cycles on a hidden card.
+  const [now, setNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    if (!enabled || recent.length === 0) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [enabled, recent.length]);
+
+  const openPanel = () => {
+    if (typeof window === "undefined") return;
+    try {
+      window.dispatchEvent(new Event(ACTIVITY_CENTER_OPEN_EVENT));
+    } catch {
+      /* very old WebViews — ignore */
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Switch
+            size="sm"
+            isSelected={enabled}
+            onValueChange={setEnabled}
+            aria-label="启用活动中心"
+          />
+          <div className="text-sm">
+            <div className="font-medium">
+              {enabled ? "已开启" : "已关闭"}
+            </div>
+            <div className="text-xs text-text-tertiary">
+              展示数据抓取、AI 优化、订单提交等异步操作的实时进度。
+            </div>
+          </div>
+        </div>
+        <Button size="sm" variant="flat" onPress={openPanel}>
+          打开活动面板
+        </Button>
+      </div>
+
+      <div className="rounded-md border border-border-default bg-bg-surface">
+        {!enabled ? (
+          <EmptyState
+            title="活动中心已关闭"
+            description="开启上方开关后，最近的异步操作将出现在这里。"
+          />
+        ) : recent.length === 0 ? (
+          <EmptyState
+            title="暂无活动记录"
+            description="触发一次数据抓取 / 回测 / AI 优化后，最近的几条记录会出现在这里。"
+          />
+        ) : (
+          <ul>
+            {recent.map((item) => (
+              <ActivityRow
+                key={item.id}
+                item={item}
+                now={now}
+                compact
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
   );
 }

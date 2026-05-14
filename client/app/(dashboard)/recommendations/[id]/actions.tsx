@@ -19,6 +19,7 @@ import {
   approveRecommendation,
   rejectRecommendation,
 } from "@/data/api-client";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 
 interface Props {
   id: string;
@@ -44,6 +45,7 @@ export default function RecommendationActions({
 }: Props) {
   const router = useRouter();
   const toast = useToast();
+  const activity = useActivityCenter();
   const [error, setError] = useState<string | null>(null);
   const [approveOpen, setApproveOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -51,7 +53,15 @@ export default function RecommendationActions({
   const doApprove = async () => {
     setError(null);
     try {
-      await approveRecommendation(id);
+      await withActivity(
+        activity,
+        {
+          kind: "optimization",
+          label: `批准推荐 #${id.slice(0, 8)}`,
+          detail: strategyId.slice(0, 12),
+        },
+        () => approveRecommendation(id),
+      );
       toast.success("已通过");
       router.refresh();
     } catch (e) {
@@ -65,7 +75,15 @@ export default function RecommendationActions({
   const doReject = async () => {
     setError(null);
     try {
-      await rejectRecommendation(id);
+      await withActivity(
+        activity,
+        {
+          kind: "optimization",
+          label: `拒绝推荐 #${id.slice(0, 8)}`,
+          detail: strategyId.slice(0, 12),
+        },
+        () => rejectRecommendation(id),
+      );
       toast.success("已拒绝");
       router.refresh();
     } catch (e) {

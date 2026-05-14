@@ -32,6 +32,7 @@ import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
 import { updateOption } from "@/data/api-client";
 import type { TypeOption } from "@/data/type";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 
 type Props = { strategy: TypeOption };
 
@@ -42,6 +43,7 @@ function fmtPct(n: number): string {
 export function ParamsPanel({ strategy }: Props) {
   const router = useRouter();
   const toast = useToast();
+  const activity = useActivityCenter();
   const id = strategy.id ?? "";
 
   // Local edit-mode state. Initialised from the strategy on every open;
@@ -83,16 +85,24 @@ export function ParamsPanel({ strategy }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await updateOption(id, {
-        positionLevel,
-        execSymbol,
-        orderGroupMargin,
-        stopProfitRate,
-        stopLossRate,
-        profitRateAfterAtAddPosition: profitRateAfterAdd,
-        openPositionStopTime,
-        createCostOrderInProfit,
-      });
+      await withActivity(
+        activity,
+        {
+          kind: "other",
+          label: `更新策略参数 - ${strategy.name}`,
+        },
+        () =>
+          updateOption(id, {
+            positionLevel,
+            execSymbol,
+            orderGroupMargin,
+            stopProfitRate,
+            stopLossRate,
+            profitRateAfterAtAddPosition: profitRateAfterAdd,
+            openPositionStopTime,
+            createCostOrderInProfit,
+          }),
+      );
       router.refresh();
       toast.success("策略参数已更新");
       close();

@@ -25,6 +25,7 @@ import {
   TypeWalletBalance,
   TypeWalletPosition,
 } from "@/data/type";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 import { pushRecent } from "@/data/use-recent-resources";
 
 // Node 2.C.5.e — adopt design system primitives (Stat / ConfirmDialog /
@@ -36,6 +37,7 @@ export default function WalletDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
   const toast = useToast();
+  const activity = useActivityCenter();
   const [wallet, setWallet] = useState<TypeWallet | null>(null);
   const [balance, setBalance] = useState<TypeWalletBalance | null>(null);
   const [positions, setPositions] = useState<TypeWalletPosition[]>([]);
@@ -90,7 +92,15 @@ export default function WalletDetailPage() {
   const submitApprove = async () => {
     const amt = parseFloat(approveAmt);
     try {
-      const res = await approveWallet(id, amt);
+      const res = await withActivity(
+        activity,
+        {
+          kind: "other",
+          label: `USDC approve - $${amt.toFixed(2)}`,
+          detail: wallet?.label,
+        },
+        () => approveWallet(id, amt),
+      );
       toast.success("已授权", {
         description: `授权 $${res.amountApproved.toFixed(2)} — tx ${res.txHash}`,
       });

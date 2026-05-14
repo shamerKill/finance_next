@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { createOption } from "@/data/api-client";
 import type { TypeOption } from "@/data/type";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 
 type StrategyKind = "grid_dca" | "polymarket_event";
 
@@ -31,6 +32,7 @@ type PositionRow = { marginRate: number; lossAddRate: number };
 
 const NewStrategyPage: FC = () => {
   const router = useRouter();
+  const activity = useActivityCenter();
   const [kind, setKind] = useState<StrategyKind>("grid_dca");
   const [name, setName] = useState("");
   const [positionLevel, setPositionLevel] = useState<number>(5);
@@ -80,7 +82,15 @@ const NewStrategyPage: FC = () => {
         userApiKey,
         userSecretKey,
       };
-      await createOption(payload);
+      await withActivity(
+        activity,
+        {
+          kind: "other",
+          label: `新建策略 - ${name || "未命名"}`,
+          detail: execSymbol,
+        },
+        () => createOption(payload),
+      );
       router.push("/strategies");
     } catch (err) {
       setError(err);

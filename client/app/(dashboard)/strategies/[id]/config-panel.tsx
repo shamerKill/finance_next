@@ -21,6 +21,7 @@ import { Section } from "@/components/section";
 import { useToast } from "@/components/toast";
 import { deleteOption, setLive, setRisk } from "@/data/api-client";
 import type { TypeAccount, TypeLiveMode, TypeOption } from "@/data/type";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 
 type Props = {
   strategy: TypeOption;
@@ -30,6 +31,7 @@ type Props = {
 export function ConfigPanel({ strategy, accounts }: Props) {
   const router = useRouter();
   const toast = useToast();
+  const activity = useActivityCenter();
   const id = strategy.id ?? "";
 
   const [enabled, setEnabled] = useState(!!strategy.live?.enabled);
@@ -60,7 +62,15 @@ export function ConfigPanel({ strategy, accounts }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await setLive(id, { enabled, mode, accountId });
+      await withActivity(
+        activity,
+        {
+          kind: "other",
+          label: `${enabled ? "启用" : "关闭"}实盘 - ${strategy.name}`,
+          detail: `${mode}${accountId ? ` · ${accountId.slice(0, 8)}…` : ""}`,
+        },
+        () => setLive(id, { enabled, mode, accountId }),
+      );
       router.refresh();
       toast.success("实盘配置已保存");
     } catch (e) {
@@ -77,11 +87,20 @@ export function ConfigPanel({ strategy, accounts }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await setRisk(id, {
-        maxPositionUsd: maxPosition,
-        maxLeverage,
-        dailyLossCapUsd: dailyLoss,
-      });
+      await withActivity(
+        activity,
+        {
+          kind: "other",
+          label: `更新风控 - ${strategy.name}`,
+          detail: `pos $${maxPosition} · lev ${maxLeverage}× · daily $${dailyLoss}`,
+        },
+        () =>
+          setRisk(id, {
+            maxPositionUsd: maxPosition,
+            maxLeverage,
+            dailyLossCapUsd: dailyLoss,
+          }),
+      );
       router.refresh();
       toast.success("风控上限已保存");
     } catch (e) {
@@ -96,7 +115,11 @@ export function ConfigPanel({ strategy, accounts }: Props) {
   const doDelete = async () => {
     setError(null);
     try {
-      await deleteOption(id);
+      await withActivity(
+        activity,
+        { kind: "other", label: `删除策略 - ${strategy.name}` },
+        () => deleteOption(id),
+      );
       toast.success("策略已删除");
       // Navigate back to the strategies list; refresh() alone would
       // 404 on the now-deleted detail route.

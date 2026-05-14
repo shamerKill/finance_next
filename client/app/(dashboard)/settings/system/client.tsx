@@ -26,12 +26,14 @@ import {
   resumeTrading,
   setPortfolioLimits,
 } from "@/data/api-client";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 
 // R2 multi-tenant userId storage key — matches api-client.ts.
 // Absent → the gateway falls back to "default" for this browser.
 const USER_ID_STORAGE = "finance_next_user_id";
 
 export function SystemSettingsClient() {
+  const activity = useActivityCenter();
   const [userId, setUserId] = useState("");
   const [state, setState] = useState<TypeSystemState | null>(null);
   const [limits, setLimits] = useState<TypePortfolioLimits | null>(null);
@@ -80,7 +82,11 @@ export function SystemSettingsClient() {
     }
     setBusy(true);
     try {
-      const s = await haltTrading(reason);
+      const s = await withActivity(
+        activity,
+        { kind: "other", label: "紧急停机", detail: reason },
+        () => haltTrading(reason),
+      );
       setState(s);
     } catch (e) {
       setError(e);
@@ -92,7 +98,11 @@ export function SystemSettingsClient() {
   const onResume = async () => {
     setBusy(true);
     try {
-      const s = await resumeTrading();
+      const s = await withActivity(
+        activity,
+        { kind: "other", label: "恢复交易" },
+        () => resumeTrading(),
+      );
       setState(s);
     } catch (e) {
       setError(e);
@@ -105,11 +115,20 @@ export function SystemSettingsClient() {
     if (!limits) return;
     setBusy(true);
     try {
-      const next = await setPortfolioLimits({
-        maxOpenNotionalUsd: limits.maxOpenNotionalUsd,
-        maxOpenPositionsCount: limits.maxOpenPositionsCount,
-        maxDailyLossUsd: limits.maxDailyLossUsd,
-      });
+      const next = await withActivity(
+        activity,
+        {
+          kind: "other",
+          label: "更新组合限额",
+          detail: `notional $${limits.maxOpenNotionalUsd} · positions ${limits.maxOpenPositionsCount} · daily $${limits.maxDailyLossUsd}`,
+        },
+        () =>
+          setPortfolioLimits({
+            maxOpenNotionalUsd: limits.maxOpenNotionalUsd,
+            maxOpenPositionsCount: limits.maxOpenPositionsCount,
+            maxDailyLossUsd: limits.maxDailyLossUsd,
+          }),
+      );
       setLimits(next);
     } catch (e) {
       setError(e);

@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/page-header";
 import { PasswordInput } from "@/components/password-field";
 import { Section } from "@/components/section";
 import { createWallet } from "@/data/api-client";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 
 // Node 2.C.5.e — adopt FormField + ConfirmDialog. The danger callout
 // stays verbatim per spec §G5; private-key visibility toggle and
@@ -20,6 +21,7 @@ import { createWallet } from "@/data/api-client";
 
 export default function NewWalletPage() {
   const router = useRouter();
+  const activity = useActivityCenter();
   const [label, setLabel] = useState("");
   const [privateKey, setPrivateKey] = useState("");
   const [expectedAddress, setExpectedAddress] = useState("");
@@ -50,11 +52,16 @@ export default function NewWalletPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const w = await createWallet({
-        label,
-        privateKey: privateKey.trim(),
-        expectedAddress: expectedAddress.trim() || undefined,
-      });
+      const w = await withActivity(
+        activity,
+        { kind: "other", label: `添加钱包 - ${label}` },
+        () =>
+          createWallet({
+            label,
+            privateKey: privateKey.trim(),
+            expectedAddress: expectedAddress.trim() || undefined,
+          }),
+      );
       router.push(`/wallets/${w.id}`);
     } catch (err) {
       setError(err);

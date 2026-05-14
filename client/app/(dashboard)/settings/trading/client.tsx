@@ -37,6 +37,7 @@ import {
   requestMainnetToken,
 } from "@/data/api-client";
 import type { TypeMainnetStatus } from "@/data/type";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 import { useSystemInfo } from "@/data/use-system-info";
 
 function EnvFlagBadge({ value }: { value: unknown }) {
@@ -62,6 +63,7 @@ function EnvFlagBadge({ value }: { value: unknown }) {
 }
 
 export function TradingSettingsClient() {
+  const activity = useActivityCenter();
   const { data: info, err: infoErr } = useSystemInfo();
 
   const [status, setStatus] = useState<TypeMainnetStatus | null>(null);
@@ -101,7 +103,11 @@ export function TradingSettingsClient() {
   const handleRequestToken = async () => {
     setBusyRequest(true);
     try {
-      const res = await requestMainnetToken();
+      const res = await withActivity(
+        activity,
+        { kind: "other", label: "申请 mainnet token" },
+        () => requestMainnetToken(),
+      );
       setRequestedHint(res.tokenHint);
       toast.success("已发起 token 申请", {
         description: "完整 token 仅打印到 stderr (关键字 EMAIL CONFIRMATION REQUIRED)；从日志拷贝后填入下方表单确认。",
@@ -121,7 +127,11 @@ export function TradingSettingsClient() {
     if (!tokenInput.trim()) return;
     setBusyConfirm(true);
     try {
-      const next = await confirmMainnetToken(tokenInput.trim());
+      const next = await withActivity(
+        activity,
+        { kind: "other", label: "确认 mainnet token" },
+        () => confirmMainnetToken(tokenInput.trim()),
+      );
       setStatus(next);
       setTokenInput("");
       setRequestedHint(null);

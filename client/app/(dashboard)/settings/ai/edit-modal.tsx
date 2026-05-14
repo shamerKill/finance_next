@@ -32,7 +32,7 @@ import {
   testAIConnection,
   updateAdminAIConfig,
 } from "@/data/api-client";
-import { useActivityCenter } from "@/data/use-activity-center";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 
 interface Props {
   config: TypeAIConfig;
@@ -205,8 +205,12 @@ function EditModal({
     setBusy(true);
     setError(null);
     try {
-      const next = await updateAdminAIConfig({
-        modelFamily,
+      const next = await withActivity(
+        activity,
+        { kind: "other", label: `保存 AI 配置 - ${modelFamily}` },
+        () =>
+          updateAdminAIConfig({
+            modelFamily,
         anthropicPrimaryModel: anthropicPrimary,
         anthropicRefineModel: anthropicRefine,
         openaiPrimaryModel: openaiPrimary,
@@ -226,7 +230,8 @@ function EditModal({
         ...(anthropicApiKey ? { anthropicApiKey } : {}),
         ...(openaiApiKey ? { openaiApiKey } : {}),
         ...(deepseekApiKey ? { deepseekApiKey } : {}),
-      });
+          }),
+      );
       // Wipe in-memory plaintext on success so a stale modal can't leak
       // it via React Devtools / hot-reload.
       setAnthropicApiKey("");

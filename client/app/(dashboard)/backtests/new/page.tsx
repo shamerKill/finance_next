@@ -17,6 +17,7 @@ import { FormField } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { createBacktest, getOptions } from "@/data/api-client";
 import { TypeOption } from "@/data/type";
+import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 
 // New backtest form. The strategy selector is populated from existing
 // Options (the legacy strategy resource) since Phase 3 does not yet
@@ -63,6 +64,7 @@ function defaultParamsFromOption(opt: TypeOption | null): string {
 
 export default function NewBacktestPage() {
   const router = useRouter();
+  const activity = useActivityCenter();
   // Query-string presets: when the operator clicks "回测此参数" on the
   // recommendation detail page, we arrive here with ?strategyId=...&
   // symbol=...&proposed=<json>&lookbackDays=30 so the form lands fully
@@ -189,23 +191,35 @@ export default function NewBacktestPage() {
     const fd = new FormData(e.currentTarget);
     try {
       const params = paramsText.trim() ? JSON.parse(paramsText) : {};
-      const handle = await createBacktest({
-        strategyId: strategyId || String(fd.get("strategyId") ?? ""),
-        kind: "grid_dca",
-        params,
-        symbol: String(fd.get("symbol") ?? ""),
-        exchange: String(fd.get("exchange") ?? "binance"),
-        timeframe: String(fd.get("timeframe") ?? "1h") as
-          | "1m"
-          | "5m"
-          | "1h"
-          | "1d",
-        start: new Date(startTs).toISOString(),
-        end: new Date(endTs).toISOString(),
-        initialCapital: Number(initialCapital || "10000"),
-        commissionRate: Number(commissionRate || "0.0004"),
-        slippageBps: Number(slippageBps || "1"),
-      });
+      const resolvedStrategyId =
+        strategyId || String(fd.get("strategyId") ?? "");
+      const symbol = String(fd.get("symbol") ?? "");
+      const handle = await withActivity(
+        activity,
+        {
+          kind: "backtest",
+          label: `回测 - ${resolvedStrategyId || "未命名"} · ${symbol}`,
+          detail: `${fd.get("timeframe") ?? "1h"} · ${fd.get("exchange") ?? "binance"}`,
+        },
+        () =>
+          createBacktest({
+            strategyId: resolvedStrategyId,
+            kind: "grid_dca",
+            params,
+            symbol,
+            exchange: String(fd.get("exchange") ?? "binance"),
+            timeframe: String(fd.get("timeframe") ?? "1h") as
+              | "1m"
+              | "5m"
+              | "1h"
+              | "1d",
+            start: new Date(startTs).toISOString(),
+            end: new Date(endTs).toISOString(),
+            initialCapital: Number(initialCapital || "10000"),
+            commissionRate: Number(commissionRate || "0.0004"),
+            slippageBps: Number(slippageBps || "1"),
+          }),
+      );
       router.push(`/backtests/${handle.runId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

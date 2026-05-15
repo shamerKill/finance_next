@@ -16,10 +16,6 @@
 #   - OTEL_EXPORTER_OTLP_ENDPOINT optional pass-through.
 #   - Caddy reverse proxy with automatic Let's Encrypt TLS.
 #
-# IMPORTANT: client (Next.js) is NOT in this compose. Build & run separately:
-#   cd client && yarn build && yarn start
-# OR add a `frontend` service and update the Caddyfile `host.docker.internal:3000`
-# block to point at it.
 services:
   mongo:
     ports: []
@@ -38,11 +34,29 @@ services:
     restart: always
     environment:
       AUTH_COOKIE_SECURE: "true"
+      ALLOWED_ORIGINS: "https://${DOMAIN:-localhost}"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
 
   quant:
     ports: []
     restart: always
+
+  client:
+    build:
+      context: ..
+      dockerfile: client/Dockerfile
+      args:
+        # Default `/api` keeps the bundle same-origin so the browser sends
+        # cookies; Caddy proxies /api/* to gateway. Override only when the
+        # API is on a different host.
+        NEXT_PUBLIC_API_URL: "/api"
+    container_name: fn_client
+    restart: always
+    expose:
+      - "3000"  # internal-only; Caddy reverse-proxies to it
+    depends_on:
+      gateway:
+        condition: service_healthy
 
   caddy:
     image: caddy:2-alpine

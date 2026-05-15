@@ -48,18 +48,11 @@
     }
 
     # ---- Frontend (Next.js) ----
-    # The client container is NOT defined in docker-compose.prod.yml today.
-    # Options to wire up the frontend:
-    #   (a) Run `yarn start` on the host and use host.docker.internal:3000
-    #       (works on Docker Desktop for Mac/Windows; on Linux add
-    #        `extra_hosts: ["host.docker.internal:host-gateway"]` to the
-    #        caddy service).
-    #   (b) Add a `frontend` service to docker-compose.prod.yml and change
-    #       the upstream below to `frontend:3000`.
-    #   (c) Build the Next.js export to static assets and `root * /srv` +
-    #       `file_server` here, removing the reverse_proxy.
+    # The `client` service in docker-compose.prod.yml builds + runs the
+    # Next.js standalone server on :3000, internal-only. Caddy reverse-
+    # proxies every non-API request to it.
     handle {
-        reverse_proxy host.docker.internal:3000
+        reverse_proxy client:3000
     }
 
     # Access log to stdout — Docker captures it; ship via standard log

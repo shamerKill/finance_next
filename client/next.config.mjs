@@ -12,6 +12,10 @@
 // so future Wave 5 commits that flip Vercel-style settings won't expose
 // our minified source maps in production.
 const nextConfig = {
+  // `standalone` emits .next/standalone with a tree-shaken node_modules
+  // copy so the production Docker image can ship ~150MB total instead
+  // of ~1GB. See client/Dockerfile for how it's consumed.
+  output: "standalone",
   productionBrowserSourceMaps: false,
   experimental: {
     optimizePackageImports: ["@heroui/react", "lightweight-charts"],

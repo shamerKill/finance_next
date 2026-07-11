@@ -565,6 +565,8 @@ def _build_default_ai_client(
             ),
             openai_primary_model=os.getenv("OPENAI_PRIMARY_MODEL", "gpt-5.5"),
             openai_refine_model=os.getenv("OPENAI_REFINE_MODEL", "gpt-5.4"),
+            deepseek_primary_model=os.getenv("DEEPSEEK_PRIMARY_MODEL", "deepseek-v4-pro"),
+            deepseek_refine_model=os.getenv("DEEPSEEK_REFINE_MODEL", "deepseek-v4-flash"),
             anthropic_base_url=os.getenv(
                 "ANTHROPIC_BASE_URL", "https://api.anthropic.com"
             ),
@@ -696,8 +698,8 @@ def _build_ai_client_with_secrets(
             endpoint=ENDPOINT_CHAT_COMPLETIONS,
             stream=secrets.streaming_enabled,
         )
-        client.primary_model = secrets.deepseek_primary_model or "deepseek-chat"
-        client.refine_model = secrets.deepseek_refine_model or "deepseek-chat"
+        client.primary_model = secrets.deepseek_primary_model or "deepseek-v4-pro"
+        client.refine_model = secrets.deepseek_refine_model or "deepseek-v4-flash"
         return client
 
     # Default: Anthropic Claude path.

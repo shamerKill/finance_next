@@ -68,13 +68,21 @@ func (h *OptionHandler) create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	apiKeyEnc, err := h.crypto.Encrypt(dto.UserAPIKey)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "encrypt apiKey: "+err.Error())
+	apiKeyEnc := ""
+	if dto.UserAPIKey != "" {
+		enc, err := h.crypto.Encrypt(dto.UserAPIKey)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "encrypt apiKey: "+err.Error())
+		}
+		apiKeyEnc = enc
 	}
-	secretEnc, err := h.crypto.Encrypt(dto.UserSecretKey)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "encrypt secretKey: "+err.Error())
+	secretEnc := ""
+	if dto.UserSecretKey != "" {
+		enc, err := h.crypto.Encrypt(dto.UserSecretKey)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "encrypt secretKey: "+err.Error())
+		}
+		secretEnc = enc
 	}
 
 	o := &domain.Option{
@@ -92,6 +100,8 @@ func (h *OptionHandler) create(c echo.Context) error {
 		UserEmail:                    dto.UserEmail,
 		UserAPIKey:                   apiKeyEnc,
 		UserSecretKey:                secretEnc,
+		AIRunID:                      dto.AIRunID,
+		Risk:                         dto.Risk,
 	}
 
 	saved, err := h.repo.Create(c.Request().Context(), o)
@@ -166,6 +176,9 @@ func (h *OptionHandler) update(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "encrypt secretKey: "+err.Error())
 		}
 		set["userSecretKey"] = enc
+	}
+	if dto.AIRunID != nil {
+		set["aiRunId"] = *dto.AIRunID
 	}
 
 	o, err := h.repo.UpdateByID(c.Request().Context(), id, set)

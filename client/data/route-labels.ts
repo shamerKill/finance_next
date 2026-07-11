@@ -12,6 +12,7 @@
 
 export const ROUTE_LABELS: Record<string, string> = {
   "/dashboard": "仪表盘",
+  "/ai-money": "AI 赚钱",
   "/accounts": "账户",
   "/accounts/new": "新建账户",
   "/wallets": "钱包",

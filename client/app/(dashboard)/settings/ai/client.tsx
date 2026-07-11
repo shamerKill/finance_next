@@ -33,6 +33,8 @@ import {
   getAdminAIConfig,
   getAdminAIPrompts,
 } from "@/data/api-client";
+import { aiSettingsAIMoneyWorkflowFromConfig } from "@/data/ai-settings-workflow.mjs";
+import { useLoginHref } from "@/data/use-login-href";
 
 import { AIConfigEditButton } from "./edit-modal";
 
@@ -62,6 +64,17 @@ function ConfiguredBadge({ ok }: { ok: boolean }) {
   );
 }
 
+function SecretPreview({ ok, preview }: { ok: boolean; preview?: string }) {
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      <ConfiguredBadge ok={ok} />
+      {ok && preview ? (
+        <span className="font-mono text-xs text-default-500">{preview}</span>
+      ) : null}
+    </span>
+  );
+}
+
 function Row({
   label,
   children,
@@ -77,12 +90,26 @@ function Row({
   );
 }
 
+type AISettingsWorkflow = {
+  status: "blocked" | "ready";
+  tone: "info" | "warning";
+  title: string;
+  summary: string;
+  primaryHref?: string;
+  primaryAction: {
+    kind: "edit_config" | "open_link";
+    label: string;
+  };
+  nextActions: string[];
+};
+
 export function AIConfigClient() {
   const [config, setConfig] = useState<TypeAIConfig | null>(null);
   const [prompts, setPrompts] = useState<TypeAIPrompts | null>(null);
   const [configError, setConfigError] = useState<unknown>(null);
   const [promptsError, setPromptsError] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
+  const loginHref = useLoginHref();
 
   const refresh = async () => {
     setLoading(true);
@@ -133,7 +160,7 @@ export function AIConfigClient() {
           description="需要管理员权限。请用 admin 账号重新登录。"
           action={
             <Link
-              href="/login"
+              href={loginHref}
               className="rounded bg-primary px-4 py-1.5 text-white hover:opacity-90"
             >
               重新登录 →
@@ -146,6 +173,9 @@ export function AIConfigClient() {
 
   const promptsUnavailable =
     promptsError instanceof ApiError && promptsError.status === 503;
+  const aiMoneyWorkflow = config
+    ? (aiSettingsAIMoneyWorkflowFromConfig(config) as AISettingsWorkflow)
+    : null;
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -160,13 +190,48 @@ export function AIConfigClient() {
       />
 
       <Callout variant="info" title="API Key 存储策略">
-        密钥在本页输入后以 AES-256-GCM 加密存入 Mongo；UI 永远不回显原值，只显示&ldquo;已配置 / 未配置&rdquo;徽章。
+        密钥在本页输入后以 AES-256-GCM 加密存入 Mongo；UI 只显示脱敏预览，不回显完整原值或密文。
         环境变量{" "}
         <code className="px-1 bg-default-100 rounded text-xs">ANTHROPIC_API_KEY</code> /{" "}
         <code className="px-1 bg-default-100 rounded text-xs">OPENAI_API_KEY</code> /{" "}
         <code className="px-1 bg-default-100 rounded text-xs">DEEPSEEK_API_KEY</code> 仍作为一次性迁移期回退；
         保存表单后 Mongo 中的密文优先生效，env 仅在密文缺失时使用。建议从此页输入后清除 env。
       </Callout>
+
+      {config && aiMoneyWorkflow ? (
+        <Callout variant={aiMoneyWorkflow.tone} title={aiMoneyWorkflow.title}>
+          <div className="space-y-3">
+            <p>{aiMoneyWorkflow.summary}</p>
+            <ul className="list-disc space-y-1 pl-5">
+              {aiMoneyWorkflow.nextActions.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap gap-2">
+              {aiMoneyWorkflow.primaryAction.kind === "open_link" &&
+              aiMoneyWorkflow.primaryHref ? (
+                <Link
+                  href={aiMoneyWorkflow.primaryHref}
+                  className="rounded bg-primary px-3 py-1 text-sm text-white hover:opacity-90"
+                >
+                  {aiMoneyWorkflow.primaryAction.label}
+                </Link>
+              ) : (
+                <AIConfigEditButton
+                  config={config}
+                  onSaved={(next) => setConfig(next)}
+                />
+              )}
+              {aiMoneyWorkflow.primaryAction.kind === "open_link" ? (
+                <AIConfigEditButton
+                  config={config}
+                  onSaved={(next) => setConfig(next)}
+                />
+              ) : null}
+            </div>
+          </div>
+        </Callout>
+      ) : null}
 
       {configError != null && !configAuthFailed ? (
         <ApiErrorView error={configError} />
@@ -206,13 +271,22 @@ export function AIConfigClient() {
                   : config.deepseekRefineModel}
             </Row>
             <Row label="Anthropic API key">
-              <ConfiguredBadge ok={config.anthropicApiKeyConfigured} />
+              <SecretPreview
+                ok={config.anthropicApiKeyConfigured}
+                preview={config.anthropicApiKeyPreview}
+              />
             </Row>
             <Row label="OpenAI API key">
-              <ConfiguredBadge ok={config.openaiApiKeyConfigured} />
+              <SecretPreview
+                ok={config.openaiApiKeyConfigured}
+                preview={config.openaiApiKeyPreview}
+              />
             </Row>
             <Row label="DeepSeek API key">
-              <ConfiguredBadge ok={config.deepseekApiKeyConfigured} />
+              <SecretPreview
+                ok={config.deepseekApiKeyConfigured}
+                preview={config.deepseekApiKeyPreview}
+              />
             </Row>
             <Row label="Anthropic base URL">
               {config.anthropicBaseURL || (

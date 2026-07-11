@@ -16,10 +16,14 @@
 
 FROM node:22-alpine AS deps
 WORKDIR /app
+ARG YARN_REGISTRY=https://registry.yarnpkg.com
 COPY client/package.json client/yarn.lock ./
 # `--frozen-lockfile` aborts the build if yarn.lock would change; ensures
 # repeatable images across CI runs.
-RUN yarn install --frozen-lockfile
+RUN --mount=type=cache,target=/usr/local/share/.cache/yarn/v6 \
+    yarn config set registry "$YARN_REGISTRY" \
+    && yarn config set network-timeout 600000 \
+    && yarn install --frozen-lockfile --network-timeout 600000
 
 FROM node:22-alpine AS builder
 WORKDIR /app

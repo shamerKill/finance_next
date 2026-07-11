@@ -11,6 +11,8 @@
 FROM golang:1.25-alpine AS builder
 
 WORKDIR /workspace
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 
 # Install git for `go mod download` to fetch private deps if any. Cheap.
 RUN apk add --no-cache git
@@ -19,11 +21,14 @@ RUN apk add --no-cache git
 COPY gateway/go.mod gateway/go.sum ./gateway/
 COPY shared-proto/ ./shared-proto/
 WORKDIR /workspace/gateway
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 # Now copy sources and build.
 COPY gateway/ ./
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w" \
     -o /out/gateway \
     ./cmd/gateway

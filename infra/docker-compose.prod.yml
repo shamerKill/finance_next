@@ -50,6 +50,11 @@ services:
         # cookies; Caddy proxies /api/* to gateway. Override only when the
         # API is on a different host.
         NEXT_PUBLIC_API_URL: "/api"
+    environment:
+      # Server Components cannot call relative /api URLs from Node. Keep
+      # browser fetches same-origin via NEXT_PUBLIC_API_URL, but route SSR
+      # auth/data calls directly to the internal gateway service.
+      NEXT_SERVER_API_URL: "http://gateway:3001/api"
     container_name: fn_client
     restart: always
     expose:

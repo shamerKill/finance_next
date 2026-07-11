@@ -36,6 +36,7 @@ export const SIDEBAR_GROUPS: NavGroup[] = [
     label: "运营",
     items: [
       { href: "/dashboard", label: "仪表盘" },
+      { href: "/ai-money", label: "AI 赚钱" },
       { href: "/accounts", label: "账户" },
       { href: "/wallets", label: "钱包" },
       { href: "/portfolio", label: "投资组合" },

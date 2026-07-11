@@ -33,3 +33,7 @@ quant/build/
 # Smoke-test artefacts and Claude harness scratch.
 .smoke-screenshots/
 .claude/
+
+# Local verification and browser scratch.
+/.tmp/
+/gateway/.tmp/

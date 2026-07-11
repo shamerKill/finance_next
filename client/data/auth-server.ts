@@ -13,9 +13,8 @@
 
 import { cookies } from "next/headers";
 
+import { apiUrl } from "./api-base.mjs";
 import type { TypeUser } from "./type";
-
-const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
 
 const COOKIE_NAME = "auth_token";
 
@@ -36,7 +35,7 @@ export async function getMeServer(): Promise<TypeUser | null> {
   if (!token) return null;
 
   try {
-    const res = await fetch(`${baseUrl}/v1/auth/me`, {
+    const res = await fetch(apiUrl("v1/auth/me"), {
       method: "GET",
       cache: "no-store",
       headers: {

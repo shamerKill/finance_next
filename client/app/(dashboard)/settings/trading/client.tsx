@@ -38,6 +38,7 @@ import {
 } from "@/data/api-client";
 import type { TypeMainnetStatus } from "@/data/type";
 import { useActivityCenter, withActivity } from "@/data/use-activity-center";
+import { useLoginHref } from "@/data/use-login-href";
 import { useSystemInfo } from "@/data/use-system-info";
 
 function EnvFlagBadge({ value }: { value: unknown }) {
@@ -64,6 +65,7 @@ function EnvFlagBadge({ value }: { value: unknown }) {
 
 export function TradingSettingsClient() {
   const activity = useActivityCenter();
+  const loginHref = useLoginHref();
   const { data: info, err: infoErr } = useSystemInfo();
 
   const [status, setStatus] = useState<TypeMainnetStatus | null>(null);
@@ -218,7 +220,7 @@ export function TradingSettingsClient() {
             description="此面板需要 admin 角色登录。请用 admin 账号重新登录。"
             action={
               <Link
-                href="/login"
+                href={loginHref}
                 className="rounded bg-primary px-4 py-1.5 text-sm text-white hover:opacity-90"
               >
                 重新登录 →

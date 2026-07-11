@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { ToastProvider } from "@/components/toast-provider";
-
-const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   // Default + template lets individual pages export a short title (e.g.
@@ -40,7 +37,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>
-      <body className={inter.className}>
+      <body>
         <Providers>
           {/* Node 2.C.2 — mounted once so any client component can call
            * `useToast()` / `toast.success(...)`. HeroUI's ToastProvider

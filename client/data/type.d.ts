@@ -24,9 +24,9 @@ export type TypeOption = {
     lossAddRate: number;
   }[];
   // 用户的密钥
-  userEmail: string;
-  userApiKey: string;
-  userSecretKey: string;
+  userEmail?: string;
+  userApiKey?: string;
+  userSecretKey?: string;
   // Phase 4 additions. Both optional so legacy docs validate. The
   // gateway treats missing `live` as `enabled=false`; missing `risk`
   // causes order submissions to be REJECTED — there are no silent
@@ -34,11 +34,21 @@ export type TypeOption = {
   id?: string;
   risk?: TypeRiskCaps;
   live?: TypeLiveConfig;
+  // AI Money source run that generated this strategy draft.
+  aiRunId?: string;
   // Phase 6 — bumps by 1 each time an AI recommendation is approved
   // against this strategy. Optional on the client because the field is
   // absent on legacy docs that pre-date the recommendation flow.
   currentVersion?: number;
 }
+
+export type TypeCreateOptionResponse = {
+  message: string;
+  value: {
+    id?: string;
+    name: string;
+  };
+};
 
 // Phase 4 — strategy-level risk caps. All three fields are mandatory at
 // runtime; the gateway refuses to size orders when any is zero/missing.
@@ -373,6 +383,186 @@ export type TypeNewsItem = {
   body: string;
   sentiment: number;
   symbols: string[];
+};
+
+// ---------- AI goal agent ----------
+
+export type TypeAIGoalRequest = {
+  goal: string;
+  symbols?: string[];
+  horizon?: string;
+  riskPreference?: string;
+  executionMode?: "observe" | "paper" | "testnet" | "mainnet" | string;
+  behaviorConstraints?: string[];
+  marketNarrativeFocus?: string[];
+  avoidScenarios?: string[];
+};
+
+export type TypeAIGoalProviderStatus = {
+  status: "ready" | "blocked" | string;
+  tone: "success" | "warning" | string;
+  providerFamily: "anthropic" | "openai" | "deepseek" | string;
+  modelFamily: "claude" | "openai" | "deepseek" | string;
+  providerLabel: string;
+  model: string;
+  keyConfigured: boolean;
+  source: "mongo" | "env" | "mixed" | string;
+  primaryHref: string;
+  primaryAction: {
+    kind: "open_link" | string;
+    label: string;
+  };
+  summary: string;
+  nextActions: string[];
+};
+
+export type TypeAIGoalStrategyDraft = {
+  name: string;
+  kind: "grid_dca" | "polymarket_event" | "watch_only" | string;
+  symbol: string;
+  thesis: string;
+  params: Record<string, unknown>;
+  riskCaps: Record<string, number>;
+  validationPlan: string[];
+  executionPlan: string[];
+  blockers: string[];
+};
+
+export type TypeAIGoalWatchSignal = {
+  signal: string;
+  source: string;
+  interpretation: string;
+  action: string;
+};
+
+export type TypeAIGoalExecutionPlan = {
+  mode: string;
+  canAutoExecute: boolean;
+  nextSteps: string[];
+  safetyGates: string[];
+};
+
+export type TypeAIGoalExecutionContext = {
+  accountCount: number;
+  tradeableAccountCount: number;
+  withdrawalEnabledAccountCount: number;
+  tradingHalted: boolean;
+  haltedReason?: string;
+  portfolioLimits: {
+    userId?: string;
+    maxOpenNotionalUsd: number;
+    maxOpenPositionsCount: number;
+    maxDailyLossUsd: number;
+  };
+};
+
+export type TypeAIGoalMarketContextHighlight = {
+  id: string;
+  source: string;
+  label: string;
+  detail: string;
+  at?: string;
+};
+
+export type TypeAIGoalRecentRunSummary = {
+  id: string;
+  goal: string;
+  summary: string;
+  aiStatus: string;
+  executionMode: string;
+  strategyDraftCount: number;
+  contextNewsCount: number;
+  contextMacroCount: number;
+  contextOnchainCount: number;
+  marketRead?: string;
+  humanFactors?: string[];
+  watchSignalCount?: number;
+  watchSignalHighlights?: string[];
+  actionCount: number;
+  doneActionCount?: number;
+  readyActionCount?: number;
+  manualActionCount?: number;
+  blockedActionCount?: number;
+  openActionCount?: number;
+};
+
+export type TypeAIGoalAnalysis = {
+  id: string;
+  createdAt: string;
+  goal: string;
+  summary: string;
+  marketRead: string;
+  humanFactors: string[];
+  strategyDrafts: TypeAIGoalStrategyDraft[];
+  watchSignals: TypeAIGoalWatchSignal[];
+  execution: TypeAIGoalExecutionPlan;
+  context: {
+    symbols: string[];
+    newsCount: number;
+    macroCount: number;
+    onchainCount: number;
+    existingStrategyCount: number;
+    existingStrategyNames: string[];
+    marketContextHighlights?: TypeAIGoalMarketContextHighlight[];
+    recentRunCount?: number;
+    recentRunSummaries?: TypeAIGoalRecentRunSummary[];
+    execution?: TypeAIGoalExecutionContext;
+    operatorConstraints?: {
+      behaviorConstraints: string[];
+      marketNarrativeFocus: string[];
+      avoidScenarios: string[];
+    };
+    notes: string[];
+  };
+  ai: {
+    status: "ok" | "fallback" | string;
+    family: string;
+    model: string;
+    baseUrl: string;
+    latencyMs: number;
+    error?: string;
+    contextHash?: string;
+  };
+};
+
+export type TypeAIGoalRunActionStatus = "done" | "ready" | "manual" | "blocked" | string;
+
+export type TypeAIGoalRunAction = {
+  id: string;
+  status: TypeAIGoalRunActionStatus;
+  relatedId?: string;
+  href?: string;
+  note?: string;
+  updatedAt: string;
+};
+
+export type TypeAIGoalRunActionPatch = {
+  status: TypeAIGoalRunActionStatus;
+  relatedId?: string;
+  href?: string;
+  note?: string;
+};
+
+export type TypeAIGoalRun = {
+  id: string;
+  userId: string;
+  createdAt: string;
+  updatedAt: string;
+  goal: string;
+  summary: string;
+  symbols: string[];
+  horizon?: string;
+  riskPreference?: string;
+  status: "ok" | "fallback" | string;
+  aiStatus: "ok" | "fallback" | string;
+  aiModel?: string;
+  executionMode: string;
+  strategyDraftCount: number;
+  contextNewsCount: number;
+  contextMacroCount: number;
+  contextOnchainCount: number;
+  analysis?: TypeAIGoalAnalysis;
+  actions?: TypeAIGoalRunAction[];
 };
 
 // ---------- Phase 9 — Polymarket prediction-market vertical ----------

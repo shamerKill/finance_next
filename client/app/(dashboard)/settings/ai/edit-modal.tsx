@@ -289,7 +289,7 @@ function EditModal({
                     }
                     placeholder={
                       config.anthropicApiKeyConfigured
-                        ? "••••••••（保持当前值）"
+                        ? `${config.anthropicApiKeyPreview || "••••••••"}（保持当前值）`
                         : "sk-ant-..."
                     }
                     value={anthropicApiKey}
@@ -305,7 +305,7 @@ function EditModal({
                     }
                     placeholder={
                       config.openaiApiKeyConfigured
-                        ? "••••••••（保持当前值）"
+                        ? `${config.openaiApiKeyPreview || "••••••••"}（保持当前值）`
                         : "sk-..."
                     }
                     value={openaiApiKey}
@@ -321,7 +321,7 @@ function EditModal({
                     }
                     placeholder={
                       config.deepseekApiKeyConfigured
-                        ? "••••••••（保持当前值）"
+                        ? `${config.deepseekApiKeyPreview || "••••••••"}（保持当前值）`
                         : "sk-..."
                     }
                     value={deepseekApiKey}
@@ -419,14 +419,14 @@ function EditModal({
                       label="主模型"
                       value={deepseekPrimary}
                       onValueChange={setDeepseekPrimary}
-                      placeholder="deepseek-chat"
+                      placeholder="deepseek-v4-pro"
                     />
                     <Input
                       size="sm"
                       label="refine 模型"
                       value={deepseekRefine}
                       onValueChange={setDeepseekRefine}
-                      placeholder="deepseek-chat"
+                      placeholder="deepseek-v4-flash"
                     />
                   </div>
                   <Input

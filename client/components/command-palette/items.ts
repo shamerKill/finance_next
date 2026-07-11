@@ -29,6 +29,7 @@ export interface StaticPaletteItem {
 // 1.1 Pages — sidebar 中能直接到达的所有 dashboard 路径
 export const PAGE_ITEMS: StaticPaletteItem[] = [
   { id: "nav:dashboard", label: "仪表盘", searchExtra: "dashboard home overview", group: "导航", target: "/dashboard" },
+  { id: "nav:ai-money", label: "AI 赚钱", searchExtra: "goal agent money strategy ai 目标 策略 舆情 人性", group: "导航", target: "/ai-money" },
   { id: "nav:accounts", label: "账户列表", searchExtra: "accounts 交易所 账号", group: "导航", target: "/accounts" },
   { id: "nav:accounts:new", label: "新建账户", searchExtra: "new account 添加", group: "导航", target: "/accounts/new" },
   { id: "nav:wallets", label: "钱包列表", searchExtra: "wallets polygon polymarket", group: "导航", target: "/wallets" },
@@ -114,5 +115,12 @@ export const ACTION_ITEMS: StaticPaletteItem[] = [
     searchExtra: "optimize ai tune 优化",
     group: "操作",
     target: "/strategies?action=optimize-prompt",
+  },
+  {
+    id: "act:ai-goal",
+    label: "让 AI 生成策略蓝图",
+    searchExtra: "goal agent money strategy ai 目标 赚钱 策略 舆情",
+    group: "操作",
+    target: "/ai-money",
   },
 ];

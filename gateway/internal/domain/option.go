@@ -73,9 +73,11 @@ type CreateOptionDTO struct {
 	ProfitRateAfterAtAddPosition float64          `json:"profitRateAfterAtAddPosition"`
 	CreateCostOrderInProfit      *bool            `json:"createCostOrderInProfit"      validate:"required"`
 	CreatePositions              []CreatePosition `json:"createPositions"              validate:"required,min=1,dive"`
-	UserEmail                    string           `json:"userEmail"                    validate:"required,email"`
-	UserAPIKey                   string           `json:"userApiKey"                   validate:"required"`
-	UserSecretKey                string           `json:"userSecretKey"                validate:"required"`
+	UserEmail                    string           `json:"userEmail"                    validate:"omitempty,email"`
+	UserAPIKey                   string           `json:"userApiKey"`
+	UserSecretKey                string           `json:"userSecretKey"`
+	AIRunID                      string           `json:"aiRunId,omitempty"            validate:"omitempty,max=128"`
+	Risk                         *RiskCaps        `json:"risk,omitempty"               validate:"omitempty"`
 }
 
 // UpdateOptionDTO is the partial-update shape. All fields are pointer-typed so
@@ -95,11 +97,12 @@ type UpdateOptionDTO struct {
 	UserEmail                    *string           `json:"userEmail,omitempty"                    validate:"omitempty,email"`
 	UserAPIKey                   *string           `json:"userApiKey,omitempty"`
 	UserSecretKey                *string           `json:"userSecretKey,omitempty"`
+	AIRunID                      *string           `json:"aiRunId,omitempty"                      validate:"omitempty,max=128"`
 }
 
 // Option is the persisted shape (BSON). createTime defaults to now on insert.
 type Option struct {
-	ID                           string           `json:"id"                           bson:"_id,omitempty"`
+	ID string `json:"id"                           bson:"_id,omitempty"`
 	// UserID is the owning tenant id (R2 multi-tenant boundary). Populated
 	// from the request header by the create handler; legacy docs lacking
 	// the field are backfilled to DefaultUserID on gateway startup.
@@ -119,6 +122,9 @@ type Option struct {
 	UserAPIKey    string    `json:"-" bson:"userApiKey"`
 	UserSecretKey string    `json:"-" bson:"userSecretKey"`
 	CreateTime    time.Time `json:"createTime" bson:"createTime"`
+	// AIRunID preserves the AI Money run that produced this draft so the UI
+	// can reopen the original goal and decision trail later.
+	AIRunID string `json:"aiRunId,omitempty" bson:"aiRunId,omitempty"`
 
 	// Phase 4 additions. Both pointer-typed so legacy docs without these
 	// fields decode cleanly: `Risk == nil` & `Live == nil` is treated as

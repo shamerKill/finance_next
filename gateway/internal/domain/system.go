@@ -45,7 +45,7 @@ type AIConfig struct {
 
 	// DeepSeek family — OpenAI-compatible API (chat completions). Default
 	// base URL is https://api.deepseek.com when unset. Model strings
-	// default to "deepseek-chat" inside the quant client when empty.
+	// default to deepseek-v4-pro / deepseek-v4-flash when empty.
 	DeepseekBaseURL      string `bson:"deepseekBaseURL,omitempty"      json:"deepseekBaseURL,omitempty"`
 	DeepseekPrimaryModel string `bson:"deepseekPrimaryModel,omitempty" json:"deepseekPrimaryModel,omitempty"`
 	DeepseekRefineModel  string `bson:"deepseekRefineModel,omitempty"  json:"deepseekRefineModel,omitempty"`
@@ -98,10 +98,10 @@ const SystemStateGlobalID = "global"
 // PortfolioLimits holds cross-strategy risk caps for a single user.
 // Phase 7 stores one row per user (userId="default" pre auth).
 type PortfolioLimits struct {
-	UserID                 string  `json:"userId" bson:"userId"`
-	MaxOpenNotionalUsd     float64 `json:"maxOpenNotionalUsd" bson:"maxOpenNotionalUsd" validate:"gte=0"`
-	MaxOpenPositionsCount  int     `json:"maxOpenPositionsCount" bson:"maxOpenPositionsCount" validate:"gte=0"`
-	MaxDailyLossUsd        float64 `json:"maxDailyLossUsd" bson:"maxDailyLossUsd" validate:"gte=0"`
+	UserID                string  `json:"userId" bson:"userId"`
+	MaxOpenNotionalUsd    float64 `json:"maxOpenNotionalUsd" bson:"maxOpenNotionalUsd" validate:"gte=0"`
+	MaxOpenPositionsCount int     `json:"maxOpenPositionsCount" bson:"maxOpenPositionsCount" validate:"gte=0"`
+	MaxDailyLossUsd       float64 `json:"maxDailyLossUsd" bson:"maxDailyLossUsd" validate:"gte=0"`
 }
 
 // DefaultUserID is defined in account.go; we reference it from this

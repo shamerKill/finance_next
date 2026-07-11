@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getMeServer } from "@/data/auth-server";
 
 // Root entry. Phase 1.A.3:
-//   * Authenticated → /dashboard (the Wave 2 monitor landing page).
+//   * Authenticated → /ai-money (the AI-first money workflow).
 //   * Anonymous     → /login (the middleware would also do this on the
 //     next navigation; doing it here saves a redirect hop).
 //
@@ -17,5 +17,5 @@ export default async function Home() {
   if (!me) {
     redirect("/login");
   }
-  redirect("/dashboard");
+  redirect("/ai-money");
 }

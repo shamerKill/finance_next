@@ -9,10 +9,10 @@
 // listening for `auth:unauthorized` events (see api-client.ts).
 
 import { apiFetch } from "./api-client";
+import { apiUrl } from "./api-base.mjs";
 import type { TypeInviteResult, TypeUser } from "./type";
 
-const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
-const parseUrl = (path: string) => baseUrl + `/${path}`.replace("//", "/");
+const parseUrl = apiUrl;
 
 // Shared error envelope; keeps imports light by not pulling ApiError
 // into every caller. We forward the gateway's `{message}` / `{error}`

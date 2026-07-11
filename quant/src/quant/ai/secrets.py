@@ -262,10 +262,10 @@ async def load_ai_secrets(
         or "gpt-5.4",
         deepseek_primary_model=_str_or_none("deepseekPrimaryModel")
         or os.getenv("DEEPSEEK_PRIMARY_MODEL")
-        or "deepseek-chat",
+        or "deepseek-v4-pro",
         deepseek_refine_model=_str_or_none("deepseekRefineModel")
         or os.getenv("DEEPSEEK_REFINE_MODEL")
-        or "deepseek-chat",
+        or "deepseek-v4-flash",
         budget_usd_per_study=_float_or_none("budgetUsdPerStudy"),
         budget_usd_per_day=_float_or_none("budgetUsdPerDay"),
         lookback_days=_int_or_none("lookbackDays"),

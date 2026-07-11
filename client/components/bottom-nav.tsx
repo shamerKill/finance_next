@@ -108,7 +108,12 @@ const MoreIcon = (
 );
 
 const ENTRIES: NavEntry[] = [
-  { href: "/dashboard", label: "仪表盘", icon: HomeIcon },
+  {
+    href: "/dashboard",
+    label: "仪表盘",
+    activePrefixes: ["/dashboard", "/ai-money"],
+    icon: HomeIcon,
+  },
   {
     href: "/strategies",
     label: "策略",

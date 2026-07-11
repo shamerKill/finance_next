@@ -14,6 +14,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import {
+  authPageDestinationFromUrl,
+  protectedNextParamFromUrl,
+} from "./data/auth-redirect.mjs";
+
 const PUBLIC_PREFIXES = [
   "/login",
   "/register",
@@ -38,9 +43,17 @@ const LEGACY_REDIRECTS: Record<string, string> = {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  const hasCookie = req.cookies.has(COOKIE_NAME);
+
   // Whitelist the auth pages so unauthenticated users can reach them.
+  // Authenticated users should still honour a safe ?next= destination,
+  // otherwise /login?next=/ai-money drops them into the generic dashboard.
   for (const prefix of PUBLIC_PREFIXES) {
     if (pathname === prefix || pathname.startsWith(prefix + "/")) {
+      if (hasCookie) {
+        const url = new URL(authPageDestinationFromUrl(req.nextUrl), req.url);
+        return NextResponse.redirect(url);
+      }
       return NextResponse.next();
     }
   }
@@ -49,7 +62,6 @@ export function middleware(req: NextRequest) {
   // real validity check. Cookie absent → redirect to /login, preserving
   // the intended destination as `?next=` so we can hop back after login
   // (the login page can choose to honour or ignore this).
-  const hasCookie = req.cookies.has(COOKIE_NAME);
   if (hasCookie) {
     // Legacy path mapping — runs only for authenticated requests so
     // unauthenticated visitors still see the /login flow first.
@@ -64,7 +76,8 @@ export function middleware(req: NextRequest) {
   }
 
   const loginUrl = new URL("/login", req.url);
-  if (pathname !== "/") loginUrl.searchParams.set("next", pathname);
+  const next = protectedNextParamFromUrl(req.nextUrl);
+  if (next) loginUrl.searchParams.set("next", next);
   return NextResponse.redirect(loginUrl);
 }
 

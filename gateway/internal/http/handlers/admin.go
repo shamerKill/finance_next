@@ -259,9 +259,12 @@ type AIConfigEffective struct {
 	// *APIKeyConfigured flags reflect whether a ciphertext for that
 	// provider is persisted in Mongo. UI uses these to render a
 	// "已配置 / 未配置" badge without ever seeing the key value itself.
-	AnthropicAPIKeyConfigured bool `json:"anthropicApiKeyConfigured"`
-	OpenAIAPIKeyConfigured    bool `json:"openaiApiKeyConfigured"`
-	DeepseekAPIKeyConfigured  bool `json:"deepseekApiKeyConfigured"`
+	AnthropicAPIKeyConfigured bool   `json:"anthropicApiKeyConfigured"`
+	OpenAIAPIKeyConfigured    bool   `json:"openaiApiKeyConfigured"`
+	DeepseekAPIKeyConfigured  bool   `json:"deepseekApiKeyConfigured"`
+	AnthropicAPIKeyPreview    string `json:"anthropicApiKeyPreview"`
+	OpenAIAPIKeyPreview       string `json:"openaiApiKeyPreview"`
+	DeepseekAPIKeyPreview     string `json:"deepseekApiKeyPreview"`
 
 	Source string `json:"source"`
 }
@@ -269,7 +272,11 @@ type AIConfigEffective struct {
 // effectiveAIConfig merges the persisted overlay (may be nil) with the
 // env-derived defaults. It also computes the source label by counting
 // how many non-zero fields came from Mongo.
-func effectiveAIConfig(persisted *domain.AIConfig) AIConfigEffective {
+func effectiveAIConfig(persisted *domain.AIConfig, cryptoSvc ...*crypto.Service) AIConfigEffective {
+	var svc *crypto.Service
+	if len(cryptoSvc) > 0 {
+		svc = cryptoSvc[0]
+	}
 	out := AIConfigEffective{
 		ModelFamily:           envOrDefault("AI_MODEL_FAMILY", "claude"),
 		AnthropicPrimaryModel: "claude-sonnet-4-6",
@@ -279,8 +286,8 @@ func effectiveAIConfig(persisted *domain.AIConfig) AIConfigEffective {
 		AnthropicBaseURL:      os.Getenv("ANTHROPIC_BASE_URL"),
 		OpenAIBaseURL:         os.Getenv("OPENAI_BASE_URL"),
 		DeepseekBaseURL:       envOrDefault("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-		DeepseekPrimaryModel:  envOrDefault("DEEPSEEK_PRIMARY_MODEL", "deepseek-chat"),
-		DeepseekRefineModel:   envOrDefault("DEEPSEEK_REFINE_MODEL", "deepseek-chat"),
+		DeepseekPrimaryModel:  envOrDefault("DEEPSEEK_PRIMARY_MODEL", "deepseek-v4-pro"),
+		DeepseekRefineModel:   envOrDefault("DEEPSEEK_REFINE_MODEL", "deepseek-v4-flash"),
 		BudgetUsdPerStudy:     envOrFloat("AI_MAX_USD_PER_STUDY", 5.0),
 		BudgetUsdPerDay:       envOrFloat("AI_MAX_USD_PER_DAY", 50.0),
 		LookbackDays:          envOrInt("AI_OPTIMIZATION_LOOKBACK_DAYS", 90),
@@ -301,6 +308,9 @@ func effectiveAIConfig(persisted *domain.AIConfig) AIConfigEffective {
 		out.AnthropicAPIKeyConfigured = out.AnthropicConfigured
 		out.OpenAIAPIKeyConfigured = out.OpenAIConfigured
 		out.DeepseekAPIKeyConfigured = os.Getenv("DEEPSEEK_API_KEY") != ""
+		out.AnthropicAPIKeyPreview = maskSecret(os.Getenv("ANTHROPIC_API_KEY"))
+		out.OpenAIAPIKeyPreview = maskSecret(os.Getenv("OPENAI_API_KEY"))
+		out.DeepseekAPIKeyPreview = maskSecret(os.Getenv("DEEPSEEK_API_KEY"))
 		return out
 	}
 	mongoFields := 0
@@ -371,6 +381,9 @@ func effectiveAIConfig(persisted *domain.AIConfig) AIConfigEffective {
 	out.AnthropicAPIKeyConfigured = persisted.AnthropicAPIKeyCiphertext != "" || os.Getenv("ANTHROPIC_API_KEY") != ""
 	out.OpenAIAPIKeyConfigured = persisted.OpenAIAPIKeyCiphertext != "" || os.Getenv("OPENAI_API_KEY") != ""
 	out.DeepseekAPIKeyConfigured = persisted.DeepseekAPIKeyCiphertext != "" || os.Getenv("DEEPSEEK_API_KEY") != ""
+	out.AnthropicAPIKeyPreview = keyPreview(persisted.AnthropicAPIKeyCiphertext, "ANTHROPIC_API_KEY", svc)
+	out.OpenAIAPIKeyPreview = keyPreview(persisted.OpenAIAPIKeyCiphertext, "OPENAI_API_KEY", svc)
+	out.DeepseekAPIKeyPreview = keyPreview(persisted.DeepseekAPIKeyCiphertext, "DEEPSEEK_API_KEY", svc)
 
 	// Total tunable knobs (count of fields we count above) = 14
 	// (Node 3.E.6 added streamingEnabled). If every one came from Mongo,
@@ -386,6 +399,33 @@ func effectiveAIConfig(persisted *domain.AIConfig) AIConfigEffective {
 	return out
 }
 
+func keyPreview(ciphertext, envName string, svc *crypto.Service) string {
+	if ciphertext != "" {
+		if svc != nil {
+			if plain, err := svc.Decrypt(ciphertext); err == nil {
+				return maskSecret(plain)
+			}
+		}
+		return "••••••••"
+	}
+	return maskSecret(os.Getenv(envName))
+}
+
+func maskSecret(secret string) string {
+	secret = strings.TrimSpace(secret)
+	if secret == "" {
+		return ""
+	}
+	r := []rune(secret)
+	if len(r) <= 8 {
+		return strings.Repeat("•", len(r))
+	}
+	if len(r) <= 16 {
+		return string(r[:4]) + "…" + string(r[len(r)-4:])
+	}
+	return string(r[:6]) + "…" + string(r[len(r)-4:])
+}
+
 // GET /api/v1/admin/ai/config — effective config (Mongo overlay + env fallback).
 func (h *AdminHandler) getAIConfig(c echo.Context) error {
 	if err := h.auth(c); err != nil {
@@ -398,7 +438,7 @@ func (h *AdminHandler) getAIConfig(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	return c.JSON(http.StatusOK, effectiveAIConfig(persisted))
+	return c.JSON(http.StatusOK, effectiveAIConfig(persisted, h.crypto))
 }
 
 // aiConfigPutBody is the wire shape accepted by PUT /admin/ai/config. It
@@ -509,7 +549,7 @@ func (h *AdminHandler) putAIConfig(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	return c.JSON(http.StatusOK, effectiveAIConfig(persisted))
+	return c.JSON(http.StatusOK, effectiveAIConfig(persisted, h.crypto))
 }
 
 // validateAIConfigPartial enforces field-level constraints. Fields with
@@ -807,6 +847,40 @@ func (h *AdminHandler) testAIConnection(c echo.Context) error {
 		result.OK = true
 		return c.JSON(http.StatusOK, result)
 	}
+	if family == "openai" && shouldRetryOpenAIChatCompletion(resp.StatusCode, respBody) {
+		chatEndpoint, chatHdrs, chatPayload, chatErr := buildOpenAIChatCompletionTestRequest(baseURL, suggestedDefault, model, key, eff.StreamingEnabled)
+		if chatErr == nil {
+			if u, perr := url.Parse(chatEndpoint); perr == nil {
+				result.BaseURL = strings.TrimRight(u.Scheme+"://"+u.Host, "/")
+			}
+			chatStart := time.Now()
+			chatReq, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, chatEndpoint, bytes.NewReader(chatPayload))
+			if reqErr == nil {
+				for k, v := range chatHdrs {
+					chatReq.Header.Set(k, v)
+				}
+				chatReq.Header.Set("Content-Type", "application/json")
+				chatResp, postErr := http.DefaultClient.Do(chatReq)
+				result.LatencyMs = latency + time.Since(chatStart).Milliseconds()
+				if postErr == nil {
+					defer chatResp.Body.Close()
+					chatRespBody, _ := io.ReadAll(io.LimitReader(chatResp.Body, 4096))
+					if chatResp.StatusCode >= 200 && chatResp.StatusCode < 300 {
+						result.OK = true
+						return c.JSON(http.StatusOK, result)
+					}
+					resp = chatResp
+					respBody = chatRespBody
+				} else {
+					result.Error = redactKey(postErr.Error(), key)
+					return c.JSON(http.StatusOK, result)
+				}
+			} else {
+				result.Error = redactKey(reqErr.Error(), key)
+				return c.JSON(http.StatusOK, result)
+			}
+		}
+	}
 	// Truncate at 200 chars for UI compactness; redact any literal key
 	// that might appear (defensive — providers don't typically echo).
 	msg := strings.TrimSpace(string(respBody))
@@ -820,6 +894,22 @@ func (h *AdminHandler) testAIConnection(c echo.Context) error {
 	}
 	result.Error = redactKey(msg, key)
 	return c.JSON(http.StatusOK, result)
+}
+
+func shouldRetryOpenAIChatCompletion(statusCode int, body []byte) bool {
+	if statusCode != http.StatusBadRequest && statusCode != http.StatusNotFound && statusCode != http.StatusMethodNotAllowed {
+		return false
+	}
+	msg := strings.ToLower(string(body))
+	if msg == "" {
+		return true
+	}
+	return strings.Contains(msg, "responses") ||
+		strings.Contains(msg, "not found") ||
+		strings.Contains(msg, "unsupported") ||
+		strings.Contains(msg, "not supported") ||
+		strings.Contains(msg, "unknown") ||
+		strings.Contains(msg, "invalid")
 }
 
 // resolveProviderConfig returns (apiKey, baseURL, model, defaultBaseURL)
@@ -876,7 +966,7 @@ func (h *AdminHandler) resolveProviderConfig(
 // buildAITestRequest renders the minimal validation request per family.
 //
 // Anthropic: POST /v1/messages with `x-api-key` + `anthropic-version`.
-// OpenAI:    POST /chat/completions with `Authorization: Bearer ...`.
+// OpenAI:    POST /v1/responses with `Authorization: Bearer ...`; chat fallback is built separately.
 // DeepSeek:  POST /v1/chat/completions (OpenAI-compatible surface).
 //
 // All three use max_tokens=1 + a one-token user message so the call is
@@ -908,9 +998,10 @@ func buildAITestRequest(
 		})
 	case "openai":
 		// gpt_client.py runs production traffic against /v1/responses
-		// (OpenAI Responses API, used by gpt-5.x + codex proxies); some
-		// third-party proxies expose only that surface (chat.completions
-		// 404s). Match here so test parity with real workload.
+		// (OpenAI Responses API, used by gpt-5.x + codex proxies). We
+		// start here for parity with the real workload; the caller can
+		// fall back to chat.completions when a compatible relay does not
+		// expose /responses.
 		// If the operator gave a bare host (no /v1 suffix) we append it
 		// so the call resolves to /v1/responses, not /responses.
 		base := resolvedBase
@@ -958,6 +1049,33 @@ func buildAITestRequest(
 	default:
 		err = fmt.Errorf("unsupported family %q", family)
 	}
+	return endpoint, headers, payload, err
+}
+
+func buildOpenAIChatCompletionTestRequest(
+	baseURL, defaultBaseURL, model, apiKey string,
+	streaming bool,
+) (endpoint string, headers map[string]string, payload []byte, err error) {
+	resolvedBase := strings.TrimRight(baseURL, "/")
+	if resolvedBase == "" {
+		resolvedBase = strings.TrimRight(defaultBaseURL, "/")
+	}
+	if !strings.HasSuffix(resolvedBase, "/v1") && !strings.Contains(resolvedBase, "/v1/") {
+		resolvedBase += "/v1"
+	}
+	endpoint = resolvedBase + "/chat/completions"
+	headers = map[string]string{
+		"Authorization": "Bearer " + apiKey,
+	}
+	if streaming {
+		headers["Accept"] = "text/event-stream"
+	}
+	payload, err = json.Marshal(map[string]any{
+		"model":      model,
+		"max_tokens": 1,
+		"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+		"stream":     streaming,
+	})
 	return endpoint, headers, payload, err
 }
 

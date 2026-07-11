@@ -149,6 +149,10 @@ func main() {
 	if err := optRunRepo.EnsureIndexes(connectCtx); err != nil {
 		logger.Warn("ensure optimization_runs indexes failed", "err", err)
 	}
+	aiGoalRunRepo := mongostore.NewAIGoalRunRepo(db)
+	if err := aiGoalRunRepo.EnsureIndexes(connectCtx); err != nil {
+		logger.Warn("ensure ai_goal_runs indexes failed", "err", err)
+	}
 
 	// Phase 7: kill switch + portfolio limits, audit log.
 	systemRepo := mongostore.NewSystemRepo(db)
@@ -312,7 +316,7 @@ func main() {
 	// the audit-loop path tolerates the Noop until that PR lands).
 	polymarketEnvEnabled := os.Getenv("POLYMARKET_TRADING_ENABLED") == "true"
 	predGate := polymarket.GateFunc{
-		AllowedFn:    gate.Allowed,                 // shares TokenStore with perp engine
+		AllowedFn:    gate.Allowed, // shares TokenStore with perp engine
 		EnvEnabledFn: func() bool { return polymarketEnvEnabled },
 	}
 	if polymarketEnvEnabled {
@@ -373,6 +377,7 @@ func main() {
 		ExchangeMetaRepo:    metaRepo,
 		RecommendationRepo:  recRepo,
 		OptimizationRunRepo: optRunRepo,
+		AIGoalRunRepo:       aiGoalRunRepo,
 		SystemRepo:          systemRepo,
 		AuditRepo:           auditRepo,
 		Crypto:              cryptoSvc,

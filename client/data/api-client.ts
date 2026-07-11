@@ -1,4 +1,9 @@
 import {
+  TypeAIGoalAnalysis,
+  TypeAIGoalProviderStatus,
+  TypeAIGoalRequest,
+  TypeAIGoalRun,
+  TypeAIGoalRunActionPatch,
   TypeAccount,
   TypeApproveRecommendation,
   TypeBacktest,
@@ -7,6 +12,7 @@ import {
   TypeBalance,
   TypeCreateAccount,
   TypeCreateBacktest,
+  TypeCreateOptionResponse,
   TypeEquityPoint,
   TypeExchange,
   TypeExchangeMeta,
@@ -28,11 +34,12 @@ import {
   TypeStudyHandle,
   TypeSubmitOrder,
 } from "./type";
+import { absoluteApiBaseUrl, apiUrl } from "./api-base.mjs";
+import { shouldDispatchAuthUnauthorizedEvent } from "./api-auth-event.mjs";
 
 // Base URL is env-driven so the client can talk to the Go gateway in dev
 // (default :3001) or to a deployed gateway via NEXT_PUBLIC_API_URL in prod.
-const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
-const parseUrl = (path: string) => baseUrl + `/${path}`.replace("//", "/");
+const parseUrl = apiUrl;
 
 // R2 multi-tenant: localStorage key the dashboard uses to set a per-browser
 // userId for the gateway's `X-User-Id` header. Absent / empty → no header
@@ -119,9 +126,11 @@ export class ApiError extends Error {
 }
 
 // AuthUnauthorizedEvent is the name of the CustomEvent dispatched on
-// `window` whenever a gateway call returns 401 or 403. The dashboard
+// `window` whenever a gateway call returns 401. The dashboard
 // layout listens for it and redirects to /login, avoiding a hard
 // `location.href=` reload that would tear down in-flight React state.
+// HTTP 403 is permission denial and stays inline so admin-only background
+// probes do not kick valid non-admin users out of AI Money.
 //
 // Server components / Node call sites never see this event because there
 // is no `window` to dispatch on; their 401 paths surface as ApiError and
@@ -134,7 +143,7 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
     // browser event so the layout can route the user back to /login
     // without a hard reload. We still throw ApiError so individual
     // callers can also choose to render an inline error.
-    if ((res.status === 401 || res.status === 403) && typeof window !== "undefined") {
+    if (shouldDispatchAuthUnauthorizedEvent(res.status) && typeof window !== "undefined") {
       try {
         window.dispatchEvent(
           new CustomEvent(AuthUnauthorizedEvent, {
@@ -172,13 +181,15 @@ export const getOptions = async () => {
   return await res.json();
 };
 
-export const createOption = async (option: TypeOption) => {
+export const createOption = async (
+  option: TypeOption,
+): Promise<TypeCreateOptionResponse> => {
   const res = await apiFetch(parseUrl("v1/option"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(option),
   });
-  return await res.json();
+  return jsonOrThrow<TypeCreateOptionResponse>(res);
 };
 
 // ---------- Accounts (phase 1) ----------
@@ -544,7 +555,7 @@ export const listOptimizations = async (
 // wsUrl returns the gateway's /ws endpoint, derived from the API base URL by
 // swapping http→ws and stripping the /api suffix.
 export function wsUrl(): string {
-  const u = new URL(baseUrl);
+  const u = new URL(absoluteApiBaseUrl());
   u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
   // Drop "/api" suffix if present; /ws lives at the gateway root.
   u.pathname = u.pathname.replace(/\/api\/?$/, "") + "/ws";
@@ -678,6 +689,11 @@ export type TypeAIConfig = {
   anthropicApiKeyConfigured: boolean;
   openaiApiKeyConfigured: boolean;
   deepseekApiKeyConfigured: boolean;
+  // Masked previews for admin display, e.g. `sk-abc...wxyz`.
+  // Full plaintext and ciphertext are never returned.
+  anthropicApiKeyPreview: string;
+  openaiApiKeyPreview: string;
+  deepseekApiKeyPreview: string;
   source: "mongo" | "env" | "mixed";
 };
 
@@ -750,6 +766,59 @@ export const getAdminAIPrompts = async (): Promise<TypeAIPrompts> => {
     cache: "no-store",
   });
   return jsonOrThrow<TypeAIPrompts>(res);
+};
+
+// Goal-driven AI agent. This is a normal authenticated endpoint, not an
+// admin-only settings call: the gateway still resolves provider keys from
+// the encrypted AI config and falls back safely when the provider is not
+// configured.
+export const getAIGoalProviderStatus = async (): Promise<TypeAIGoalProviderStatus> => {
+  const res = await apiFetch(parseUrl("v1/ai/goals/provider-status"), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeAIGoalProviderStatus>(res);
+};
+
+export const analyzeAIGoal = async (
+  input: TypeAIGoalRequest,
+): Promise<TypeAIGoalAnalysis> => {
+  const res = await apiFetch(parseUrl("v1/ai/goals/analyze"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return jsonOrThrow<TypeAIGoalAnalysis>(res);
+};
+
+export const listAIGoalRuns = async (limit = 20): Promise<TypeAIGoalRun[]> => {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  const res = await apiFetch(parseUrl(`v1/ai/goals/runs?${qs.toString()}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeAIGoalRun[]>(res);
+};
+
+export const getAIGoalRun = async (id: string): Promise<TypeAIGoalRun> => {
+  const res = await apiFetch(parseUrl(`v1/ai/goals/runs/${id}`), {
+    cache: "no-store",
+  });
+  return jsonOrThrow<TypeAIGoalRun>(res);
+};
+
+export const updateAIGoalRunAction = async (
+  runId: string,
+  actionId: string,
+  input: TypeAIGoalRunActionPatch,
+): Promise<TypeAIGoalRun> => {
+  const res = await apiFetch(
+    parseUrl(`v1/ai/goals/runs/${runId}/actions/${actionId}`),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  return jsonOrThrow<TypeAIGoalRun>(res);
 };
 
 export const listAudit = async (

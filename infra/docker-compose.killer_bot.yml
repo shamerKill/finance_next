@@ -1,0 +1,57 @@
+services:
+  gateway:
+    build:
+      args:
+        GOPROXY: "https://goproxy.cn,https://proxy.golang.org,direct"
+    environment:
+      AUTH_COOKIE_SECURE: "false"
+      ALLOWED_ORIGINS: "http://killer-bot.local,http://192.168.31.176"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      ALL_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      all_proxy: ""
+      NO_PROXY: "localhost,127.0.0.1,127.0.0.0/8,::1,mongo,redis,timescale,quant,gateway,client"
+      no_proxy: "localhost,127.0.0.1,127.0.0.0/8,::1,mongo,redis,timescale,quant,gateway,client"
+
+  client:
+    build:
+      args:
+        YARN_REGISTRY: "https://registry.npmmirror.com"
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      ALL_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      all_proxy: ""
+      NO_PROXY: "localhost,127.0.0.1,127.0.0.0/8,::1,mongo,redis,timescale,quant,gateway,client"
+      no_proxy: "localhost,127.0.0.1,127.0.0.0/8,::1,mongo,redis,timescale,quant,gateway,client"
+
+  quant:
+    build:
+      args:
+        APT_MIRROR: "http://mirrors.aliyun.com/debian"
+        UV_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple"
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      ALL_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      all_proxy: ""
+      NO_PROXY: "localhost,127.0.0.1,127.0.0.0/8,::1,mongo,redis,timescale,quant,gateway,client"
+      no_proxy: "localhost,127.0.0.1,127.0.0.0/8,::1,mongo,redis,timescale,quant,gateway,client"
+
+  caddy:
+    environment:
+      DOMAIN: ":80"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      ALL_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      all_proxy: ""
+      NO_PROXY: "localhost,127.0.0.1,127.0.0.0/8,::1,mongo,redis,timescale,quant,gateway,client"
+      no_proxy: "localhost,127.0.0.1,127.0.0.0/8,::1,mongo,redis,timescale,quant,gateway,client"

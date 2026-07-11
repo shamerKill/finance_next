@@ -46,8 +46,11 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "ANTHROPIC_REFINE_MODEL",
         "OPENAI_PRIMARY_MODEL",
         "OPENAI_REFINE_MODEL",
+        "DEEPSEEK_PRIMARY_MODEL",
+        "DEEPSEEK_REFINE_MODEL",
         "ANTHROPIC_BASE_URL",
         "OPENAI_BASE_URL",
+        "DEEPSEEK_BASE_URL",
         "AI_MAX_USD_PER_STUDY",
         "AI_MAX_USD_PER_DAY",
         "AI_OPTIMIZATION_LOOKBACK_DAYS",
@@ -63,6 +66,10 @@ async def test_no_mongo_returns_env_defaults() -> None:
     cfg = await ai_config.load_effective_config(None)
     assert cfg.model_family == "claude"
     assert cfg.anthropic_primary_model == "claude-sonnet-4-6"
+    assert cfg.openai_primary_model == "gpt-5.5"
+    assert cfg.openai_refine_model == "gpt-5.4"
+    assert cfg.deepseek_primary_model == "deepseek-v4-pro"
+    assert cfg.deepseek_refine_model == "deepseek-v4-flash"
     assert cfg.budget_usd_per_study == pytest.approx(5.0)
     assert cfg.budget_usd_per_day == pytest.approx(50.0)
     assert cfg.lookback_days == 90
@@ -100,6 +107,8 @@ async def test_mongo_full_override_takes_precedence() -> None:
                 "anthropicRefineModel": "claude-test-refine",
                 "openaiPrimaryModel": "gpt-test-primary",
                 "openaiRefineModel": "gpt-test-refine",
+                "deepseekPrimaryModel": "deepseek-test-primary",
+                "deepseekRefineModel": "deepseek-test-refine",
                 "anthropicBaseURL": "https://anthropic.example.com",
                 "openaiBaseURL": "https://openai.example.com",
                 "budgetUsdPerStudy": 9.5,
@@ -112,6 +121,8 @@ async def test_mongo_full_override_takes_precedence() -> None:
     assert cfg.model_family == "openai"
     assert cfg.openai_primary_model == "gpt-test-primary"
     assert cfg.openai_refine_model == "gpt-test-refine"
+    assert cfg.deepseek_primary_model == "deepseek-test-primary"
+    assert cfg.deepseek_refine_model == "deepseek-test-refine"
     assert cfg.anthropic_primary_model == "claude-test-primary"
     assert cfg.budget_usd_per_study == pytest.approx(9.5)
     assert cfg.budget_usd_per_day == pytest.approx(99.0)
@@ -138,6 +149,8 @@ async def test_partial_override_is_mixed(monkeypatch: pytest.MonkeyPatch) -> Non
     assert cfg.lookback_days == 120
     # default-sourced:
     assert cfg.openai_primary_model == "gpt-5.5"
+    assert cfg.deepseek_primary_model == "deepseek-v4-pro"
+    assert cfg.deepseek_refine_model == "deepseek-v4-flash"
     assert cfg.source == "mixed"
 
 

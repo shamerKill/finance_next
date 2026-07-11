@@ -62,12 +62,16 @@ ROLE_RATIONALE = "final_rationale"
 _PRICE_PER_M_INPUT = {
     OPENAI_MODEL_PRIMARY: 0.0,
     OPENAI_MODEL_REFINE: 0.0,
+    "deepseek-v4-pro": 0.0,
+    "deepseek-v4-flash": 0.0,
     "deepseek-chat": 0.27,
     "deepseek-reasoner": 0.55,
 }
 _PRICE_PER_M_OUTPUT = {
     OPENAI_MODEL_PRIMARY: 0.0,
     OPENAI_MODEL_REFINE: 0.0,
+    "deepseek-v4-pro": 0.0,
+    "deepseek-v4-flash": 0.0,
     "deepseek-chat": 1.10,
     "deepseek-reasoner": 2.19,
 }

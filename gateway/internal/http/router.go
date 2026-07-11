@@ -34,6 +34,7 @@ type Deps struct {
 	ExchangeMetaRepo    *mongostore.ExchangeMetaRepo
 	RecommendationRepo  *mongostore.RecommendationRepo
 	OptimizationRunRepo *mongostore.OptimizationRunRepo
+	AIGoalRunRepo       *mongostore.AIGoalRunRepo
 	SystemRepo          *mongostore.SystemRepo
 	AuditRepo           *mongostore.AuditRepo
 	UserRepo            *mongostore.UserRepo
@@ -44,9 +45,9 @@ type Deps struct {
 	// expose — currently only the Node 1.A.2 admin claim-legacy
 	// endpoint which UpdateMany's ten collections atomically. Nil =
 	// endpoint returns 503.
-	MongoDB *mongo.Database
-	Crypto              *crypto.Service
-	Envelope            *crypto.EnvelopeService
+	MongoDB  *mongo.Database
+	Crypto   *crypto.Service
+	Envelope *crypto.EnvelopeService
 
 	// Phase 2 additions: timescale read access + quant grpc client.
 	// Both are optional in dev — when nil, the market endpoints
@@ -78,11 +79,11 @@ type Deps struct {
 	// Phase 9: Polymarket / Polygon wallet vertical. Each dep nil → the
 	// corresponding routes are skipped (404). The wallet RPC defaults to
 	// NoopRPC (errors at call time) when not wired.
-	WalletRepo            *mongostore.WalletRepo
+	WalletRepo             *mongostore.WalletRepo
 	PredictionStrategyRepo *mongostore.PredictionStrategyRepo
-	PredictionOrderRepo   *mongostore.PredictionOrderRepo
-	WalletRPC             walletpkg.RPC
-	PredictionEngine      *predictionengine.Engine
+	PredictionOrderRepo    *mongostore.PredictionOrderRepo
+	WalletRPC              walletpkg.RPC
+	PredictionEngine       *predictionengine.Engine
 
 	// Wave 1B: dashboard summary + strategy performance endpoints. Both
 	// are read-only fan-outs over the existing repos and tolerate any
@@ -314,6 +315,13 @@ func NewRouter(d Deps) *echo.Echo {
 		d.Config,
 	).Register(v1)
 
+	// AI goal agent: user goal -> market / sentiment / human-factor
+	// analysis -> strategy blueprints. This deliberately does not create
+	// strategies or submit orders; it returns execution gates for review.
+	handlers.NewAIGoalHandler(d.SystemRepo, d.OptionRepo, d.Timescale, d.Crypto, d.AIGoalRunRepo).
+		WithAccountStore(d.AccountRepo).
+		Register(v1)
+
 	// Phase 6 — AI optimization: recommendations + tune-now endpoints.
 	// Each repo nil → corresponding handler returns 503.
 	handlers.NewRecommendationHandler(d.RecommendationRepo, d.OptionRepo, d.Redis).Register(v1)
@@ -511,7 +519,7 @@ func NewRouter(d Deps) *echo.Echo {
 // handlers.DepStatus but kept package-local so router.go doesn't import
 // the handlers internals.
 type healthzDepStatus struct {
-	Status    string `json:"status"`              // "ok" | "error" | "disabled"
+	Status    string `json:"status"` // "ok" | "error" | "disabled"
 	LatencyMs int64  `json:"latencyMs,omitempty"`
 	Err       string `json:"err,omitempty"`
 }

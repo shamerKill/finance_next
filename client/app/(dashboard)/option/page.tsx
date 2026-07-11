@@ -2,18 +2,19 @@
 
 // "新建策略" form. Wires the full CreateOptionDto payload through
 // POST /api/v1/option. Validation is mostly delegated to the gateway
-// validator; the form only enforces non-empty fields client-side so
-// the request shape is well-formed.
+// validator; manual creation still asks for credentials client-side,
+// while AI-prefilled drafts can be saved first and bound to an account later.
 //
 // 2.C.5.b refactor — design-system wraps:
 //   - <PageHeader> title block
 //   - <FormField label hint> for every input (label always above)
 //   - <Callout variant="info"> for the polymarket redirect notice
-// Form validation rules, payload shape, and submit logic are untouched.
+// Credential fields are intentionally optional for AI drafts: live execution
+// still requires a bound account through the strategy detail page.
 
 import { Button, Input, NumberInput, Select, SelectItem, Switch } from "@heroui/react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FC, FormEvent, useState } from "react";
 
 import { ApiErrorView } from "@/components/api-error";
@@ -22,8 +23,17 @@ import { FormField } from "@/components/form-field";
 import { PasswordInput } from "@/components/password-field";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
-import { createOption } from "@/data/api-client";
-import type { TypeOption } from "@/data/type";
+import { createOption, updateAIGoalRunAction } from "@/data/api-client";
+import {
+  optionCreateRedirectHref,
+  parseStrategyPreset,
+  strategyActionPatchFromOptionPresetCreate,
+} from "@/data/ai-goal-preset.mjs";
+import type {
+  TypeAIGoalRunActionPatch,
+  TypeCreateOptionResponse,
+  TypeOption,
+} from "@/data/type";
 import { useActivityCenter, withActivity } from "@/data/use-activity-center";
 
 type StrategyKind = "grid_dca" | "polymarket_event";
@@ -32,26 +42,57 @@ type PositionRow = { marginRate: number; lossAddRate: number };
 
 const NewStrategyPage: FC = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const activity = useActivityCenter();
-  const [kind, setKind] = useState<StrategyKind>("grid_dca");
-  const [name, setName] = useState("");
-  const [positionLevel, setPositionLevel] = useState<number>(5);
-  const [openPositionStopTime, setOpenPositionStopTime] = useState<number>(30);
-  const [execSymbol, setExecSymbol] = useState("BTCUSDT");
-  const [orderGroupMargin, setOrderGroupMargin] = useState<number>(100);
-  const [stopProfitRate, setStopProfitRate] = useState<number>(0.05);
-  const [stopLossRate, setStopLossRate] = useState<number>(0.05);
+  const aiPreset = parseStrategyPreset(searchParams);
+  const [kind, setKind] = useState<StrategyKind>(aiPreset.kind as StrategyKind);
+  const [name, setName] = useState(aiPreset.name);
+  const [positionLevel, setPositionLevel] = useState<number>(aiPreset.positionLevel);
+  const [openPositionStopTime, setOpenPositionStopTime] = useState<number>(
+    aiPreset.openPositionStopTime,
+  );
+  const [execSymbol, setExecSymbol] = useState(aiPreset.execSymbol);
+  const [orderGroupMargin, setOrderGroupMargin] = useState<number>(
+    aiPreset.orderGroupMargin,
+  );
+  const [stopProfitRate, setStopProfitRate] = useState<number>(aiPreset.stopProfitRate);
+  const [stopLossRate, setStopLossRate] = useState<number>(aiPreset.stopLossRate);
   const [profitRateAfterAtAddPosition, setProfitRateAfterAtAddPosition] =
-    useState<number>(0.02);
-  const [createCostOrderInProfit, setCreateCostOrderInProfit] = useState(false);
-  const [positions, setPositions] = useState<PositionRow[]>([
-    { marginRate: 1, lossAddRate: 0 },
-  ]);
+    useState<number>(aiPreset.profitRateAfterAtAddPosition);
+  const [createCostOrderInProfit, setCreateCostOrderInProfit] = useState(
+    aiPreset.createCostOrderInProfit,
+  );
+  const [positions, setPositions] = useState<PositionRow[]>(aiPreset.createPositions);
+  const [riskMaxPositionUsd, setRiskMaxPositionUsd] = useState<number>(
+    aiPreset.risk?.maxPositionUsd ?? 0,
+  );
+  const [riskMaxLeverage, setRiskMaxLeverage] = useState<number>(
+    aiPreset.risk?.maxLeverage ?? 0,
+  );
+  const [riskDailyLossCapUsd, setRiskDailyLossCapUsd] = useState<number>(
+    aiPreset.risk?.dailyLossCapUsd ?? 0,
+  );
   const [userEmail, setUserEmail] = useState("");
   const [userApiKey, setUserApiKey] = useState("");
   const [userSecretKey, setUserSecretKey] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const credentialRequired = !aiPreset.isPreset;
+  const redirectAfterCreate = optionCreateRedirectHref as unknown as (input: {
+    isAIPreset: boolean;
+    response: TypeCreateOptionResponse;
+    runId?: string;
+  }) => string;
+  const buildStrategyActionHandoff =
+    strategyActionPatchFromOptionPresetCreate as unknown as (input: {
+      preset: typeof aiPreset;
+      response: TypeCreateOptionResponse;
+      href: string;
+    }) => {
+      runId: string;
+      actionId: string;
+      patch: TypeAIGoalRunActionPatch;
+    } | null;
 
   const addRow = () =>
     setPositions((rows) => [...rows, { marginRate: 0, lossAddRate: 0 }]);
@@ -67,6 +108,18 @@ const NewStrategyPage: FC = () => {
     setError(null);
     setBusy(true);
     try {
+      const risk =
+        riskMaxPositionUsd > 0 && riskMaxLeverage > 0 && riskDailyLossCapUsd > 0
+          ? {
+              maxPositionUsd: riskMaxPositionUsd,
+              maxLeverage: riskMaxLeverage,
+              dailyLossCapUsd: riskDailyLossCapUsd,
+            }
+          : undefined;
+      const credentialPatch: Pick<TypeOption, "userEmail" | "userApiKey" | "userSecretKey"> = {};
+      if (userEmail.trim()) credentialPatch.userEmail = userEmail.trim();
+      if (userApiKey.trim()) credentialPatch.userApiKey = userApiKey.trim();
+      if (userSecretKey.trim()) credentialPatch.userSecretKey = userSecretKey.trim();
       const payload: TypeOption = {
         name,
         positionLevel,
@@ -78,11 +131,11 @@ const NewStrategyPage: FC = () => {
         profitRateAfterAtAddPosition,
         createCostOrderInProfit,
         createPositions: positions,
-        userEmail,
-        userApiKey,
-        userSecretKey,
+        ...credentialPatch,
+        ...(aiPreset.aiRunId ? { aiRunId: aiPreset.aiRunId } : {}),
+        ...(risk ? { risk } : {}),
       };
-      await withActivity(
+      const response = await withActivity(
         activity,
         {
           kind: "other",
@@ -91,7 +144,28 @@ const NewStrategyPage: FC = () => {
         },
         () => createOption(payload),
       );
-      router.push("/strategies");
+      const href = redirectAfterCreate({
+        isAIPreset: aiPreset.isPreset,
+        response,
+        runId: aiPreset.aiRunId,
+      });
+      const handoff = buildStrategyActionHandoff({
+        preset: aiPreset,
+        response,
+        href,
+      });
+      if (handoff) {
+        try {
+          await updateAIGoalRunAction(
+            handoff.runId,
+            handoff.actionId,
+            handoff.patch,
+          );
+        } catch (handoffErr) {
+          console.warn("AI 运行记忆同步失败，已继续打开新策略详情。", handoffErr);
+        }
+      }
+      router.push(href);
     } catch (err) {
       setError(err);
     } finally {
@@ -110,10 +184,21 @@ const NewStrategyPage: FC = () => {
           </Link>
         }
         title="新建策略"
-        subtitle="所有字段必填。API 密钥提交后由 gateway 使用 AES-256-GCM 信封加密入库。"
+        subtitle={
+          aiPreset.isPreset
+            ? "AI 草案可以先保存为策略配置；交易所账户稍后在策略详情中绑定，保存本身不会下单。"
+            : "手工创建策略时请填写交易所凭证。API 密钥提交后由 gateway 使用 AES-256-GCM 信封加密入库。"
+        }
       />
 
       <ApiErrorView error={error} />
+
+      {aiPreset.isPreset && (
+        <Callout variant="info" title="已从 AI 策略蓝图预填">
+          参数来自 AI 目标分析，只用于加速建草案。你可以先保存配置并继续观察；
+          交易所凭证可稍后通过账户/策略 live 设置绑定。
+        </Callout>
+      )}
 
       <Section title="策略类型">
         <FormField label="策略类型" hint="选择策略的执行引擎；不同类型的字段不同">
@@ -316,35 +401,69 @@ const NewStrategyPage: FC = () => {
             </div>
           </Section>
 
+          <Section title="风控上限">
+            <p className="text-xs text-text-tertiary mb-3">
+              live/testnet 下单前会读取这些上限；任一项为空时，后续真实下单会被风控拒绝。
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <FormField label="最大单次仓位" hint="单位 USD；限制单次提交 notional">
+                <NumberInput
+                  aria-label="最大单次仓位"
+                  value={riskMaxPositionUsd}
+                  onValueChange={(v) => setRiskMaxPositionUsd(Number(v))}
+                  minValue={0}
+                />
+              </FormField>
+              <FormField label="最大杠杆" hint="账户维度杠杆上限">
+                <NumberInput
+                  aria-label="最大杠杆"
+                  value={riskMaxLeverage}
+                  onValueChange={(v) => setRiskMaxLeverage(Number(v))}
+                  minValue={0}
+                  maxValue={125}
+                />
+              </FormField>
+              <FormField label="日亏损上限" hint="单位 USD；触发后停止提交">
+                <NumberInput
+                  aria-label="日亏损上限"
+                  value={riskDailyLossCapUsd}
+                  onValueChange={(v) => setRiskDailyLossCapUsd(Number(v))}
+                  minValue={0}
+                />
+              </FormField>
+            </div>
+          </Section>
+
           <Section title="交易所凭证">
             <p className="text-xs text-text-tertiary mb-3">
-              密钥提交后由 gateway 使用 AES-256-GCM 信封加密入库，
-              GET 接口永不返回密钥。
+              {credentialRequired
+                ? "密钥提交后由 gateway 使用 AES-256-GCM 信封加密入库，GET 接口永不返回密钥。"
+                : "AI 草案保存时可以不填密钥；后续进入测试网或实盘前，仍需绑定只读/可交易但不可提现的账户。"}
             </p>
             <div className="grid grid-cols-1 gap-4">
-              <FormField label="邮箱" required>
+              <FormField label="邮箱" required={credentialRequired}>
                 <Input
                   type="email"
                   aria-label="邮箱"
                   value={userEmail}
                   onValueChange={setUserEmail}
-                  isRequired
+                  isRequired={credentialRequired}
                 />
               </FormField>
-              <FormField label="API 密钥" required>
+              <FormField label="API 密钥" required={credentialRequired}>
                 <Input
                   aria-label="API 密钥"
                   value={userApiKey}
                   onValueChange={setUserApiKey}
-                  isRequired
+                  isRequired={credentialRequired}
                 />
               </FormField>
-              <FormField label="Secret 密钥" required>
+              <FormField label="Secret 密钥" required={credentialRequired}>
                 <PasswordInput
                   aria-label="Secret 密钥"
                   value={userSecretKey}
                   onValueChange={setUserSecretKey}
-                  isRequired
+                  isRequired={credentialRequired}
                 />
               </FormField>
             </div>
@@ -359,7 +478,7 @@ const NewStrategyPage: FC = () => {
           isLoading={busy}
           isDisabled={isPolymarket}
         >
-          创建策略
+          {aiPreset.isPreset ? "保存 AI 草案" : "创建策略"}
         </Button>
         <Button variant="flat" onPress={() => router.push("/strategies")}>
           取消

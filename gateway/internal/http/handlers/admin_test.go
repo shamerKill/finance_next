@@ -277,8 +277,8 @@ func TestEffectiveAIConfig_SourceLabel(t *testing.T) {
 		AnthropicBaseURL:      "https://api.anthropic.com",
 		OpenAIBaseURL:         "https://api.openai.com",
 		DeepseekBaseURL:       "https://api.deepseek.com",
-		DeepseekPrimaryModel:  "deepseek-chat",
-		DeepseekRefineModel:   "deepseek-chat",
+		DeepseekPrimaryModel:  "deepseek-v4-pro",
+		DeepseekRefineModel:   "deepseek-v4-flash",
 		BudgetUsdPerStudy:     2,
 		BudgetUsdPerDay:       10,
 		LookbackDays:          30,
@@ -432,6 +432,37 @@ func TestAdminAI_PUTResponse_NeverContainsKeys(t *testing.T) {
 	}
 }
 
+func TestAdminAI_EffectiveConfigMasksEnvKeys(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "sk-abcdefghijklmnopqrstuvwxyz")
+	got := effectiveAIConfig(nil)
+	if got.OpenAIAPIKeyPreview != "sk-abc…wxyz" {
+		t.Fatalf("OpenAIAPIKeyPreview = %q", got.OpenAIAPIKeyPreview)
+	}
+	out, _ := json.Marshal(got)
+	if strings.Contains(string(out), "sk-abcdefghijklmnopqrstuvwxyz") {
+		t.Fatalf("effective config leaked full env key: %s", string(out))
+	}
+}
+
+func TestAdminAI_EffectiveConfigMasksPersistedKeys(t *testing.T) {
+	svc, err := crypto.New("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	if err != nil {
+		t.Fatalf("crypto.New: %v", err)
+	}
+	ct, err := svc.Encrypt("sk-persisted-openai-key")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	got := effectiveAIConfig(&domain.AIConfig{OpenAIAPIKeyCiphertext: ct}, svc)
+	if got.OpenAIAPIKeyPreview != "sk-per…-key" {
+		t.Fatalf("OpenAIAPIKeyPreview = %q", got.OpenAIAPIKeyPreview)
+	}
+	out, _ := json.Marshal(got)
+	if strings.Contains(string(out), "sk-persisted-openai-key") || strings.Contains(string(out), ct) {
+		t.Fatalf("effective config leaked key material: %s", string(out))
+	}
+}
+
 // ---- streaming toggle ----------------------------------------------------
 
 // TestAIConfig_StreamingDefault — when the persisted doc has no
@@ -548,6 +579,48 @@ func TestTestAIConnection_MissingKey(t *testing.T) {
 		if !found {
 			t.Fatalf("%s: auth header missing the key", fam)
 		}
+	}
+}
+
+func TestOpenAIChatCompletionFallbackRequest(t *testing.T) {
+	if !shouldRetryOpenAIChatCompletion(http.StatusNotFound, []byte(`{"error":"responses not found"}`)) {
+		t.Fatal("expected responses 404 to trigger chat.completions fallback")
+	}
+	if shouldRetryOpenAIChatCompletion(http.StatusUnauthorized, []byte(`{"error":"bad key"}`)) {
+		t.Fatal("auth failures must not retry another endpoint")
+	}
+
+	endpoint, hdrs, body, err := buildOpenAIChatCompletionTestRequest(
+		"https://aiapi.lib.show",
+		"https://api.openai.com/v1",
+		"gpt-5.5",
+		"sk-key-secret-xyz",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("build fallback request: %v", err)
+	}
+	if endpoint != "https://aiapi.lib.show/v1/chat/completions" {
+		t.Fatalf("endpoint = %q", endpoint)
+	}
+	if hdrs["Authorization"] != "Bearer sk-key-secret-xyz" {
+		t.Fatalf("authorization header missing bearer key")
+	}
+	if hdrs["Accept"] != "text/event-stream" {
+		t.Fatalf("streaming Accept header = %q", hdrs["Accept"])
+	}
+	if strings.Contains(string(body), "sk-key-secret-xyz") {
+		t.Fatalf("body leaked key: %s", string(body))
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if got["model"] != "gpt-5.5" || got["stream"] != true {
+		t.Fatalf("payload = %#v", got)
+	}
+	if _, ok := got["messages"]; !ok {
+		t.Fatalf("payload missing messages: %#v", got)
 	}
 }
 

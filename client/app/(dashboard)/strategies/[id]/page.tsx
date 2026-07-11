@@ -27,6 +27,7 @@ import { Stat, type StatDirection } from "@/components/stat";
 import { StatusBadge } from "@/components/status-badge";
 import {
   getDashboardSummary,
+  getAIGoalRun,
   getStrategy,
   getStrategyPerformance,
   listAccounts,
@@ -35,13 +36,16 @@ import {
 } from "@/data/api-client";
 import type {
   TypeAccount,
+  TypeAIGoalRun,
   TypeBacktest,
   TypeDashboardSummary,
   TypeOption,
   TypeRecommendation,
   TypeStrategyPerformance,
 } from "@/data/type";
+import { aiSavedStrategyHandoffFromState } from "@/data/ai-goal-preset.mjs";
 
+import { SavedStrategyBacktestAction } from "./ai-handoff-actions";
 import { ConfigPanel } from "./config-panel";
 import { LiveEquityChart } from "./equity-chart-live";
 import { ParamsPanel } from "./params-panel";
@@ -53,7 +57,10 @@ export const dynamic = "force-dynamic";
 
 export const metadata = { title: "策略详情" };
 
-type PageProps = { params: Promise<{ id: string }> };
+type PageProps = {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ from?: string; aiRunId?: string }>;
+};
 
 // ---- formatting helpers ----------------------------------------------------
 
@@ -106,6 +113,103 @@ async function tryFetch<T>(p: Promise<T>): Promise<T | null> {
   }
 }
 
+type SavedStrategyHandoff = {
+  stage: string;
+  tone: "success" | "warning" | "danger" | "default" | "primary";
+  title: string;
+  summary: string;
+  primaryHref?: string;
+  primaryAction?: { kind: string; label: string };
+  items: Array<{
+    id: string;
+    label: string;
+    status: string;
+    tone: "success" | "warning" | "danger" | "default" | "primary";
+    detail: string;
+    href?: string;
+  }>;
+  nextActions: string[];
+};
+
+function SavedStrategyHandoffPanel({
+  handoff,
+  strategy,
+  sourceAiRunId,
+}: {
+  handoff: SavedStrategyHandoff;
+  strategy: TypeOption;
+  sourceAiRunId?: string;
+}) {
+  return (
+    <Section
+      title="AI 草案交接"
+      action={<StatusBadge tone={handoff.tone}>{handoff.stage}</StatusBadge>}
+    >
+      <div className="space-y-4 text-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0 space-y-1">
+            <div className="text-base font-semibold text-text-primary">
+              {handoff.title}
+            </div>
+            <p className="text-text-secondary">{handoff.summary}</p>
+          </div>
+          {handoff.primaryHref && (
+            handoff.primaryAction?.kind === "run_backtest" ? (
+              <SavedStrategyBacktestAction
+                strategy={strategy}
+                sourceAiRunId={sourceAiRunId}
+                fallbackHref={handoff.primaryHref}
+                label={handoff.primaryAction.label}
+              />
+            ) : (
+              <Link
+                href={handoff.primaryHref}
+                className="shrink-0 rounded bg-brand-primary px-3 py-2 text-xs text-white hover:opacity-90"
+              >
+                {handoff.primaryAction?.label ?? "打开下一步"}
+              </Link>
+            )
+          )}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2">
+          {handoff.items.map((item) => (
+            <div
+              key={item.id}
+              className="rounded border border-border-default px-3 py-2"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="font-medium text-text-primary">{item.label}</div>
+                <StatusBadge tone={item.tone} size="sm">
+                  {item.status}
+                </StatusBadge>
+              </div>
+              <p className="mt-2 text-xs text-text-secondary">{item.detail}</p>
+              {item.href && (
+                <Link
+                  href={item.href}
+                  className="mt-2 inline-flex rounded border border-border-default px-2 py-1 text-xs hover:bg-bg-surface-2"
+                >
+                  打开
+                </Link>
+              )}
+            </div>
+          ))}
+        </div>
+        <div>
+          <div className="mb-1 text-xs font-medium text-text-tertiary">
+            AI 下一步
+          </div>
+          <ol className="ml-5 list-decimal space-y-1 text-text-secondary">
+            {handoff.nextActions.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 // Mirrors quantpb.v1.BacktestState integer codes (see data/type.d.ts
 // BacktestState). Inlined rather than imported because the declaration
 // file's `export const` produces no JS at runtime under Turbopack's
@@ -117,8 +221,11 @@ const BACKTEST_STATE_LABEL: Record<number, string> = {
   4: "失败",
 };
 
-export default async function StrategyDetailPage({ params }: PageProps) {
+export default async function StrategyDetailPage({ params, searchParams }: PageProps) {
   const { id } = await params;
+  const query = await searchParams;
+  const from = query?.from;
+  const aiRunId = String(query?.aiRunId || "").trim();
 
   // Hard requirement: the strategy itself. If it fails, render a clear
   // error state — the rest of the page has nothing to anchor against.
@@ -163,6 +270,9 @@ export default async function StrategyDetailPage({ params }: PageProps) {
     tryFetch(listRecommendations("pending_review", id)),
     tryFetch(listBacktests(id)),
   ]);
+  const sourceAiRunId = aiRunId || String(strategy.aiRunId || "").trim();
+  const sourceGoalRun: TypeAIGoalRun | null =
+    sourceAiRunId ? await tryFetch(getAIGoalRun(sourceAiRunId)) : null;
 
   const kpis = perf?.kpis;
   const isLive = perf?.isLive ?? !!strategy.live?.enabled;
@@ -172,6 +282,22 @@ export default async function StrategyDetailPage({ params }: PageProps) {
   const lastTradeRel = kpis ? fmtRel(kpis.lastTradeAt) : null;
   const pendingRecs = (recs ?? []).slice(0, 3);
   const recentBacktests = (backtests ?? []).slice(0, 3);
+  const buildSavedStrategyHandoff = aiSavedStrategyHandoffFromState as unknown as (input: {
+    strategy: TypeOption;
+    accounts: TypeAccount[];
+    backtests: TypeBacktest[];
+    goalRun?: TypeAIGoalRun | null;
+  }) => SavedStrategyHandoff;
+  const shouldShowAiDraftHandoff = from === "ai-draft" || Boolean(sourceAiRunId);
+  const aiDraftHandoff =
+    shouldShowAiDraftHandoff
+      ? buildSavedStrategyHandoff({
+          strategy,
+          accounts: accounts ?? [],
+          backtests: backtests ?? [],
+          goalRun: sourceGoalRun,
+        })
+      : null;
 
   // -- Reusable building blocks (each is rendered in both the desktop
   //    3-column tree and the mobile tabs tree, so the underlying React
@@ -597,6 +723,13 @@ export default async function StrategyDetailPage({ params }: PageProps) {
         path={`/strategies/${id}`}
       />
       {header}
+      {aiDraftHandoff && (
+        <SavedStrategyHandoffPanel
+          handoff={aiDraftHandoff}
+          strategy={strategy}
+          sourceAiRunId={sourceAiRunId}
+        />
+      )}
       {mainnetCallout}
 
       {/* Desktop: 3-column layout (lg+) -------------------------------- */}

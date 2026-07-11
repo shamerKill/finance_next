@@ -38,6 +38,7 @@ import type {
 import { DetailTabs } from "./detail-tabs";
 import { EquityChart } from "./equity-chart";
 import { LiveProgress } from "./live-progress";
+import { SavedBacktestPaperWatchAction } from "./paper-watch-action";
 import TradesTable from "./trades-table";
 
 export const dynamic = "force-dynamic";
@@ -125,6 +126,7 @@ export default async function BacktestDetailPage({ params }: Params) {
   const strategyLabel = strategy
     ? `${strategy.name} (${strategy.execSymbol})`
     : head.strategyId;
+  const sourceAiRunId = strategy?.aiRunId ? String(strategy.aiRunId).trim() : "";
 
   // Tab panels — composed server-side as React nodes and handed to the
   // client <DetailTabs> wrapper.
@@ -224,7 +226,18 @@ export default async function BacktestDetailPage({ params }: Params) {
             </span>
           </span>
         }
-        action={<StatusBadge tone={s.tone}>{s.label}</StatusBadge>}
+        action={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <StatusBadge tone={s.tone}>{s.label}</StatusBadge>
+            {strategy && sourceAiRunId ? (
+              <SavedBacktestPaperWatchAction
+                strategy={strategy}
+                backtest={head}
+                sourceAiRunId={sourceAiRunId}
+              />
+            ) : null}
+          </div>
+        }
       />
 
       {head.state === 4 && head.error ? (

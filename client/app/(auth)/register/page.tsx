@@ -7,19 +7,7 @@ import { FormEvent, Suspense, useState } from "react";
 
 import { PasswordInput } from "@/components/password-field";
 import { AuthError, register } from "@/data/auth-client";
-
-// safeNextOrDashboard sanitises the `?next=` query param that
-// middleware.ts attaches when an unauthenticated request was redirected
-// here. Only same-origin relative paths are honoured ("/foo/bar"); any
-// protocol-relative path ("//evil.com/x") or absolute URL is dropped
-// in favour of /dashboard, which closes the open-redirect CVE that
-// would otherwise apply when ?next= is naively forwarded.
-function safeNextOrDashboard(raw: string | null | undefined): string {
-  if (raw && raw.startsWith("/") && !raw.startsWith("//")) {
-    return raw;
-  }
-  return "/dashboard";
-}
+import { authHrefWithNext, safeNextOrDefault } from "@/data/auth-redirect.mjs";
 
 // Register supports two paths:
 //   1. Bootstrap (the gateway has zero users): any email + password is
@@ -37,6 +25,7 @@ function RegisterForm() {
   const [needsInvite, setNeedsInvite] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const nextParam = search?.get("next");
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -52,7 +41,7 @@ function RegisterForm() {
         password,
         inviteToken: inviteToken || undefined,
       });
-      router.push(safeNextOrDashboard(search?.get("next")));
+      router.push(safeNextOrDefault(nextParam));
     } catch (e2) {
       if (e2 instanceof AuthError) {
         if (e2.status === 403) {
@@ -132,10 +121,16 @@ function RegisterForm() {
             注册
           </Button>
           <div className="flex justify-between text-sm text-default-500">
-            <Link href="/login" className="hover:underline">
+            <Link
+              href={authHrefWithNext("/login", nextParam)}
+              className="hover:underline"
+            >
               已有账户？登录
             </Link>
-            <Link href="/accept-invite" className="hover:underline">
+            <Link
+              href={authHrefWithNext("/accept-invite", nextParam)}
+              className="hover:underline"
+            >
               使用邀请链接
             </Link>
           </div>

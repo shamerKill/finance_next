@@ -38,6 +38,8 @@ _DEFAULT_ANTHROPIC_PRIMARY = "claude-sonnet-4-6"
 _DEFAULT_ANTHROPIC_REFINE = "claude-haiku-4-5-20251001"
 _DEFAULT_OPENAI_PRIMARY = "gpt-5.5"
 _DEFAULT_OPENAI_REFINE = "gpt-5.4"
+_DEFAULT_DEEPSEEK_PRIMARY = "deepseek-v4-pro"
+_DEFAULT_DEEPSEEK_REFINE = "deepseek-v4-flash"
 _DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 _DEFAULT_OPENAI_BASE_URL = "https://api.openai.com"
 _DEFAULT_BUDGET_USD_PER_STUDY = 5.0
@@ -70,6 +72,8 @@ class EffectiveAIConfig:
     anthropic_refine_model: str
     openai_primary_model: str
     openai_refine_model: str
+    deepseek_primary_model: str
+    deepseek_refine_model: str
     anthropic_base_url: str
     openai_base_url: str
     budget_usd_per_study: float
@@ -203,6 +207,14 @@ async def load_effective_config(mongo_db: Any | None) -> EffectiveAIConfig:
         "openaiRefineModel", "OPENAI_REFINE_MODEL", _DEFAULT_OPENAI_REFINE
     )
     field_results.append((orf, m))
+    dp, m = _pick_str(
+        "deepseekPrimaryModel", "DEEPSEEK_PRIMARY_MODEL", _DEFAULT_DEEPSEEK_PRIMARY
+    )
+    field_results.append((dp, m))
+    dr, m = _pick_str(
+        "deepseekRefineModel", "DEEPSEEK_REFINE_MODEL", _DEFAULT_DEEPSEEK_REFINE
+    )
+    field_results.append((dr, m))
     abu, m = _pick_str(
         "anthropicBaseURL", "ANTHROPIC_BASE_URL", _DEFAULT_ANTHROPIC_BASE_URL
     )
@@ -238,6 +250,8 @@ async def load_effective_config(mongo_db: Any | None) -> EffectiveAIConfig:
         anthropic_refine_model=ar,
         openai_primary_model=op,
         openai_refine_model=orf,
+        deepseek_primary_model=dp,
+        deepseek_refine_model=dr,
         anthropic_base_url=abu,
         openai_base_url=obu,
         budget_usd_per_study=bps,
